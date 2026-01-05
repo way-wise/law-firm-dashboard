@@ -1,0 +1,13 @@
+{
+  "css.lint.unknownAtRules": "ignore",
+  "tailwindCSS.lint.suggestCanonicalClasses": "ignore",
+  "cSpell.words": [
+    "bprogress",
+    "cmdk",
+    "dotenvx",
+    "orpc",
+    "Stylesheet",
+    "usehooks",
+    "vaul"
+  ]
+}
