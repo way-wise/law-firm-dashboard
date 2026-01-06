@@ -1,8 +1,10 @@
 import {
-  CalendarCheck,
+  Briefcase,
+  FolderKanban,
+  GitBranch,
   LayoutGrid,
   Settings,
-  ShieldCheck,
+  Users,
   UserRound,
 } from "lucide-react";
 
@@ -30,53 +32,36 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 2,
-    title: "Todos",
-    icon: <CalendarCheck className="icon" />,
-    url: "/dashboard/todos",
+    title: "Clients",
+    icon: <UserRound className="icon" />,
+    url: "/dashboard/clients",
   },
   {
     id: 3,
-    title: "Users",
-    icon: <UserRound className="icon" />,
-    baseUrl: "/dashboard/users",
-    submenu: [
-      {
-        id: 4,
-        title: "Users",
-        url: "/dashboard/users",
-      },
-      {
-        id: 5,
-        title: "Add User",
-        url: "/dashboard/users/add",
-      },
-    ],
+    title: "Team",
+    icon: <Users className="icon" />,
+    url: "/dashboard/team",
+  },
+  {
+    id: 4,
+    title: "Matters",
+    icon: <Briefcase className="icon" />,
+    url: "/dashboard/matters",
+  },
+  {
+    id: 5,
+    title: "Matter Types",
+    icon: <FolderKanban className="icon" />,
+    url: "/dashboard/matter-types",
   },
   {
     id: 6,
-    title: "Roles & Permissions",
-    icon: <ShieldCheck className="icon" />,
-    baseUrl: "/dashboard/roles",
-    submenu: [
-      {
-        id: 7,
-        title: "Roles",
-        url: "/dashboard/roles",
-      },
-      {
-        id: 8,
-        title: "Add Role",
-        url: "/dashboard/roles/add",
-      },
-      {
-        id: 9,
-        title: "Permissions",
-        url: "/dashboard/roles/permissions",
-      },
-    ],
+    title: "Workflow Stages",
+    icon: <GitBranch className="icon" />,
+    url: "/dashboard/workflow-stages",
   },
   {
-    id: 10,
+    id: 7,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",

@@ -1,17 +1,15 @@
-import { getSession } from "@/lib/auth";
 import { NotificationProvider } from "@/providers/notification-provider";
 import { SidebarProvider } from "@/providers/sidebar-provider";
-import { redirect } from "next/navigation";
 import Header from "./_components/header";
 import Notification from "./_components/notification";
 import Sidebar from "./_components/sidebar";
 
 const DashboardLayout = async ({ children }: LayoutProps<"/dashboard">) => {
-  const session = await getSession();
-
-  if (!session) {
-    redirect("/auth/sign-in");
-  }
+  // TODO: Re-enable auth check when API is implemented
+  // const session = await getSession();
+  // if (!session) {
+  //   redirect("/auth/sign-in");
+  // }
 
   return (
     <NotificationProvider>
