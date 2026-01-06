@@ -32,9 +32,9 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 2,
-    title: "Clients",
+    title: "Contacts",
     icon: <UserRound className="icon" />,
-    url: "/dashboard/clients",
+    url: "/dashboard/contacts",
   },
   {
     id: 3,

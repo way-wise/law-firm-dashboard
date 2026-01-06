@@ -39,10 +39,10 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
-      <DrawerContent side="right" className="w-full max-w-md overflow-y-auto">
-        <DrawerHeader className="border-b">
+      <DrawerContent side="right" className="w-full max-w-md">
+        <DrawerHeader>
           <div className="flex flex-col gap-1">
-            <DrawerTitle className="text-lg">{clientName}</DrawerTitle>
+            <DrawerTitle className="text-xl font-medium">{clientName}</DrawerTitle>
             <DrawerDescription className="flex items-center gap-2">
               <span>{typeName}</span>
               <span>•</span>
@@ -50,13 +50,13 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
             </DrawerDescription>
           </div>
           <DrawerClose asChild>
-            <Button variant="ghost" size="icon">
-              <X className="size-4" />
+            <Button variant="ghost" size="icon-lg">
+              <X />
             </Button>
           </DrawerClose>
         </DrawerHeader>
 
-        <div className="flex flex-col gap-6 p-6">
+        <div className="flex flex-col gap-6 overflow-y-auto p-6">
           {/* Status Badge */}
           <div className="flex items-center gap-3">
             <Badge 
