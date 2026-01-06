@@ -1,6 +1,17 @@
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { LuBell, LuOctagonAlert, LuPackageCheck, LuX } from "react-icons/lu";
+import {
+  LuTriangleAlert,
+  LuBell,
+  LuBriefcase,
+  LuCalendarClock,
+  LuCircleCheck,
+  LuCreditCard,
+  LuFileText,
+  LuListTodo,
+  LuUserPlus,
+  LuX,
+} from "react-icons/lu";
 
 interface NotificationProps {
   id: number;
@@ -13,19 +24,68 @@ interface NotificationProps {
 
 const getNotificationStyle = (type: string) => {
   switch (type) {
-    case "STOCK":
-      return {
-        border: "border-yellow-500",
-        iconBg: "bg-yellow-500/10",
-        iconColor: "text-yellow-500",
-        icon: LuOctagonAlert,
-      };
-    case "ORDER":
+    case "MATTER":
       return {
         border: "border-emerald-500",
         iconBg: "bg-emerald-500/10",
         iconColor: "text-emerald-500",
-        icon: LuPackageCheck,
+        icon: LuBriefcase,
+      };
+    case "RFE":
+      return {
+        border: "border-red-500",
+        iconBg: "bg-red-500/10",
+        iconColor: "text-red-500",
+        icon: LuTriangleAlert,
+      };
+    case "CLIENT":
+      return {
+        border: "border-blue-500",
+        iconBg: "bg-blue-500/10",
+        iconColor: "text-blue-500",
+        icon: LuUserPlus,
+      };
+    case "CASE_UPDATE":
+      return {
+        border: "border-emerald-500",
+        iconBg: "bg-emerald-500/10",
+        iconColor: "text-emerald-500",
+        icon: LuCircleCheck,
+      };
+    case "DOCUMENT":
+      return {
+        border: "border-violet-500",
+        iconBg: "bg-violet-500/10",
+        iconColor: "text-violet-500",
+        icon: LuFileText,
+      };
+    case "PAYMENT":
+      return {
+        border: "border-green-500",
+        iconBg: "bg-green-500/10",
+        iconColor: "text-green-500",
+        icon: LuCreditCard,
+      };
+    case "DEADLINE":
+      return {
+        border: "border-orange-500",
+        iconBg: "bg-orange-500/10",
+        iconColor: "text-orange-500",
+        icon: LuCalendarClock,
+      };
+    case "TASK":
+      return {
+        border: "border-cyan-500",
+        iconBg: "bg-cyan-500/10",
+        iconColor: "text-cyan-500",
+        icon: LuListTodo,
+      };
+    case "REMINDER":
+      return {
+        border: "border-amber-500",
+        iconBg: "bg-amber-500/10",
+        iconColor: "text-amber-500",
+        icon: LuCalendarClock,
       };
     default:
       return {

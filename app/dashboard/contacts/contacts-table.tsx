@@ -176,7 +176,7 @@ const ContactsTable = ({ clients }: { clients: PaginatedData<Client> }) => {
         {/* Card with search and table */}
         <div className="rounded-xl border bg-card pb-6">
           {/* Search and Filters */}
-          <div className="flex items-center gap-4 p-6">
+          <div className="flex flex-wrap items-center gap-4 p-6">
             <InputGroup className="max-w-sm">
               <InputGroupAddon>
                 <Search />

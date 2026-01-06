@@ -45,92 +45,92 @@ export function NotificationProvider({
 }) {
   const [open, setOpen] = useState(false);
 
-  // Example notifications data
+  // Law firm notifications data
   const [notifications, setNotifications] = useState<NotificationType[]>([
     {
       id: 1,
-      type: "ORDER",
-      title: "New Order Placed",
+      type: "MATTER",
+      title: "New Matter Created",
       message:
-        "Customer John Smith placed a new order (#58672) for 'Smart Watch Pro'.",
+        "Matter M-2024-009 (Chen Wei - H-1B Petition) has been created and assigned to you.",
       time: "30 minutes ago",
       readAt: null,
     },
     {
       id: 2,
-      type: "STOCK",
-      title: "Stock Running Low",
+      type: "RFE",
+      title: "RFE Received",
       message:
-        "Only 3 units left for '4K Action Camera'. Consider restocking soon.",
+        "USCIS issued an RFE for Matter M-2024-002 (Chen Wei - H-1B). Response due in 87 days.",
       time: "1 hour ago",
       readAt: null,
     },
     {
       id: 3,
-      type: "CUSTOMER",
-      title: "New Customer Signup",
-      message: "A new customer, Emily Johnson, just registered on your store.",
+      type: "CLIENT",
+      title: "New Client Added",
+      message: "A new client, Maria Santos, has been added to the system.",
       time: "3 hours ago",
       readAt: null,
     },
     {
       id: 4,
-      type: "ORDER",
-      title: "Order #58421 Shipped",
+      type: "CASE_UPDATE",
+      title: "Case Status Updated",
       message:
-        "Your order #58421 has been shipped via FedEx and is on its way.",
+        "Matter M-2024-004 (Priya Sharma - L-1) status changed to 'Approved'.",
       time: "5 hours ago",
       readAt: "2025-10-22T10:20:20Z",
     },
     {
       id: 5,
-      type: "SALE",
-      title: "New Sale Completed",
+      type: "DOCUMENT",
+      title: "Documents Uploaded",
       message:
-        "You’ve successfully sold 3 units of 'Wireless Bluetooth Earbuds'.",
+        "Client uploaded 3 documents for Matter M-2024-001 (Maria Rodriguez - I-485).",
       time: "6 hours ago",
       readAt: "2025-10-22T09:15:10Z",
     },
     {
       id: 6,
       type: "PAYMENT",
-      title: "Invoice Payment Received",
+      title: "Payment Received",
       message:
-        "Payment for invoice #INV-004512 has been received and processed.",
+        "Payment of $2,500 received for Matter M-2024-005 (Dimitri Volkov - EB-2 NIW).",
       time: "1 day ago",
       readAt: "2025-10-21T14:32:45Z",
     },
     {
       id: 7,
-      type: "ORDER",
-      title: "Order #58670 Delivered",
-      message: "Order #58670 has been successfully delivered to the customer.",
+      type: "DEADLINE",
+      title: "Upcoming Deadline",
+      message: "Filing deadline for Matter M-2024-003 (Ahmed Hassan - Asylum) is in 5 days.",
       time: "1 day ago",
       readAt: "2025-10-21T11:25:30Z",
     },
     {
       id: 8,
-      type: "REFUND",
-      title: "Refund Processed",
+      type: "CASE_UPDATE",
+      title: "Receipt Notice Received",
       message:
-        "Refund of $89.99 for order #58214 has been successfully issued.",
+        "Receipt notice EAC2490098765 received for Matter M-2024-008 (Yuki Tanaka - H-1B).",
       time: "2 days ago",
       readAt: "2025-10-20T16:48:10Z",
     },
     {
       id: 9,
-      type: "REPORT",
-      title: "Weekly Sales Report Ready",
-      message: "Your weekly performance report is now available for review.",
+      type: "TASK",
+      title: "Task Assigned",
+      message: "You have been assigned to review documents for Matter M-2024-006.",
       time: "3 days ago",
       readAt: "2025-10-19T09:10:00Z",
     },
     {
       id: 10,
-      type: "CAMPAIGN",
-      title: "Discount Campaign Scheduled",
+      type: "REMINDER",
+      title: "Client Meeting Reminder",
       message:
-        "Your 'Black Friday Mega Sale' campaign is set to start in 2 days.",
+        "Consultation with John Smith scheduled for tomorrow at 2:00 PM.",
       time: "4 days ago",
       readAt: "2025-10-18T15:00:00Z",
     },

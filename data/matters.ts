@@ -80,6 +80,9 @@ export interface Matter {
   client: Client;
   receipts: Receipt[];
   notes: Note[];
+  // Additional fields
+  paralegal: string | null;
+  billing_status: "pending" | "invoiced" | "paid" | null;
 }
 
 // Matter statuses (workflow stages)
@@ -140,6 +143,8 @@ export const matters: Matter[] = [
       { id: 1, title: "Initial consultation", content: "Client seeking green card through employment", category: "All Notes", date: "2024-10-31T10:00:00Z", starred: false, created_by_name: "Soraya", created_at: "2024-10-31T10:00:00Z", updated_at: "2024-10-31T10:00:00Z" },
       { id: 2, title: "Documents received", content: "Received passport, I-94, and employment letter", category: "All Notes", date: "2024-11-05T14:00:00Z", starred: true, created_by_name: "Soraya", created_at: "2024-11-05T14:00:00Z", updated_at: "2024-11-05T14:00:00Z" },
     ],
+    paralegal: "Soraya Martinez",
+    billing_status: "invoiced",
   },
   {
     id: 2,
@@ -175,6 +180,8 @@ export const matters: Matter[] = [
     notes: [
       { id: 3, title: "RFE received", content: "USCIS requesting additional evidence for specialty occupation", category: "All Notes", date: "2024-12-10T09:00:00Z", starred: true, created_by_name: "Sue", created_at: "2024-12-10T09:00:00Z", updated_at: "2024-12-10T09:00:00Z" },
     ],
+    paralegal: "Sue Chen",
+    billing_status: "paid",
   },
   {
     id: 3,
@@ -206,6 +213,8 @@ export const matters: Matter[] = [
     },
     receipts: [],
     notes: [],
+    paralegal: "Mike Johnson",
+    billing_status: "pending",
   },
   {
     id: 4,
@@ -239,6 +248,8 @@ export const matters: Matter[] = [
       { id: 2, number: "WAC2490054321", description: "L-1A Petition", status_update_type: "automatic", created_at: "2024-12-01T00:00:00Z", updated_at: "2024-12-20T00:00:00Z" },
     ],
     notes: [],
+    paralegal: "Lisa Park",
+    billing_status: "paid",
   },
   {
     id: 5,
@@ -270,6 +281,8 @@ export const matters: Matter[] = [
     },
     receipts: [],
     notes: [],
+    paralegal: "David Kim",
+    billing_status: "invoiced",
   },
   {
     id: 6,
@@ -303,6 +316,8 @@ export const matters: Matter[] = [
       { id: 3, number: "EAC2490067890", description: "O-1A Petition", status_update_type: "automatic", created_at: "2024-12-10T00:00:00Z", updated_at: "2024-12-20T00:00:00Z" },
     ],
     notes: [],
+    paralegal: "Mike Johnson",
+    billing_status: "paid",
   },
   {
     id: 7,
@@ -334,6 +349,8 @@ export const matters: Matter[] = [
     },
     receipts: [],
     notes: [],
+    paralegal: null,
+    billing_status: "pending",
   },
   {
     id: 8,
@@ -367,6 +384,8 @@ export const matters: Matter[] = [
       { id: 4, number: "EAC2490098765", description: "H-1B Petition", status_update_type: "automatic", created_at: "2024-12-20T00:00:00Z", updated_at: "2024-12-25T00:00:00Z" },
     ],
     notes: [],
+    paralegal: "Soraya Martinez",
+    billing_status: "invoiced",
   },
 ];
 

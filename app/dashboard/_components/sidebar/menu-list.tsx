@@ -1,7 +1,6 @@
 import {
   Briefcase,
   FolderKanban,
-  GitBranch,
   LayoutGrid,
   Settings,
   Users,
@@ -56,12 +55,6 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 6,
-    title: "Workflow Stages",
-    icon: <GitBranch className="icon" />,
-    url: "/dashboard/workflow-stages",
-  },
-  {
-    id: 7,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",
