@@ -2,6 +2,7 @@ import {
   Briefcase,
   FolderKanban,
   LayoutGrid,
+  Receipt,
   Settings,
   Users,
   UserRound,
@@ -55,6 +56,12 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 6,
+    title: "Invoices",
+    icon: <Receipt className="icon" />,
+    url: "/dashboard/invoices",
+  },
+  {
+    id: 7,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",

@@ -1,52 +1,68 @@
-import { faker } from "@faker-js/faker";
 import { hashPassword } from "better-auth/crypto";
 import prisma from "../lib/prisma";
 
-async function main(total: number) {
+async function main() {
   await prisma.$transaction(async (tx) => {
-    console.log("Creating users...");
+    console.log("Creating admin user...");
 
-    const password = await hashPassword("12345678");
+    const password = await hashPassword("admin12345");
 
-    const users = Array.from({ length: total }).map(() => ({
-      name: faker.person.fullName(),
-      email: faker.internet.email().toLowerCase(),
-      emailVerified: false,
-    }));
-
-    const emails = users.map((u) => u.email);
-
-    await tx.users.createMany({
-      data: users,
-      skipDuplicates: true,
+    // Check if user already exists
+    let user = await tx.users.findUnique({
+      where: { email: "admin@example.com" },
     });
 
-    const getUsers = await tx.users.findMany({
-      where: { email: { in: emails } },
-      select: { id: true },
+    if (!user) {
+      // Create admin user
+      user = await tx.users.create({
+        data: {
+          name: "Admin User",
+          email: "admin@example.com",
+          emailVerified: true,
+        },
+      });
+    }
+
+    console.log("Linking user with account...");
+
+    // Check if account already exists
+    const existingAccount = await tx.accounts.findFirst({
+      where: {
+        userId: user.id,
+        providerId: "credential",
+      },
     });
 
-    const accounts = getUsers.map(({ id }) => ({
-      userId: id,
-      accountId: id,
-      providerId: "credential",
-      password,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
+    if (!existingAccount) {
+      // Create account for admin user
+      await tx.accounts.create({
+        data: {
+          userId: user.id,
+          accountId: user.id,
+          providerId: "credential",
+          password,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      // Update password if account exists
+      await tx.accounts.update({
+        where: { id: existingAccount.id },
+        data: {
+          password,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
-    console.log("Linking users with accounts...");
-
-    await tx.accounts.createMany({
-      data: accounts,
-      skipDuplicates: true,
-    });
-
-    console.log(`Created ${getUsers.length} users with accounts.`);
+    console.log("Admin user created successfully!");
+    console.log("Email: admin@example.com");
+    console.log("Password: admin12345");
   });
 }
 
-main(50)
+main()
   .then(async () => {
     await prisma.$disconnect();
   })
