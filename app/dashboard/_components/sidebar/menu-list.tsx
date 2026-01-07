@@ -1,5 +1,7 @@
 import {
   Briefcase,
+  CreditCard,
+  FileText,
   FolderKanban,
   LayoutGrid,
   Receipt,
@@ -50,18 +52,30 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 5,
+    title: "Documents",
+    icon: <FileText className="icon" />,
+    url: "/dashboard/documents",
+  },
+  {
+    id: 6,
+    title: "Charges",
+    icon: <CreditCard className="icon" />,
+    url: "/dashboard/charges",
+  },
+  {
+    id: 7,
     title: "Matter Types",
     icon: <FolderKanban className="icon" />,
     url: "/dashboard/matter-types",
   },
   {
-    id: 6,
+    id: 8,
     title: "Invoices",
     icon: <Receipt className="icon" />,
     url: "/dashboard/invoices",
   },
   {
-    id: 7,
+    id: 9,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",
