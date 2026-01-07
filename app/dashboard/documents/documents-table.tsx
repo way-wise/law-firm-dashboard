@@ -3,12 +3,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pagination } from "@/components/ui/pagination";
 import type { Document } from "@/data/documents";
@@ -22,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Download, Eye, FileText, MoreVertical, Plus, Search, Trash } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileText, Plus, Search, Trash } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -113,27 +107,36 @@ const DocumentsTable = ({ documents }: DocumentsTableProps) => {
     {
       id: "actions",
       cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon">
-              <MoreVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleView(row.original)}>
-              <Eye />
-              View
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleDownload(row.original)}>
-              <Download />
-              Download
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">
-              <Trash />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleView(row.original)}
+            title="View"
+          >
+            <Eye className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleDownload(row.original)}
+            title="Download"
+          >
+            <Download className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement delete
+              console.log("Delete document:", row.original.id);
+            }}
+            title="Delete"
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash className="size-4" />
+          </Button>
+        </div>
       ),
     },
   ];

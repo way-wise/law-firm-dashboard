@@ -11,12 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown";
-import {
   Field,
   FieldError,
   FieldGroup,
@@ -37,7 +31,7 @@ import type { MatterType } from "@/data/matter-types";
 import { PaginatedData } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, MoreVertical, Pencil, Plus, Search, Trash } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, Search, Trash } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -109,32 +103,42 @@ const MatterTypesTable = ({ matterTypes }: { matterTypes: PaginatedData<MatterTy
     {
       id: "actions",
       cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon">
-              <MoreVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setSelectedMatterType(row.original);
-                setOpenViewDialog(true);
-              }}
-            >
-              <Eye />
-              View
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Pencil />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">
-              <Trash />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              setSelectedMatterType(row.original);
+              setOpenViewDialog(true);
+            }}
+            title="View"
+          >
+            <Eye className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement edit
+              console.log("Edit matter type:", row.original.id);
+            }}
+            title="Edit"
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement delete
+              console.log("Delete matter type:", row.original.id);
+            }}
+            title="Delete"
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash className="size-4" />
+          </Button>
+        </div>
       ),
     },
   ];

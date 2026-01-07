@@ -10,12 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pagination } from "@/components/ui/pagination";
 import { Separator } from "@/components/ui/separator";
@@ -31,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Building2, Eye, MoreVertical, Pencil, Plus, Search, Trash, User } from "lucide-react";
+import { ArrowLeft, Building2, Eye, Pencil, Plus, Search, Trash, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -121,27 +115,39 @@ const ContactsTable = ({ clients }: { clients: PaginatedData<Client> }) => {
     {
       id: "actions",
       cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon">
-              <MoreVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleView(row.original)}>
-              <Eye />
-              View
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Pencil />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">
-              <Trash />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleView(row.original)}
+            title="View"
+          >
+            <Eye className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement edit
+              console.log("Edit contact:", row.original.id);
+            }}
+            title="Edit"
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement delete
+              console.log("Delete contact:", row.original.id);
+            }}
+            title="Delete"
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash className="size-4" />
+          </Button>
+        </div>
       ),
     },
   ];

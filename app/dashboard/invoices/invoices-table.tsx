@@ -11,12 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown";
-import {
   Field,
   FieldError,
   FieldGroup,
@@ -45,7 +39,6 @@ import { format } from "date-fns";
 import {
   ArrowLeft,
   Eye,
-  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -147,32 +140,42 @@ const InvoicesTable = () => {
     {
       id: "actions",
       cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon">
-              <MoreVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setSelectedInvoice(row.original);
-                setOpenViewDialog(true);
-              }}
-            >
-              <Eye />
-              View
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Pencil />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">
-              <Trash />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              setSelectedInvoice(row.original);
+              setOpenViewDialog(true);
+            }}
+            title="View"
+          >
+            <Eye className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement edit
+              console.log("Edit invoice:", row.original.id);
+            }}
+            title="Edit"
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              // TODO: Implement delete
+              console.log("Delete invoice:", row.original.id);
+            }}
+            title="Delete"
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash className="size-4" />
+          </Button>
+        </div>
       ),
     },
   ];

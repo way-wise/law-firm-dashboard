@@ -9,7 +9,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -117,7 +117,7 @@ const NewChargeForm = () => {
                         <InputGroupAddon>
                           <DollarSign />
                         </InputGroupAddon>
-                        <Input
+                        <InputGroupInput
                           {...field}
                           id="amount"
                           type="number"
