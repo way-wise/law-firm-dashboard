@@ -169,9 +169,11 @@ const ChargesTable = ({ charges }: ChargesTableProps) => {
           </Button>
           <h1 className="text-2xl font-semibold">Charges</h1>
         </div>
-        <Button>
-          <Plus />
-          Add Charge
+        <Button asChild>
+          <Link href="/dashboard/charges/new">
+            <Plus />
+            Add Charge
+          </Link>
         </Button>
       </div>
 

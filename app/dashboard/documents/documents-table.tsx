@@ -172,9 +172,11 @@ const DocumentsTable = ({ documents }: DocumentsTableProps) => {
           </Button>
           <h1 className="text-2xl font-semibold">Documents</h1>
         </div>
-        <Button>
-          <Plus />
-          Upload Document
+        <Button asChild>
+          <Link href="/dashboard/documents/new">
+            <Plus />
+            Upload Document
+          </Link>
         </Button>
       </div>
 
