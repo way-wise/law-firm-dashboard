@@ -39,6 +39,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
 import { ArrowLeft, Eye, MoreVertical, Pencil, Plus, Search, Trash } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -54,9 +55,8 @@ const teamMemberSchema = z.object({
 type TeamMemberInput = z.infer<typeof teamMemberSchema>;
 
 const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
-  const [openViewDialog, setOpenViewDialog] = useState(false);
+  const router = useRouter();
   const [openAddDialog, setOpenAddDialog] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -138,8 +138,7 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onClick={() => {
-                setSelectedWorker(row.original);
-                setOpenViewDialog(true);
+                router.push(`/dashboard/team/${row.original.id}`);
               }}
             >
               <Eye />
@@ -238,64 +237,6 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
           />
         </div>
       </div>
-
-      {/* Worker view dialog */}
-      <Dialog open={openViewDialog} onOpenChange={setOpenViewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Team Member Details</DialogTitle>
-            <DialogDescription>View team member information and KPIs</DialogDescription>
-          </DialogHeader>
-          {selectedWorker && (
-            <div className="flex flex-col gap-4">
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Name</h3>
-                <p className="text-sm">{selectedWorker.name}</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Email</h3>
-                <p className="text-sm">{selectedWorker.email}</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Title</h3>
-                <p className="text-sm">{selectedWorker.title || "-"}</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Team Type</h3>
-                <Badge variant={selectedWorker.teamType === "inHouse" ? "default" : "secondary"}>
-                  {selectedWorker.teamType === "inHouse" ? "In-House" : "Contractor"}
-                </Badge>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Specializations</h3>
-                <div className="flex flex-wrap gap-1">
-                  {selectedWorker.specializations.map((spec) => (
-                    <Badge key={spec} variant="outline">{spec}</Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">{selectedWorker.activeCases}</p>
-                  <p className="text-xs text-muted-foreground">Active Cases</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">{selectedWorker.totalCasesHandled}</p>
-                  <p className="text-xs text-muted-foreground">Total Handled</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">{selectedWorker.avgResolutionDays}d</p>
-                  <p className="text-xs text-muted-foreground">Avg Resolution</p>
-                </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-2xl font-bold">{selectedWorker.clientSatisfaction}/5</p>
-                  <p className="text-xs text-muted-foreground">Satisfaction</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Add Team Member dialog */}
       <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
