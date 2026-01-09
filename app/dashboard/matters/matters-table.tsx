@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Pagination } from "@/components/ui/pagination";
-import type { Matter } from "@/data/matters";
-import { getClientName, getStatusName, getTypeName } from "@/data/matters";
+import type { MatterSchemaType } from "@/router/matters";
 import { formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
 import {
@@ -21,30 +20,43 @@ import Link from "next/link";
 import { useState } from "react";
 import { MatterDetailSheet } from "../_components/matter-detail-sheet";
 
+// Helper functions for matter data
+const getClientName = (client?: { first_name: string; last_name: string }) => {
+  if (!client) return "Unknown";
+  return `${client.first_name} ${client.last_name}`.trim();
+};
+
+const getStatusName = (matter: MatterSchemaType) => 
+  matter.status?.name || "No Status";
+
+const getTypeName = (matter: MatterSchemaType) => 
+  matter.type?.name || "No Type";
+
 interface MattersTableProps {
   matters: {
-    data: Matter[];
-    meta: {
-      page: number;
-      limit: number;
+    data: MatterSchemaType[];
+    pagination?: {
       total: number;
+      next_page: number | null;
+      previous_page: number | null;
+      total_pages: number;
     };
   };
 }
 
 const MattersTable = ({ matters }: MattersTableProps) => {
-  const [selectedMatter, setSelectedMatter] = useState<Matter | null>(null);
+  const [selectedMatter, setSelectedMatter] = useState<MatterSchemaType | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [workflowStageFilter, setWorkflowStageFilter] = useState<string>("all");
 
-  const handleView = (matter: Matter) => {
+  const handleView = (matter: MatterSchemaType) => {
     setSelectedMatter(matter);
     setSheetOpen(true);
   };
 
-  const columns: ColumnDef<Matter>[] = [
+  const columns: ColumnDef<MatterSchemaType>[] = [
     {
       header: "Client Name",
       accessorKey: "client",
@@ -63,10 +75,10 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       ),
     },
     {
-      header: "Paralegal",
-      accessorKey: "paralegal",
+      header: "Receipt Number",
+      accessorKey: "receipt_number",
       cell: ({ row }) => (
-        <p className="text-sm">{row.original.paralegal || "-"}</p>
+        <p className="text-sm">{row.original.receipt_number || "-"}</p>
       ),
     },
     {
@@ -90,12 +102,10 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       },
     },
     {
-      header: "Billing Status",
-      accessorKey: "billing_status",
+      header: "Priority Date",
+      accessorKey: "priority_date",
       cell: ({ row }) => (
-        <Badge variant={row.original.billing_status === "paid" ? "success" : "secondary"}>
-          {row.original.billing_status || "Pending"}
-        </Badge>
+        <p className="text-sm">{row.original.priority_date || "-"}</p>
       ),
     },
     {
@@ -231,11 +241,17 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           />
 
           {/* Pagination */}
-          <Pagination
-            meta={matters.meta}
-            onPageChange={handlePageChange}
-            onLimitChange={handleLimitChange}
-          />
+          {matters.pagination && (
+            <Pagination
+              meta={{
+                page: 1,
+                limit: 200,
+                total: matters.pagination.total,
+              }}
+              onPageChange={handlePageChange}
+              onLimitChange={handleLimitChange}
+            />
+          )}
         </div>
       </div>
 

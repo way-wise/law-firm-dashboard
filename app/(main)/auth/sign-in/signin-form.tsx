@@ -22,7 +22,7 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { signIn } from "@/lib/auth-client";
+import { authClient, signIn } from "@/lib/auth-client";
 import { SignInSchemaType, signInSchema } from "@/schema/authSchema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -142,6 +142,31 @@ const SignInForm = () => {
             </FieldGroup>
           </FieldSet>
         </form>
+        
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">
+              Or continue with
+            </span>
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={async () => {
+            await authClient.signIn.social({
+              provider: "docketwise",
+              callbackURL: "/dashboard",
+            });
+          }}
+        >
+          Sign in with Docketwise
+        </Button>
+
         <div className="mt-5 flex flex-wrap items-center justify-center gap-1 text-center text-sm">
           <span className="text-muted-foreground">
             Don&apos;t have an account?

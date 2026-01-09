@@ -1,5 +1,12 @@
 import { createTodo, deleteTodo, getTodos, updateTodo, updateTodoStatus } from "./todos";
-import { getDocketwiseToken } from "./docketwise";
+import { 
+  getMatters, 
+  getMatterById, 
+  createMatter, 
+  updateMatter, 
+  deleteMatter,
+  getMatterReceipts 
+} from "./matters";
 
 export const router = {
   todos: {
@@ -9,7 +16,12 @@ export const router = {
     updateStatus: updateTodoStatus,
     delete: deleteTodo,
   },
-  docketwise: {
-    getToken: getDocketwiseToken,
+  matters: {
+    get: getMatters,
+    getById: getMatterById,
+    create: createMatter,
+    update: updateMatter,
+    delete: deleteMatter,
+    getReceipts: getMatterReceipts,
   },
 };

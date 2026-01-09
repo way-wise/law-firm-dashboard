@@ -11,8 +11,19 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import type { Matter } from "@/data/matters";
-import { getClientName, getStatusName, getTypeName } from "@/data/matters";
+import type { MatterSchemaType } from "@/router/matters";
+
+// Helper functions
+const getClientName = (client?: { first_name: string; last_name: string }) => {
+  if (!client) return "Unknown";
+  return `${client.first_name} ${client.last_name}`.trim();
+};
+
+const getStatusName = (matter: MatterSchemaType) => 
+  matter.status?.name || "No Status";
+
+const getTypeName = (matter: MatterSchemaType) => 
+  matter.type?.name || "No Type";
 import { format } from "date-fns";
 import {
   Calendar,
@@ -25,7 +36,7 @@ import {
 } from "lucide-react";
 
 interface MatterDetailSheetProps {
-  matter: Matter | null;
+  matter: MatterSchemaType | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -136,24 +147,26 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
           <Separator />
 
           {/* Client Information */}
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Client</h4>
-            
-            <div className="flex items-start gap-3">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                <User className="size-4 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">{clientName}</p>
-                {matter.client.email && (
-                  <p className="text-xs text-muted-foreground">{matter.client.email}</p>
-                )}
+          {matter.client && (
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Client</h4>
+              
+              <div className="flex items-start gap-3">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                  <User className="size-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{clientName}</p>
+                  {matter.client.email && (
+                    <p className="text-xs text-muted-foreground">{matter.client.email}</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* USCIS Receipts */}
-          {matter.receipts.length > 0 && (
+          {matter.receipts && matter.receipts.length > 0 && (
             <>
               <Separator />
               <div className="space-y-4">
@@ -179,7 +192,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
           )}
 
           {/* Notes */}
-          {matter.notes.length > 0 && (
+          {matter.notes && matter.notes.length > 0 && (
             <>
               <Separator />
               <div className="space-y-4">
