@@ -22,10 +22,9 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { authClient, signIn } from "@/lib/auth-client";
+import { signIn } from "@/lib/auth-client";
 import { SignInSchemaType, signInSchema } from "@/schema/authSchema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -143,31 +142,6 @@ const SignInForm = () => {
             </FieldGroup>
           </FieldSet>
         </form>
-        
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or continue with
-            </span>
-          </div>
-        </div>
-
-        <Button
-          variant="secondary"
-          className="w-full"
-          onClick={async () => {
-            await authClient.signIn.oauth2({
-              providerId: "docketwise",
-              callbackURL: "/dashboard",
-            });
-          }}
-        >
-          <Image src="/docketwise.png" width={24} height={24} alt="Docketwise" />
-          <span>Sign in with Docketwise</span>
-        </Button>
 
         <div className="mt-5 flex flex-wrap items-center justify-center gap-1 text-center text-sm">
           <span className="text-muted-foreground">

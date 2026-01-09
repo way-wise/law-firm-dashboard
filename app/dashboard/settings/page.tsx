@@ -1,5 +1,7 @@
+import SettingsClient from "./settings-tabs";
+
 const SettingsPage = () => {
-  return <div>Settings</div>;
+  return <SettingsClient />;
 };
 
 export default SettingsPage;
