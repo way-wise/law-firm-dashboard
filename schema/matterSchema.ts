@@ -98,6 +98,7 @@ export type PaginationMetaSchemaType = z.infer<typeof paginationMetaSchema>;
 export const paginatedMattersSchema = z.object({
   data: z.array(matterSchema),
   pagination: paginationMetaSchema.optional(),
+  connectionError: z.boolean().optional(),
 });
 export type PaginatedMattersSchemaType = z.infer<typeof paginatedMattersSchema>;
 

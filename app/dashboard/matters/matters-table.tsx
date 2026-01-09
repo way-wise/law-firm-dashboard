@@ -19,6 +19,7 @@ import { ArrowLeft, Eye, Pencil, Plus, Search, Trash } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { MatterDetailSheet } from "../_components/matter-detail-sheet";
+import { DocketwiseConnectionCard } from "@/components/docketwise-connection-card";
 
 // Helper functions for matter data
 const getClientName = (client?: { first_name: string; last_name: string }) => {
@@ -41,6 +42,7 @@ interface MattersTableProps {
       previous_page: number | null;
       total_pages: number;
     };
+    connectionError?: boolean;
   };
 }
 
@@ -186,8 +188,14 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           </Button>
         </div>
 
-        {/* Card with search and table */}
-        <div className="rounded-xl border bg-card pb-6">
+        {/* Show connection card if there's a connection error */}
+        {matters.connectionError ? (
+          <DocketwiseConnectionCard 
+            description="Connect your Docketwise account to view and manage matters."
+          />
+        ) : (
+          /* Card with search and table */
+          <div className="rounded-xl border bg-card pb-6">
           {/* Search and Filters */}
           <div className="flex flex-wrap items-center gap-4 p-6">
             <InputGroup className="max-w-sm">
@@ -253,6 +261,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
             />
           )}
         </div>
+        )}
       </div>
 
       <MatterDetailSheet

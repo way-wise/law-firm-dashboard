@@ -1,11 +1,10 @@
-import { docketwiseRequest } from "@/lib/docketwise";
-import { os } from "@/lib/orpc";
+import { getDocketwiseToken } from "@/lib/docketwise";
+import { authorized } from "@/lib/orpc";
 import {
   matterFilterSchema,
   matterInputSchema,
   matterSchema,
   paginatedMattersSchema,
-  paginationMetaSchema,
   receiptSchema,
   type MatterFilterSchemaType,
   type MatterSchemaType,
@@ -15,8 +14,10 @@ import * as z from "zod";
 
 export type { MatterFilterSchemaType, MatterSchemaType };
 
-// Get Matters from Docketwise API
-export const getMatters = os
+const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
+
+// Get Matters
+export const getMatters = authorized
   .route({
     method: "GET",
     path: "/matters",
@@ -25,59 +26,83 @@ export const getMatters = os
   })
   .input(matterFilterSchema)
   .output(paginatedMattersSchema)
-  .handler(async ({ input }) => {
+  .handler(async ({ input, context }) => {
+    const token = await getDocketwiseToken(context.user.id);
+
+    if (!token) {
+      return {
+        data: [],
+        pagination: undefined,
+        connectionError: true,
+      };
+    }
+
     try {
-      // Build query parameters
       const params = new URLSearchParams();
-
-      if (input.page) {
-        params.append("page", input.page.toString());
-      }
-
-      if (input.archived !== undefined) {
+      if (input.page) params.append("page", input.page.toString());
+      if (input.archived !== undefined)
         params.append("archived", input.archived.toString());
-      }
-
-      if (input.client_id) {
+      if (input.client_id)
         params.append("client_id", input.client_id.toString());
-      }
 
       const queryString = params.toString();
       const endpoint = `/matters${queryString ? `?${queryString}` : ""}`;
 
-      // Make request to Docketwise API
-      const response = await docketwiseRequest<
-        | z.infer<typeof matterSchema>[]
-        | {
-            data: z.infer<typeof matterSchema>[];
-            pagination?: z.infer<typeof paginationMetaSchema>;
-          }
-      >(endpoint);
+      const response = await fetch(`${DOCKETWISE_API_URL}${endpoint}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-      // Transform response to match our schema
-      if (Array.isArray(response)) {
+      if (!response.ok) {
+        console.error(
+          "Docketwise API Error:",
+          response.status,
+          await response.text(),
+        );
+
+        if (response.status >= 400 && response.status < 500) {
+          return {
+            data: [],
+            pagination: undefined,
+            connectionError: true,
+          };
+        }
+
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: `Docketwise API error: ${response.status}`,
+        });
+      }
+
+      const paginationHeader = response.headers.get("X-Pagination");
+      const data = await response.json();
+
+      if (Array.isArray(data)) {
         return {
-          data: response,
+          data,
           pagination: undefined,
         };
       }
 
       return {
-        data: response.data,
-        pagination: response.pagination,
+        data: data.data || data,
+        pagination: paginationHeader
+          ? JSON.parse(paginationHeader)
+          : data.pagination,
       };
     } catch (error) {
+      console.error("Docketwise API Error:", error);
+
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
         message:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch matters from Docketwise",
+          error instanceof Error ? error.message : "Failed to fetch matters",
       });
     }
   });
 
-// Get single matter by ID
-export const getMatterById = os
+// Get Matter by ID
+export const getMatterById = authorized
   .route({
     method: "GET",
     path: "/matters/{id}",
@@ -86,21 +111,33 @@ export const getMatterById = os
   })
   .input(z.object({ id: z.number() }))
   .output(matterSchema)
-  .handler(async ({ input }) => {
-    try {
-      const matter = await docketwiseRequest<z.infer<typeof matterSchema>>(
-        `/matters/${input.id}`,
-      );
-      return matter;
-    } catch {
+  .handler(async ({ input, context }) => {
+    const token = await getDocketwiseToken(context.user.id);
+
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
+      });
+    }
+
+    const response = await fetch(`${DOCKETWISE_API_URL}/matters/${input.id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
       throw new ORPCError("NOT_FOUND", {
         message: "Matter not found",
       });
     }
+
+    return response.json();
   });
 
 // Create Matter
-export const createMatter = os
+export const createMatter = authorized
   .route({
     method: "POST",
     path: "/matters",
@@ -109,26 +146,35 @@ export const createMatter = os
   })
   .input(matterInputSchema)
   .output(matterSchema)
-  .handler(async ({ input }) => {
-    try {
-      const matter = await docketwiseRequest<z.infer<typeof matterSchema>>(
-        "/matters",
-        {
-          method: "POST",
-          body: JSON.stringify({ matter: input }),
-        },
-      );
-      return matter;
-    } catch (error) {
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error ? error.message : "Failed to create matter",
+  .handler(async ({ input, context }) => {
+    const token = await getDocketwiseToken(context.user.id);
+
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
       });
     }
+
+    const response = await fetch(`${DOCKETWISE_API_URL}/matters`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ matter: input }),
+    });
+
+    if (!response.ok) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: "Failed to create matter",
+      });
+    }
+
+    return response.json();
   });
 
 // Update Matter
-export const updateMatter = os
+export const updateMatter = authorized
   .route({
     method: "PUT",
     path: "/matters/{id}",
@@ -136,33 +182,44 @@ export const updateMatter = os
     tags: ["Matters"],
   })
   .input(
-    matterInputSchema.extend({
-      id: z.number(),
-    }).partial().required({ id: true }),
+    matterInputSchema
+      .extend({
+        id: z.number(),
+      })
+      .partial()
+      .required({ id: true }),
   )
   .output(matterSchema)
-  .handler(async ({ input }) => {
+  .handler(async ({ input, context }) => {
     const { id, ...data } = input;
+    const token = await getDocketwiseToken(context.user.id);
 
-    try {
-      const matter = await docketwiseRequest<z.infer<typeof matterSchema>>(
-        `/matters/${id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ matter: data }),
-        },
-      );
-      return matter;
-    } catch (error) {
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error ? error.message : "Failed to update matter",
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
       });
     }
+
+    const response = await fetch(`${DOCKETWISE_API_URL}/matters/${id}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ matter: data }),
+    });
+
+    if (!response.ok) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: "Failed to update matter",
+      });
+    }
+
+    return response.json();
   });
 
 // Delete Matter
-export const deleteMatter = os
+export const deleteMatter = authorized
   .route({
     method: "DELETE",
     path: "/matters/{id}",
@@ -171,26 +228,37 @@ export const deleteMatter = os
   })
   .input(z.object({ id: z.number() }))
   .output(z.object({ success: z.boolean(), message: z.string() }))
-  .handler(async ({ input }) => {
-    try {
-      await docketwiseRequest<void>(`/matters/${input.id}`, {
-        method: "DELETE",
-      });
+  .handler(async ({ input, context }) => {
+    const token = await getDocketwiseToken(context.user.id);
 
-      return {
-        success: true,
-        message: "Matter deleted successfully",
-      };
-    } catch (error) {
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error ? error.message : "Failed to delete matter",
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
       });
     }
+
+    const response = await fetch(`${DOCKETWISE_API_URL}/matters/${input.id}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: "Failed to delete matter",
+      });
+    }
+
+    return {
+      success: true,
+      message: "Matter deleted successfully",
+    };
   });
 
-// Get matter receipts
-export const getMatterReceipts = os
+// Get Matter Receipts
+export const getMatterReceipts = authorized
   .route({
     method: "GET",
     path: "/matters/{id}/receipts",
@@ -199,18 +267,30 @@ export const getMatterReceipts = os
   })
   .input(z.object({ id: z.number() }))
   .output(z.array(receiptSchema))
-  .handler(async ({ input }) => {
-    try {
-      const receipts = await docketwiseRequest<z.infer<typeof receiptSchema>[]>(
-        `/matters/${input.id}/receipts`,
-      );
-      return receipts;
-    } catch (error) {
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch matter receipts",
+  .handler(async ({ input, context }) => {
+    const token = await getDocketwiseToken(context.user.id);
+
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
       });
     }
+
+    const response = await fetch(
+      `${DOCKETWISE_API_URL}/matters/${input.id}/receipts`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw new ORPCError("INTERNAL_SERVER_ERROR", {
+        message: "Failed to fetch matter receipts",
+      });
+    }
+
+    return response.json();
   });

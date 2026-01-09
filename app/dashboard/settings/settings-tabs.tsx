@@ -5,7 +5,7 @@ import { Bell, Plug } from "lucide-react";
 import { IntegrationsTab } from "./integrations-tab";
 import { NotificationsTab } from "./notifications-tab";
 
-export default function SettingsTabs() {
+export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
   return (
     <div className="space-y-6">
       <div>
@@ -15,7 +15,7 @@ export default function SettingsTabs() {
         </p>
       </div>
 
-      <Tabs defaultValue="integrations" className="w-full">
+      <Tabs defaultValue={defaultTab || "integrations"} className="w-full">
         <TabsList>
           <TabsTrigger value="integrations">
             <Plug className="h-4 w-4" />

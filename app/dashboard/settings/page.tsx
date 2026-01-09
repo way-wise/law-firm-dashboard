@@ -1,7 +1,11 @@
-import SettingsClient from "./settings-tabs";
+import SettingsTabs from "./settings-tabs";
 
-const SettingsPage = () => {
-  return <SettingsClient />;
+const SettingsPage = async ({
+  searchParams,
+}: PageProps<"/dashboard/settings">) => {
+  const { tab } = await searchParams;
+  const defaultTab = Array.isArray(tab) ? tab[0] : tab;
+  return <SettingsTabs defaultTab={defaultTab} />;
 };
 
 export default SettingsPage;

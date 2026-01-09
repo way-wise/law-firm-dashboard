@@ -42,6 +42,7 @@ export const auth = betterAuth({
           redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/oauth2/callback/docketwise`,
           scopes: ["public", "write"],
           pkce: false,
+          accessType: "offline", // Request refresh token
         },
       ],
     }),
