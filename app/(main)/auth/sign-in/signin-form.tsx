@@ -25,6 +25,7 @@ import {
 import { authClient, signIn } from "@/lib/auth-client";
 import { SignInSchemaType, signInSchema } from "@/schema/authSchema";
 import { zodResolver } from "@hookform/resolvers/zod";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -155,7 +156,7 @@ const SignInForm = () => {
         </div>
 
         <Button
-          variant="outline"
+          variant="secondary"
           className="w-full"
           onClick={async () => {
             await authClient.signIn.social({
@@ -164,7 +165,8 @@ const SignInForm = () => {
             });
           }}
         >
-          Sign in with Docketwise
+          <Image src="/docketwise.png" width={24} height={24} alt="Docketwise" />
+          <span>Sign in with Docketwise</span>
         </Button>
 
         <div className="mt-5 flex flex-wrap items-center justify-center gap-1 text-center text-sm">
