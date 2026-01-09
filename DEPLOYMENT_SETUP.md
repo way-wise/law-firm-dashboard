@@ -27,8 +27,8 @@ You need to add **both** redirect URIs to your Docketwise OAuth application:
 2. Go to Settings → API/OAuth Applications
 3. Find your OAuth application
 4. Add both redirect URIs:
-   - `http://localhost:3000/api/auth/callback/docketwise`
-   - `https://yourdomain.com/api/auth/callback/docketwise`
+   - `http://localhost:3000/api/auth/oauth2/callback/docketwise`
+   - `https://yourdomain.com/api/auth/oauth2/callback/docketwise`
 5. Save changes
 
 **Note:** If Docketwise only allows one redirect URI, you'll need to:
@@ -42,11 +42,11 @@ You need to add **both** redirect URIs to your Docketwise OAuth application:
 The redirect URI is automatically generated from `BETTER_AUTH_URL`:
 
 ```typescript
-redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/callback/docketwise`
+redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/oauth2/callback/docketwise`
 ```
 
-- **Local dev**: `BETTER_AUTH_URL=http://localhost:3000` → `http://localhost:3000/api/auth/callback/docketwise`
-- **Production**: `BETTER_AUTH_URL=https://yourdomain.com` → `https://yourdomain.com/api/auth/callback/docketwise`
+- **Local dev**: `BETTER_AUTH_URL=http://localhost:3000` → `http://localhost:3000/api/auth/oauth2/callback/docketwise`
+- **Production**: `BETTER_AUTH_URL=https://yourdomain.com` → `https://yourdomain.com/api/auth/oauth2/callback/docketwise`
 
 ## Deployment Checklist
 

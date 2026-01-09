@@ -159,8 +159,8 @@ const SignInForm = () => {
           variant="secondary"
           className="w-full"
           onClick={async () => {
-            await authClient.signIn.social({
-              provider: "docketwise",
+            await authClient.signIn.oauth2({
+              providerId: "docketwise",
               callbackURL: "/dashboard",
             });
           }}

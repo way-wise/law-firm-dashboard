@@ -39,7 +39,7 @@ export const auth = betterAuth({
           clientSecret: process.env.DOCKETWISE_CLIENT_SECRET!,
           authorizationUrl: process.env.DOCKETWISE_OAUTH_AUTHORIZE_URL!,
           tokenUrl: process.env.DOCKETWISE_OAUTH_TOKEN_URL!,
-          redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/callback/docketwise`,
+          redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/oauth2/callback/docketwise`,
           scopes: ["public", "write"],
           pkce: false,
         },
