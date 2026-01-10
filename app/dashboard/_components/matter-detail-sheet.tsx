@@ -50,7 +50,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
-      <DrawerContent side="right" className="w-full max-w-md">
+      <DrawerContent side="right" className="w-full max-w-2xl overflow-x-hidden">
         <DrawerHeader>
           <div className="flex flex-col gap-1">
             <DrawerTitle className="text-xl font-medium">{clientName}</DrawerTitle>
@@ -67,7 +67,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
           </DrawerClose>
         </DrawerHeader>
 
-        <div className="flex flex-col gap-6 overflow-y-auto p-6">
+        <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden p-6">
           {/* Status Badge */}
           <div className="flex items-center gap-3">
             <Badge 
@@ -104,9 +104,9 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
                   <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
                     <StickyNote className="size-4 text-muted-foreground" />
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">Description</p>
-                    <p className="text-sm">{matter.description}</p>
+                    <p className="text-sm break-words">{matter.description}</p>
                   </div>
                 </div>
               )}
@@ -200,16 +200,16 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
                 
                 <div className="space-y-3">
                   {matter.notes.slice(0, 3).map((note) => (
-                    <div key={note.id} className="rounded-lg border bg-muted/50 p-3">
+                    <div key={note.id} className="rounded-lg border bg-muted/50 p-3 overflow-hidden">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium">{note.title}</p>
+                        <p className="text-sm font-medium break-words flex-1 min-w-0">{note.title}</p>
                         {note.starred && (
-                          <Star className="size-4 fill-amber-400 text-amber-400" />
+                          <Star className="size-4 flex-shrink-0 fill-amber-400 text-amber-400" />
                         )}
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{note.content}</p>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        {note.created_by_name && <span>{note.created_by_name}</span>}
+                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2 break-words">{note.content}</p>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                        {note.created_by_name && <span className="break-all">{note.created_by_name}</span>}
                         <span>•</span>
                         <span>{format(new Date(note.date), "MMM d, yyyy")}</span>
                       </div>

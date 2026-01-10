@@ -3,8 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Pagination } from "@/components/ui/pagination";
+import { DocketwisePagination } from "@/components/ui/docketwise-pagination";
 import type { MatterSchemaType } from "@/router/matters";
 import { formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
@@ -15,23 +14,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Eye, Pencil, Plus, Search, Trash } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, Trash } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "@bprogress/next";
+import { useSearchParams } from "next/navigation";
 import { MatterDetailSheet } from "../_components/matter-detail-sheet";
 import { DocketwiseConnectionCard } from "@/components/docketwise-connection-card";
 
-// Helper functions for matter data
-const getClientName = (client?: { first_name: string; last_name: string }) => {
-  if (!client) return "Unknown";
-  return `${client.first_name} ${client.last_name}`.trim();
+const getClientName = (matter: MatterSchemaType) => {
+  if (!matter.client) return "Unknown";
+  const firstName = matter.client.first_name || "";
+  const lastName = matter.client.last_name || "";
+  return `${firstName} ${lastName}`.trim() || "Unknown";
 };
 
-const getStatusName = (matter: MatterSchemaType) => 
-  matter.status?.name || "No Status";
-
-const getTypeName = (matter: MatterSchemaType) => 
-  matter.type?.name || "No Type";
+const getStatusName = (matter: MatterSchemaType) => {
+  return matter.status?.name || "No Status";
+};
 
 interface MattersTableProps {
   matters: {
@@ -47,41 +47,44 @@ interface MattersTableProps {
 }
 
 const MattersTable = ({ matters }: MattersTableProps) => {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedMatter, setSelectedMatter] = useState<MatterSchemaType | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [workflowStageFilter, setWorkflowStageFilter] = useState<string>("all");
 
   const handleView = (matter: MatterSchemaType) => {
     setSelectedMatter(matter);
     setSheetOpen(true);
   };
 
+  const updateFilters = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value && value !== "all") {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.delete("page");
+    router.push(`?${params.toString()}`);
+  };
+
   const columns: ColumnDef<MatterSchemaType>[] = [
     {
-      header: "Client Name",
-      accessorKey: "client",
+      header: "Matter Title",
+      accessorKey: "title",
       cell: ({ row }) => (
         <div>
-          <p className="font-medium">{getClientName(row.original.client)}</p>
-          <p className="text-sm text-muted-foreground">{row.original.number}</p>
+          <p className="font-medium">{row.original.title}</p>
+          {row.original.number && (
+            <p className="text-sm text-muted-foreground">{row.original.number}</p>
+          )}
         </div>
       ),
     },
     {
-      header: "Matter Type",
-      accessorKey: "type",
-      cell: ({ row }) => (
-        <p className="text-sm">{getTypeName(row.original)}</p>
-      ),
-    },
-    {
-      header: "Receipt Number",
-      accessorKey: "receipt_number",
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.receipt_number || "-"}</p>
-      ),
+      header: "Client Name",
+      accessorKey: "client",
+      cell: ({ row }) => <p className="text-sm">{getClientName(row.original)}</p>,
     },
     {
       header: "Workflow Stage",
@@ -102,13 +105,6 @@ const MattersTable = ({ matters }: MattersTableProps) => {
         
         return <Badge variant={variant}>{getStatusName(row.original)}</Badge>;
       },
-    },
-    {
-      header: "Priority Date",
-      accessorKey: "priority_date",
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.priority_date || "-"}</p>
-      ),
     },
     {
       header: "Last Updated",
@@ -159,14 +155,6 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     },
   ];
 
-  const handlePageChange = (page: string) => {
-    console.log("Page changed to:", page);
-  };
-
-  const handleLimitChange = (limit: string) => {
-    console.log("Limit changed to:", limit);
-  };
-
   return (
     <>
       <div className="flex flex-col gap-6">
@@ -196,47 +184,19 @@ const MattersTable = ({ matters }: MattersTableProps) => {
         ) : (
           /* Card with search and table */
           <div className="rounded-xl border bg-card pb-6">
-          {/* Search and Filters */}
+          {/* Filters */}
           <div className="flex flex-wrap items-center gap-4 p-6">
-            <InputGroup className="max-w-sm">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                type="search"
-                placeholder="Search matters..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </InputGroup>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select 
+              value={searchParams.get("archived") || "all"} 
+              onValueChange={(value) => updateFilters("archived", value)}
+            >
               <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Matter Type" />
+                <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="h1b">H-1B</SelectItem>
-                <SelectItem value="greencard">Green Card</SelectItem>
-                <SelectItem value="asylum">Asylum</SelectItem>
-                <SelectItem value="naturalization">Naturalization</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={workflowStageFilter} onValueChange={setWorkflowStageFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Workflow Stage" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Stages</SelectItem>
-                <SelectItem value="intake">Intake</SelectItem>
-                <SelectItem value="document_collection">Document Collection</SelectItem>
-                <SelectItem value="drafting">Drafting</SelectItem>
-                <SelectItem value="review">Review</SelectItem>
-                <SelectItem value="filed">Filed</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="rfe">RFE</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="denied">Denied</SelectItem>
-                <SelectItem value="withdrawn">Withdrawn</SelectItem>
+                <SelectItem value="all">All Matters</SelectItem>
+                <SelectItem value="false">Active</SelectItem>
+                <SelectItem value="true">Archived</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -250,15 +210,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
 
           {/* Pagination */}
           {matters.pagination && (
-            <Pagination
-              meta={{
-                page: 1,
-                limit: 200,
-                total: matters.pagination.total,
-              }}
-              onPageChange={handlePageChange}
-              onLimitChange={handleLimitChange}
-            />
+            <DocketwisePagination pagination={matters.pagination} />
           )}
         </div>
         )}

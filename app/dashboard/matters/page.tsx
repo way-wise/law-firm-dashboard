@@ -7,8 +7,8 @@ const MattersPage = async ({
   const { page, archived, client_id } = await searchParams;
 
   const matters = await client.matters.get({
-    page: page ?? 1,
-    archived: archived === "true" ? true : undefined,
+    page: page ? Number(page) : undefined,
+    archived: archived === "true" ? true : archived === "false" ? false : undefined,
     client_id: client_id ? Number(client_id) : undefined,
   });
 

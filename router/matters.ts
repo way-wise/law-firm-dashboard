@@ -78,18 +78,13 @@ export const getMatters = authorized
       const paginationHeader = response.headers.get("X-Pagination");
       const data = await response.json();
 
-      if (Array.isArray(data)) {
-        return {
-          data,
-          pagination: undefined,
-        };
-      }
+      const pagination = paginationHeader
+        ? JSON.parse(paginationHeader)
+        : undefined;
 
       return {
-        data: data.data || data,
-        pagination: paginationHeader
-          ? JSON.parse(paginationHeader)
-          : data.pagination,
+        data: Array.isArray(data) ? data : data.data || data,
+        pagination,
       };
     } catch (error) {
       console.error("Docketwise API Error:", error);

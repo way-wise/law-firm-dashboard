@@ -1,113 +1,100 @@
 import * as z from "zod";
-import { paginationSchema } from "./paginationSchema";
 
-// Matter Status schema
-export const matterStatusSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  duration: z.number().nullable(),
-  sort: z.number().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type MatterStatusSchemaType = z.infer<typeof matterStatusSchema>;
+// Use z.any() for nested objects to accept any structure from Docketwise
+export const matterStatusSchema = z.any();
+export type MatterStatusSchemaType = {
+  id?: number;
+  name?: string;
+  [key: string]: unknown;
+};
 
-// Matter Type schema
-export const matterTypeSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  matter_statuses: z.array(matterStatusSchema),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type MatterTypeSchemaType = z.infer<typeof matterTypeSchema>;
+export const matterTypeSchema = z.any();
+export type MatterTypeSchemaType = {
+  id?: number;
+  name?: string;
+  [key: string]: unknown;
+};
 
-// Client schema (embedded in matter)
-export const clientSchema = z.object({
-  id: z.number(),
-  first_name: z.string(),
-  last_name: z.string(),
-  middle_name: z.string().nullable(),
-  company_name: z.string().nullable(),
-  email: z.string().nullable(),
-  lead: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type ClientSchemaType = z.infer<typeof clientSchema>;
+export const clientSchema = z.any();
+export type ClientSchemaType = {
+  id?: number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  [key: string]: unknown;
+};
 
-// Receipt schema
-export const receiptSchema = z.object({
-  id: z.number(),
-  number: z.string(),
-  description: z.string().nullable(),
-  status_update_type: z.enum(["manual", "automatic"]),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type ReceiptSchemaType = z.infer<typeof receiptSchema>;
+export const receiptSchema = z.any();
+export type ReceiptSchemaType = {
+  id?: number;
+  number?: string;
+  [key: string]: unknown;
+};
 
-// Note schema
-export const noteSchema = z.object({
-  id: z.number(),
-  title: z.string(),
-  content: z.string(),
-  category: z.string(),
-  date: z.string(),
-  starred: z.boolean(),
-  created_by_name: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type NoteSchemaType = z.infer<typeof noteSchema>;
+export const noteSchema = z.any();
+export type NoteSchemaType = {
+  id?: number;
+  title?: string;
+  content?: string;
+  [key: string]: unknown;
+};
 
-// Main Matter schema
-export const matterSchema = z.object({
-  id: z.number(),
-  number: z.string().nullable(),
-  title: z.string(),
-  description: z.string().nullable(),
-  client_id: z.number(),
-  attorney_id: z.number().nullable(),
-  user_ids: z.array(z.number()),
-  status: matterStatusSchema.nullable(),
-  type: matterTypeSchema.nullable(),
-  receipt_number: z.string().nullable(),
-  priority_date: z.string().nullable(),
-  priority_date_status: z.enum(["undefined", "current", "not_current"]),
-  archived: z.boolean(),
-  discarded_at: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  client: clientSchema.optional(),
-  receipts: z.array(receiptSchema).optional(),
-  notes: z.array(noteSchema).optional(),
-});
-export type MatterSchemaType = z.infer<typeof matterSchema>;
+// Main Matter schema - only validate required fields, accept everything else
+export const matterSchema = z
+  .object({
+    id: z.number(),
+    title: z.string(),
+    client_id: z.number(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .and(z.record(z.string(), z.unknown()));
 
-// Pagination metadata schema
-export const paginationMetaSchema = z.object({
+export type MatterSchemaType = {
+  id: number;
+  title: string;
+  client_id: number;
+  created_at: string;
+  updated_at: string;
+  number?: string | null;
+  client?: ClientSchemaType;
+  status?: MatterStatusSchemaType | null;
+  type?: MatterTypeSchemaType | null;
+  receipts?: ReceiptSchemaType[];
+  notes?: NoteSchemaType[];
+  description?: string | null;
+  receipt_number?: string | null;
+  priority_date?: string | null;
+  priority_date_status?: string;
+  archived?: boolean;
+  [key: string]: unknown;
+};
+
+// Docketwise pagination (from X-Pagination header)
+export const docketwisePaginationSchema = z.object({
   total: z.number(),
   next_page: z.number().nullable(),
   previous_page: z.number().nullable(),
   total_pages: z.number(),
 });
-export type PaginationMetaSchemaType = z.infer<typeof paginationMetaSchema>;
+export type DocketwisePaginationSchemaType = z.infer<
+  typeof docketwisePaginationSchema
+>;
 
 // Paginated response schema
 export const paginatedMattersSchema = z.object({
   data: z.array(matterSchema),
-  pagination: paginationMetaSchema.optional(),
+  pagination: docketwisePaginationSchema.optional(),
   connectionError: z.boolean().optional(),
 });
 export type PaginatedMattersSchemaType = z.infer<typeof paginatedMattersSchema>;
 
 // Filter schema for matters
 export const matterFilterSchema = z.object({
+  page: z.number().optional(),
   archived: z.boolean().optional(),
   client_id: z.number().optional(),
   search: z.string().optional(),
-  ...paginationSchema.shape,
 });
 export type MatterFilterSchemaType = z.infer<typeof matterFilterSchema>;
 
