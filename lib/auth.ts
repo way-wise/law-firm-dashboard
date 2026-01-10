@@ -43,17 +43,13 @@ export const auth = betterAuth({
           scopes: ["public", "write"],
           pkce: false,
           accessType: "offline",
-          // Docketwise doesn't have a userInfo endpoint, so we provide a custom getUserInfo
-          // that returns a unique ID based on the access token (for linking purposes)
           getUserInfo: async (tokens) => {
-            // Since Docketwise doesn't provide user info, we generate a unique ID
-            // based on the access token hash. This is used for account linking only.
-            // The actual user is already authenticated via better-auth session.
-            const tokenHash = Buffer.from(
-              tokens.accessToken.slice(0, 32),
-            ).toString("base64url");
+            const accessToken = tokens.accessToken ?? "default";
+            const tokenId = accessToken
+              .slice(0, 16)
+              .replace(/[^a-zA-Z0-9]/g, "");
             return {
-              id: `docketwise_${tokenHash}`,
+              id: `docketwise_${tokenId}`,
               email: undefined,
               name: "Docketwise Account",
               emailVerified: false,
@@ -65,11 +61,9 @@ export const auth = betterAuth({
   ],
 });
 
-// Get the current user session
 export const getSession = async () => {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
-
   return session;
 };
