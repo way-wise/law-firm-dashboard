@@ -15,6 +15,13 @@ import {
   updateMatter,
 } from "./matters";
 import {
+  createTeamMember,
+  deleteTeamMember,
+  getTeamMemberById,
+  getTeamMembers,
+  updateTeamMember,
+} from "./team";
+import {
   createTodo,
   deleteTodo,
   getTodos,
@@ -44,6 +51,13 @@ export const router = {
     update: updateMatter,
     delete: deleteMatter,
     getReceipts: getMatterReceipts,
+  },
+  team: {
+    get: getTeamMembers,
+    getById: getTeamMemberById,
+    create: createTeamMember,
+    update: updateTeamMember,
+    delete: deleteTeamMember,
   },
   docketwise: {
     getStatus: getConnectionStatus,

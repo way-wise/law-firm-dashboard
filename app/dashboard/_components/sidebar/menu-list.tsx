@@ -34,21 +34,21 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 2,
+    title: "Matters",
+    icon: <Briefcase className="icon" />,
+    url: "/dashboard/matters",
+  },
+  {
+    id: 3,
     title: "Contacts",
     icon: <UserRound className="icon" />,
     url: "/dashboard/contacts",
   },
   {
-    id: 3,
+    id: 4,
     title: "Team",
     icon: <Users className="icon" />,
     url: "/dashboard/team",
-  },
-  {
-    id: 4,
-    title: "Matters",
-    icon: <Briefcase className="icon" />,
-    url: "/dashboard/matters",
   },
   {
     id: 5,

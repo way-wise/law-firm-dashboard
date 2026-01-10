@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { DocketwisePagination } from "@/components/ui/docketwise-pagination";
 import {
   Dialog,
   DialogContent,
@@ -10,16 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  FieldSet,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Pagination } from "@/components/ui/pagination";
+import { Separator } from "@/components/ui/separator";
+import type { TeamMemberSchemaType, DocketwisePaginationSchemaType } from "@/schema/teamSchema";
+import { ColumnDef } from "@tanstack/react-table";
+import { formatDate } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -27,97 +22,97 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Worker } from "@/data/workers";
-import { PaginatedData } from "@/types";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, Pencil, Plus, Search, Trash } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, Trash, User } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@bprogress/next";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { z } from "zod";
+import { DocketwiseConnectionCard } from "@/components/docketwise-connection-card";
 
-const teamMemberSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  email: z.string().email("Invalid email address"),
-  title: z.string().optional(),
-  teamType: z.enum(["inHouse", "contractor"]),
-  specializations: z.string().optional(),
-});
+const getTeamMemberName = (member: TeamMemberSchemaType) => {
+  if (member.first_name || member.last_name) {
+    return `${member.first_name || ""} ${member.last_name || ""}`.trim();
+  }
+  return member.email;
+};
 
-type TeamMemberInput = z.infer<typeof teamMemberSchema>;
+interface TeamTableProps {
+  team: {
+    data: TeamMemberSchemaType[];
+    pagination?: DocketwisePaginationSchemaType;
+    connectionError?: boolean;
+  };
+}
 
-const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
+const TeamTable = ({ team }: TeamTableProps) => {
   const router = useRouter();
-  const [openAddDialog, setOpenAddDialog] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const searchParams = useSearchParams();
+  const [openViewDialog, setOpenViewDialog] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<TeamMemberSchemaType | null>(null);
 
-  const form = useForm<TeamMemberInput>({
-    resolver: zodResolver(teamMemberSchema),
-    defaultValues: {
-      name: "",
-      email: "",
-      title: "",
-      teamType: "inHouse",
-      specializations: "",
-    },
-  });
-
-  const onSubmit = async (data: TeamMemberInput) => {
-    console.log("New team member:", data);
-    // TODO: API call
-    setOpenAddDialog(false);
-    form.reset();
+  const handleView = (member: TeamMemberSchemaType) => {
+    setSelectedMember(member);
+    setOpenViewDialog(true);
   };
 
-  const columns: ColumnDef<Worker>[] = [
+  const handleFilterChange = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value && value !== "all") {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.delete("page");
+    router.push(`?${params.toString()}`);
+  };
+
+  const columns: ColumnDef<TeamMemberSchemaType>[] = [
     {
-      header: "Name",
-      accessorKey: "name",
+      header: "Team Member",
+      accessorKey: "email",
       cell: ({ row }) => (
-        <div>
-          <p className="font-medium">{row.original.name}</p>
-          <p className="text-sm text-muted-foreground">{row.original.email}</p>
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+            <User className="size-4 text-muted-foreground" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium">{getTeamMemberName(row.original)}</p>
+            <p className="text-sm text-muted-foreground truncate">{row.original.email}</p>
+          </div>
         </div>
       ),
     },
     {
-      header: "Title",
-      accessorKey: "title",
-      cell: ({ row }) => row.original.title || "-",
+      header: "Role",
+      accessorKey: "role",
+      cell: ({ row }) => row.original.role || "-",
     },
     {
-      header: "Team Type",
-      accessorKey: "teamType",
+      header: "Phone",
+      accessorKey: "phone",
       cell: ({ row }) => (
-        <Badge variant={row.original.teamType === "inHouse" ? "default" : "secondary"}>
-          {row.original.teamType === "inHouse" ? "In-House" : "Contractor"}
-        </Badge>
+        <p className="text-sm">{row.original.phone || "-"}</p>
       ),
     },
     {
-      header: "Active Cases",
-      accessorKey: "activeCases",
-    },
-    {
-      header: "Total Handled",
-      accessorKey: "totalCasesHandled",
-    },
-    {
-      header: "Satisfaction",
-      accessorKey: "clientSatisfaction",
-      cell: ({ row }) => `${row.original.clientSatisfaction}/5`,
-    },
-    {
       header: "Status",
-      accessorKey: "isActive",
+      accessorKey: "active",
+      cell: ({ row }) => {
+        const isActive = row.original.active !== false;
+        return (
+          <Badge variant={isActive ? "default" : "secondary"}>
+            {isActive ? "Active" : "Inactive"}
+          </Badge>
+        );
+      },
+    },
+    {
+      header: "Created",
+      accessorKey: "created_at",
       cell: ({ row }) => (
-        <Badge variant={row.original.isActive ? "success" : "secondary"}>
-          {row.original.isActive ? "Active" : "Inactive"}
-        </Badge>
+        <p className="text-sm text-muted-foreground">
+          {formatDate(row.original.created_at)}
+        </p>
       ),
     },
     {
@@ -127,9 +122,7 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              router.push(`/dashboard/team/${row.original.id}`);
-            }}
+            onClick={() => handleView(row.original)}
             title="View"
           >
             <Eye className="size-4" />
@@ -138,7 +131,6 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
             variant="ghost"
             size="icon"
             onClick={() => {
-              // TODO: Implement edit
               console.log("Edit team member:", row.original.id);
             }}
             title="Edit"
@@ -149,10 +141,9 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
             variant="ghost"
             size="icon"
             onClick={() => {
-              // TODO: Implement deactivate
-              console.log("Deactivate team member:", row.original.id);
+              console.log("Delete team member:", row.original.id);
             }}
-            title="Deactivate"
+            title="Delete"
             className="text-destructive hover:text-destructive"
           >
             <Trash className="size-4" />
@@ -162,13 +153,23 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
     },
   ];
 
-  const handlePageChange = (page: string) => {
-    console.log("Page changed to:", page);
-  };
-
-  const handleLimitChange = (limit: string) => {
-    console.log("Limit changed to:", limit);
-  };
+  if (team.connectionError) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" onClick={() => router.back()}>
+              <ArrowLeft />
+            </Button>
+            <h1 className="text-2xl font-semibold">Team</h1>
+          </div>
+        </div>
+        <DocketwiseConnectionCard 
+          description="Connect your Docketwise account to view and manage team members."
+        />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -176,169 +177,115 @@ const TeamTable = ({ workers }: { workers: PaginatedData<Worker> }) => {
         {/* Page Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/dashboard">
-                <ArrowLeft />
-              </Link>
+            <Button variant="outline" size="icon" onClick={() => router.back()}>
+              <ArrowLeft />
             </Button>
             <h1 className="text-2xl font-semibold">Team</h1>
           </div>
-          <Button onClick={() => setOpenAddDialog(true)}>
-            <Plus />
-            Add Team Member
+          <Button asChild>
+            <Link href="/dashboard/team/new">
+              <Plus />
+              Add Team Member
+            </Link>
           </Button>
         </div>
 
-        {/* Card with search and table */}
+        {/* Card with filters and table */}
         <div className="rounded-xl border bg-card pb-6">
-          {/* Search and Filters */}
+          {/* Filters */}
           <div className="flex flex-wrap items-center gap-4 p-6">
-            <InputGroup className="max-w-sm">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                type="search"
-                placeholder="Search team members..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </InputGroup>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="inHouse">In-House</SelectItem>
-                <SelectItem value="contractor">Contractor</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={searchParams.get("active") || "all"}
+              onValueChange={(value) => handleFilterChange("active", value)}
+            >
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="true">Active</SelectItem>
+                <SelectItem value="false">Inactive</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Table */}
           <DataTable
-            data={workers.data}
+            data={team.data}
             columns={columns}
-            emptyMessage="No team members available"
+            emptyMessage="No team members found"
           />
 
           {/* Pagination */}
-          <Pagination
-            meta={workers.meta}
-            onPageChange={handlePageChange}
-            onLimitChange={handleLimitChange}
-          />
+          {team.pagination && (
+            <DocketwisePagination pagination={team.pagination} />
+          )}
         </div>
       </div>
 
-      {/* Add Team Member dialog */}
-      <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
-        <DialogContent className="max-w-lg">
+      {/* Team member view dialog */}
+      <Dialog open={openViewDialog} onOpenChange={setOpenViewDialog}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Team Member</DialogTitle>
-            <DialogDescription>Add a new paralegal or contractor to your team</DialogDescription>
+            <DialogTitle>Team Member Details</DialogTitle>
+            <DialogDescription>
+              User information from Docketwise
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)} autoComplete="off">
-            <FieldSet disabled={form.formState.isSubmitting}>
-              <FieldGroup>
-                <FieldGroup className="grid sm:grid-cols-2">
-                  <Controller
-                    name="name"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="name">
-                          Full Name <span className="text-destructive">*</span>
-                        </FieldLabel>
-                        <Input {...field} id="name" placeholder="Jane Smith" />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                  <Controller
-                    name="email"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="email">
-                          Email <span className="text-destructive">*</span>
-                        </FieldLabel>
-                        <Input {...field} id="email" type="email" placeholder="jane@lawfirm.com" />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                </FieldGroup>
-
-                <FieldGroup className="grid sm:grid-cols-2">
-                  <Controller
-                    name="title"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="title">Title</FieldLabel>
-                        <Input {...field} id="title" placeholder="Senior Paralegal" />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                  <Controller
-                    name="teamType"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="teamType">
-                          Team Type <span className="text-destructive">*</span>
-                        </FieldLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="inHouse">In-House</SelectItem>
-                            <SelectItem value="contractor">Contractor</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                </FieldGroup>
-
-                <Controller
-                  name="specializations"
-                  control={form.control}
-                  render={({ field, fieldState }) => (
-                    <Field>
-                      <FieldLabel htmlFor="specializations">Specializations</FieldLabel>
-                      <Input {...field} id="specializations" placeholder="e.g., H-1B, Green Card, Asylum (comma separated)" />
-                      <FieldError errors={[fieldState.error]} />
-                    </Field>
-                  )}
-                />
-              </FieldGroup>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setOpenAddDialog(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" isLoading={form.formState.isSubmitting}>
-                  Add Member
-                </Button>
+          {selectedMember && (
+            <div className="flex flex-col gap-6">
+              {/* Basic Info */}
+              <div className="flex items-center gap-4">
+                <div className="flex size-12 items-center justify-center rounded-lg bg-muted">
+                  <User className="size-6 text-muted-foreground" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <p className="font-semibold">{getTeamMemberName(selectedMember)}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={selectedMember.active !== false ? "default" : "secondary"}>
+                      {selectedMember.active !== false ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                </div>
               </div>
-            </FieldSet>
-          </form>
+
+              <Separator />
+
+              {/* Contact Info */}
+              <div className="grid gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  <p className="text-sm font-medium">{selectedMember.email}</p>
+                </div>
+                {selectedMember.phone && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Phone</p>
+                    <p className="text-sm font-medium">{selectedMember.phone}</p>
+                  </div>
+                )}
+                {selectedMember.role && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Role</p>
+                    <p className="text-sm font-medium">{selectedMember.role}</p>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Created</p>
+                  <p className="text-sm">{formatDate(selectedMember.created_at)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Updated</p>
+                  <p className="text-sm">{formatDate(selectedMember.updated_at)}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>
