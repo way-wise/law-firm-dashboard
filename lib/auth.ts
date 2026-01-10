@@ -44,15 +44,14 @@ export const auth = betterAuth({
           pkce: false,
           accessType: "offline",
           getUserInfo: async (tokens) => {
-            const accessToken = tokens.accessToken ?? "default";
-            const tokenId = accessToken
-              .slice(0, 16)
-              .replace(/[^a-zA-Z0-9]/g, "");
+            const tokenId =
+              tokens.accessToken?.slice(0, 16).replace(/[^a-zA-Z0-9]/g, "") ??
+              "unknown";
             return {
               id: `docketwise_${tokenId}`,
-              email: undefined,
+              email: `docketwise_${tokenId}@linked.local`,
               name: "Docketwise Account",
-              emailVerified: false,
+              emailVerified: true,
             };
           },
         },
