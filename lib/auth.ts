@@ -42,7 +42,23 @@ export const auth = betterAuth({
           redirectURI: `${process.env.BETTER_AUTH_URL}/api/auth/oauth2/callback/docketwise`,
           scopes: ["public", "write"],
           pkce: false,
-          accessType: "offline", // Request refresh token
+          accessType: "offline",
+          // Docketwise doesn't have a userInfo endpoint, so we provide a custom getUserInfo
+          // that returns a unique ID based on the access token (for linking purposes)
+          getUserInfo: async (tokens) => {
+            // Since Docketwise doesn't provide user info, we generate a unique ID
+            // based on the access token hash. This is used for account linking only.
+            // The actual user is already authenticated via better-auth session.
+            const tokenHash = Buffer.from(
+              tokens.accessToken.slice(0, 32),
+            ).toString("base64url");
+            return {
+              id: `docketwise_${tokenHash}`,
+              email: undefined,
+              name: "Docketwise Account",
+              emailVerified: false,
+            };
+          },
         },
       ],
     }),

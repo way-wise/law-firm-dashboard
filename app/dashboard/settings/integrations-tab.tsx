@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
+import { client } from "@/lib/orpc/client";
 import { CheckCircle2, ExternalLink, Loader2, XCircle } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
@@ -25,9 +26,8 @@ export function IntegrationsTab() {
   const checkDocketwiseConnection = async () => {
     try {
       setIsLoading(true);
-      // TODO: Implement actual connection check via API
-      // For now, just set to false
-      setIsConnected(false);
+      const result = await client.docketwise.getStatus({});
+      setIsConnected(result.connected);
     } catch (error) {
       console.error("Error checking Docketwise connection:", error);
       setIsConnected(false);
@@ -42,6 +42,7 @@ export function IntegrationsTab() {
       await authClient.oauth2.link({
         providerId: "docketwise",
         callbackURL: "/dashboard/settings",
+        errorCallbackURL: "/dashboard/settings?error=docketwise_connection_failed",
       });
     } catch (error) {
       console.error("Error connecting to Docketwise:", error);

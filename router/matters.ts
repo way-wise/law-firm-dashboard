@@ -26,8 +26,8 @@ export const getMatters = authorized
   })
   .input(matterFilterSchema)
   .output(paginatedMattersSchema)
-  .handler(async ({ input, context }) => {
-    const token = await getDocketwiseToken(context.user.id);
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
 
     if (!token) {
       return {
@@ -111,8 +111,8 @@ export const getMatterById = authorized
   })
   .input(z.object({ id: z.number() }))
   .output(matterSchema)
-  .handler(async ({ input, context }) => {
-    const token = await getDocketwiseToken(context.user.id);
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
 
     if (!token) {
       throw new ORPCError("UNAUTHORIZED", {
@@ -146,8 +146,8 @@ export const createMatter = authorized
   })
   .input(matterInputSchema)
   .output(matterSchema)
-  .handler(async ({ input, context }) => {
-    const token = await getDocketwiseToken(context.user.id);
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
 
     if (!token) {
       throw new ORPCError("UNAUTHORIZED", {
@@ -190,9 +190,9 @@ export const updateMatter = authorized
       .required({ id: true }),
   )
   .output(matterSchema)
-  .handler(async ({ input, context }) => {
+  .handler(async ({ input }) => {
     const { id, ...data } = input;
-    const token = await getDocketwiseToken(context.user.id);
+    const token = await getDocketwiseToken();
 
     if (!token) {
       throw new ORPCError("UNAUTHORIZED", {
@@ -228,8 +228,8 @@ export const deleteMatter = authorized
   })
   .input(z.object({ id: z.number() }))
   .output(z.object({ success: z.boolean(), message: z.string() }))
-  .handler(async ({ input, context }) => {
-    const token = await getDocketwiseToken(context.user.id);
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
 
     if (!token) {
       throw new ORPCError("UNAUTHORIZED", {
@@ -267,8 +267,8 @@ export const getMatterReceipts = authorized
   })
   .input(z.object({ id: z.number() }))
   .output(z.array(receiptSchema))
-  .handler(async ({ input, context }) => {
-    const token = await getDocketwiseToken(context.user.id);
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
 
     if (!token) {
       throw new ORPCError("UNAUTHORIZED", {

@@ -1,12 +1,19 @@
-import { createTodo, deleteTodo, getTodos, updateTodo, updateTodoStatus } from "./todos";
-import { 
-  getMatters, 
-  getMatterById, 
-  createMatter, 
-  updateMatter, 
+import { getConnectionStatus } from "./docketwise";
+import {
+  createMatter,
   deleteMatter,
-  getMatterReceipts 
+  getMatterById,
+  getMatterReceipts,
+  getMatters,
+  updateMatter,
 } from "./matters";
+import {
+  createTodo,
+  deleteTodo,
+  getTodos,
+  updateTodo,
+  updateTodoStatus,
+} from "./todos";
 
 export const router = {
   todos: {
@@ -23,5 +30,8 @@ export const router = {
     update: updateMatter,
     delete: deleteMatter,
     getReceipts: getMatterReceipts,
+  },
+  docketwise: {
+    getStatus: getConnectionStatus,
   },
 };
