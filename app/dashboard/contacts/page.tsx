@@ -1,17 +1,27 @@
-import { clients } from "@/data/clients";
+import { client } from "@/lib/orpc/client";
 import ContactsTable from "./contacts-table";
 
-const ContactsPage = () => {
-  const paginatedContacts = {
-    data: clients,
-    meta: {
-      page: 1,
-      limit: 10,
-      total: clients.length,
-    },
-  };
+interface ContactsPageProps {
+  searchParams: Promise<{
+    page?: string;
+    type?: "Person" | "Institution";
+    filter?: "all";
+  }>;
+}
 
-  return <ContactsTable clients={paginatedContacts} />;
+const ContactsPage = async ({ searchParams }: ContactsPageProps) => {
+  const params = await searchParams;
+  const page = params.page ? parseInt(params.page) : undefined;
+  const type = params.type;
+  const filter = params.filter;
+
+  const contacts = await client.contacts.get({
+    page,
+    type,
+    filter,
+  });
+
+  return <ContactsTable contacts={contacts} />;
 };
 
 export default ContactsPage;

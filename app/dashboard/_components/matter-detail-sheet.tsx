@@ -12,19 +12,20 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import type { MatterSchemaType } from "@/router/matters";
+import type { Matter } from "@/data/matters";
+import { formatDate } from "@/lib/utils";
 
 // Helper functions
-const getClientName = (client?: { first_name: string; last_name: string }) => {
+const getClientName = (client?: { first_name?: string; last_name?: string; email?: string | null }) => {
   if (!client) return "Unknown";
-  return `${client.first_name} ${client.last_name}`.trim();
+  return `${client.first_name || ""} ${client.last_name || ""}`.trim() || "Unknown";
 };
 
-const getStatusName = (matter: MatterSchemaType) => 
+const getStatusName = (matter: MatterSchemaType | Matter) => 
   matter.status?.name || "No Status";
 
-const getTypeName = (matter: MatterSchemaType) => 
+const getTypeName = (matter: MatterSchemaType | Matter) => 
   matter.type?.name || "No Type";
-import { format } from "date-fns";
 import {
   Calendar,
   FileText,
@@ -36,7 +37,7 @@ import {
 } from "lucide-react";
 
 interface MatterDetailSheetProps {
-  matter: MatterSchemaType | null;
+  matter: MatterSchemaType | Matter | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -131,7 +132,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
                   <div>
                     <p className="text-xs text-muted-foreground">Priority Date</p>
                     <p className="text-sm font-medium">
-                      {format(new Date(matter.priority_date), "MMM d, yyyy")}
+                      {matter.priority_date && formatDate(matter.priority_date)}
                       {matter.priority_date_status !== "undefined" && (
                         <Badge variant={matter.priority_date_status === "current" ? "default" : "secondary"} className="ml-2 text-xs">
                           {matter.priority_date_status === "current" ? "Current" : "Not Current"}
@@ -211,7 +212,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
                       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                         {note.created_by_name && <span className="break-all">{note.created_by_name}</span>}
                         <span>•</span>
-                        <span>{format(new Date(note.date), "MMM d, yyyy")}</span>
+                        <span>{note.date && formatDate(note.date)}</span>
                       </div>
                     </div>
                   ))}
@@ -228,11 +229,11 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
             <div className="grid gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Created</span>
-                <span className="text-sm">{format(new Date(matter.created_at), "MMM d, yyyy")}</span>
+                <span className="text-sm">{formatDate(matter.created_at)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Last Updated</span>
-                <span className="text-sm">{format(new Date(matter.updated_at), "MMM d, yyyy")}</span>
+                <span className="text-sm">{formatDate(matter.updated_at)}</span>
               </div>
             </div>
           </div>

@@ -20,7 +20,7 @@ export type ClientSchemaType = {
   id?: number;
   first_name?: string;
   last_name?: string;
-  email?: string;
+  email?: string | null;
   [key: string]: unknown;
 };
 
@@ -28,6 +28,8 @@ export const receiptSchema = z.any();
 export type ReceiptSchemaType = {
   id?: number;
   number?: string;
+  description?: string;
+  status_update_type?: string;
   [key: string]: unknown;
 };
 
@@ -36,6 +38,9 @@ export type NoteSchemaType = {
   id?: number;
   title?: string;
   content?: string;
+  starred?: boolean;
+  created_by_name?: string;
+  date?: string;
   [key: string]: unknown;
 };
 

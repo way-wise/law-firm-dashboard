@@ -1,3 +1,10 @@
+import {
+  createContact,
+  deleteContact,
+  getContactById,
+  getContacts,
+  updateContact,
+} from "./contacts";
 import { getConnectionStatus } from "./docketwise";
 import {
   createMatter,
@@ -22,6 +29,13 @@ export const router = {
     update: updateTodo,
     updateStatus: updateTodoStatus,
     delete: deleteTodo,
+  },
+  contacts: {
+    get: getContacts,
+    getById: getContactById,
+    create: createContact,
+    update: updateContact,
+    delete: deleteContact,
   },
   matters: {
     get: getMatters,
