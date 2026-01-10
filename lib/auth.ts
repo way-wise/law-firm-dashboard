@@ -22,6 +22,10 @@ export const auth = betterAuth({
   },
   account: {
     modelName: "accounts",
+    accountLinking: {
+      enabled: true,
+      allowDifferentEmails: true,
+    },
   },
   verification: {
     modelName: "verifications",
