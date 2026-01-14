@@ -5,6 +5,12 @@ import {
   getContacts,
   updateContact,
 } from "./contacts";
+import {
+  deleteCustomMatter,
+  getCustomMatterById,
+  getCustomMatters,
+  updateCustomMatter,
+} from "./customMatters";
 import { getConnectionStatus } from "./docketwise";
 import {
   createMatter,
@@ -14,6 +20,11 @@ import {
   getMatters,
   updateMatter,
 } from "./matters";
+import {
+  getSyncSettings,
+  triggerManualSync,
+  updateSyncSettings,
+} from "./syncSettings";
 import {
   createTeamMember,
   deleteTeamMember,
@@ -52,6 +63,12 @@ export const router = {
     delete: deleteMatter,
     getReceipts: getMatterReceipts,
   },
+  customMatters: {
+    get: getCustomMatters,
+    getById: getCustomMatterById,
+    update: updateCustomMatter,
+    delete: deleteCustomMatter,
+  },
   team: {
     get: getTeamMembers,
     getById: getTeamMemberById,
@@ -61,5 +78,10 @@ export const router = {
   },
   docketwise: {
     getStatus: getConnectionStatus,
+  },
+  sync: {
+    getSettings: getSyncSettings,
+    updateSettings: updateSyncSettings,
+    trigger: triggerManualSync,
   },
 };

@@ -68,7 +68,7 @@ export const DataTable = <TData, TValue>({
               >
                 {row.getVisibleCells().map((cell) => (
                   <td
-                    className="min-h-14 max-w-[230px] truncate px-6 py-2.5 text-sm"
+                    className="min-h-14 truncate px-6 py-2.5 text-sm"
                     key={cell.id}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

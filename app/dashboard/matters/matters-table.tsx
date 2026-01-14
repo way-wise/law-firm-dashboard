@@ -1,11 +1,32 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { DocketwisePagination } from "@/components/ui/docketwise-pagination";
-import type { MatterSchemaType } from "@/router/matters";
-import { formatDistanceToNow } from "date-fns";
+import { LastSyncIndicator } from "@/components/last-sync-indicator";
+import { EditMatterDrawer } from "@/components/edit-matter-drawer";
+import { AdvancedSelect } from "@/components/ui/advanced-select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import { Separator } from "@/components/ui/separator";
+import type { MatterType } from "@/schema/customMatterSchema";
+import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   Select,
@@ -14,47 +35,108 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Eye, Pencil, Plus, Trash } from "lucide-react";
+import { ArrowLeft, Calendar, Eye, FileText, Pencil, Plus, Trash, User, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "@bprogress/next";
 import { useSearchParams } from "next/navigation";
-import { MatterDetailSheet } from "../_components/matter-detail-sheet";
-import { DocketwiseConnectionCard } from "@/components/docketwise-connection-card";
+import { useDebounceCallback } from "usehooks-ts";
+import { client } from "@/lib/orpc/client";
+import { toast } from "sonner";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { LuSearch } from "react-icons/lu";
+import { workers } from "@/data/workers";
 
-const getClientName = (matter: MatterSchemaType) => {
-  if (!matter.client) return "Unknown";
-  const firstName = matter.client.first_name || "";
-  const lastName = matter.client.last_name || "";
-  return `${firstName} ${lastName}`.trim() || "Unknown";
+const getBillingStatusColor = (status: string | null) => {
+  if (!status) return "secondary";
+  switch (status) {
+    case "PAID":
+      return "default";
+    case "DEPOSIT_PAID":
+      return "secondary";
+    case "PAYMENT_PLAN":
+      return "outline";
+    case "DUE":
+      return "destructive";
+    default:
+      return "secondary";
+  }
 };
 
-const getStatusName = (matter: MatterSchemaType) => {
-  return matter.status?.name || "No Status";
+const formatBillingStatus = (status: string | null) => {
+  if (!status) return "Not Set";
+  return status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 };
 
 interface MattersTableProps {
   matters: {
-    data: MatterSchemaType[];
-    pagination?: {
+    data: MatterType[];
+    pagination: {
       total: number;
-      next_page: number | null;
-      previous_page: number | null;
-      total_pages: number;
-    };
-    connectionError?: boolean;
+      page: number;
+      perPage: number;
+      totalPages: number;
+    } | null;
   };
 }
 
 const MattersTable = ({ matters }: MattersTableProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedMatter, setSelectedMatter] = useState<MatterSchemaType | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
+  const [viewMatter, setViewMatter] = useState<MatterType | null>(null);
+  const [viewDrawerOpen, setViewDrawerOpen] = useState(false);
+  const [editMatter, setEditMatter] = useState<MatterType | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteMatter, setDeleteMatter] = useState<MatterType | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const handleView = (matter: MatterSchemaType) => {
-    setSelectedMatter(matter);
-    setSheetOpen(true);
+  // Get active paralegals for filter
+  const paralegalOptions = workers
+    .filter((w) => w.isActive && w.teamType === "inHouse")
+    .map((w) => ({
+      value: w.name,
+      label: w.name,
+      description: w.title,
+    }));
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const handleView = (matter: MatterType) => {
+    setViewMatter(matter);
+    setViewDrawerOpen(true);
+  };
+
+  const handleEdit = (matter: MatterType) => {
+    setEditMatter(matter);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteClick = (matter: MatterType) => {
+    setDeleteMatter(matter);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteMatter) return;
+
+    try {
+      await client.customMatters.delete({ id: deleteMatter.id });
+      toast.success("Matter deleted successfully");
+      setDeleteDialogOpen(false);
+      router.refresh();
+    } catch (error) {
+      console.error("Error deleting matter:", error);
+      toast.error("Failed to delete matter");
+    }
+  };
+
+  const handleSuccess = () => {
+    router.refresh();
   };
 
   const updateFilters = (key: string, value: string) => {
@@ -68,50 +150,91 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     router.push(`?${params.toString()}`);
   };
 
-  const columns: ColumnDef<MatterSchemaType>[] = [
+  // Debounced search handler
+  const debouncedSearch = useDebounceCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("search", value);
+    } else {
+      params.delete("search");
+    }
+    params.delete("page");
+    router.push(`?${params.toString()}`);
+  }, 500);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    debouncedSearch(value);
+  };
+
+  const columns: ColumnDef<MatterType>[] = [
     {
       header: "Matter Title",
       accessorKey: "title",
       cell: ({ row }) => (
-        <div>
-          <p className="font-medium">{row.original.title}</p>
-          {row.original.number && (
-            <p className="text-sm text-muted-foreground">{row.original.number}</p>
-          )}
+        <div className="max-w-[300px]">
+          <p className="font-medium truncate">{row.original.title}</p>
         </div>
       ),
     },
     {
-      header: "Client Name",
-      accessorKey: "client",
-      cell: ({ row }) => <p className="text-sm">{getClientName(row.original)}</p>,
+      header: "Matter Type",
+      accessorKey: "matterType",
+      cell: ({ row }) => (
+        <p className="text-sm">{row.original.matterType || "-"}</p>
+      ),
     },
     {
-      header: "Workflow Stage",
-      accessorKey: "status",
+      header: "Client",
+      accessorKey: "clientName",
+      cell: ({ row }) => (
+        <p className="text-sm">{row.original.clientName || "Unknown"}</p>
+      ),
+    },
+    {
+      header: "Paralegal",
+      accessorKey: "paralegalAssigned",
+      cell: ({ row }) => (
+        <p className="text-sm">{row.original.paralegalAssigned || "-"}</p>
+      ),
+    },
+    {
+      header: "Deadline",
+      accessorKey: "estimatedDeadline",
+      cell: ({ row }) => (
+        <p className="text-sm text-muted-foreground">
+          {row.original.estimatedDeadline
+            ? new Date(row.original.estimatedDeadline).toLocaleDateString()
+            : "-"}
+        </p>
+      ),
+    },
+    {
+      header: "Billing Status",
+      accessorKey: "billingStatus",
       cell: ({ row }) => {
-        const statusName = getStatusName(row.original).toLowerCase();
-        let variant: "default" | "secondary" | "destructive" | "outline" = "default";
-        
-        if (statusName.includes("intake") || statusName.includes("document")) {
-          variant = "secondary";
-        } else if (statusName.includes("rfe") || statusName.includes("denied")) {
-          variant = "destructive";
-        } else if (statusName.includes("filed") || statusName.includes("approved")) {
-          variant = "default";
-        } else if (statusName.includes("review") || statusName.includes("drafting")) {
-          variant = "outline";
-        }
-        
-        return <Badge variant={variant}>{getStatusName(row.original)}</Badge>;
+        const status = row.original.billingStatus;
+        if (!status) return <span className="text-sm text-muted-foreground">Not Set</span>;
+        return (
+          <Badge variant={getBillingStatusColor(status) as "default" | "secondary" | "destructive" | "outline"}>
+            {formatBillingStatus(status)}
+          </Badge>
+        );
       },
     },
     {
+      header: "Workflow Stage",
+      accessorKey: "workflowStage",
+      cell: ({ row }) => (
+        <Badge variant="outline">{row.original.workflowStage || "No Stage"}</Badge>
+      ),
+    },
+    {
       header: "Last Updated",
-      accessorKey: "updated_at",
+      accessorKey: "updatedAt",
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
-          {formatDistanceToNow(new Date(row.original.updated_at), { addSuffix: true })}
+          {row.original.updatedAt ? formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true }) : "-"}
         </p>
       ),
     },
@@ -130,10 +253,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              // TODO: Implement edit
-              console.log("Edit matter:", row.original.id);
-            }}
+            onClick={() => handleEdit(row.original)}
             title="Edit"
           >
             <Pencil className="size-4" />
@@ -141,10 +261,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              // TODO: Implement delete
-              console.log("Delete matter:", row.original.id);
-            }}
+            onClick={() => handleDeleteClick(row.original)}
             title="Delete"
             className="text-destructive hover:text-destructive"
           >
@@ -176,29 +293,69 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           </Button>
         </div>
 
-        {/* Show connection card if there's a connection error */}
-        {matters.connectionError ? (
-          <DocketwiseConnectionCard 
-            description="Connect your Docketwise account to view and manage matters."
-          />
-        ) : (
-          /* Card with search and table */
-          <div className="rounded-xl border bg-card pb-6">
+        {/* Card with filters and table */}
+        <div className="rounded-xl border bg-card pb-6">
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-4 p-6">
-            <Select 
-              value={searchParams.get("archived") || "all"} 
-              onValueChange={(value) => updateFilters("archived", value)}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Matters</SelectItem>
-                <SelectItem value="false">Active</SelectItem>
-                <SelectItem value="true">Archived</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center justify-between gap-3 p-6">
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              {/* Search Input */}
+              <InputGroup className="w-[280px]">
+                <InputGroupAddon>
+                  <LuSearch />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  placeholder="Search matters..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                />
+              </InputGroup>
+
+              {/* Filters */}
+              {mounted && (
+                <>
+                  <Select
+                    value={searchParams.get("billingStatus") || "all"}
+                    onValueChange={(value) => updateFilters("billingStatus", value)}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Billing Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Billing</SelectItem>
+                      <SelectItem value="PAID">Paid</SelectItem>
+                      <SelectItem value="DEPOSIT_PAID">Deposit Paid</SelectItem>
+                      <SelectItem value="PAYMENT_PLAN">Payment Plan</SelectItem>
+                      <SelectItem value="DUE">Due</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <AdvancedSelect
+                    options={paralegalOptions}
+                    value={searchParams.get("paralegalAssigned") || ""}
+                    onChange={(value: string) => updateFilters("paralegalAssigned", value)}
+                    placeholder="Filter by Paralegal"
+                    className="w-[180px]"
+                    isClearable
+                  />
+
+                  <Select
+                    value={searchParams.get("hasDeadline") || "all"}
+                    onValueChange={(value) => updateFilters("hasDeadline", value)}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Deadline" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Matters</SelectItem>
+                      <SelectItem value="true">With Deadline</SelectItem>
+                      <SelectItem value="false">No Deadline</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+            </div>
+            <LastSyncIndicator />
           </div>
 
           {/* Table */}
@@ -209,18 +366,275 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           />
 
           {/* Pagination */}
-          {matters.pagination && (
-            <DocketwisePagination pagination={matters.pagination} />
+          {matters.pagination && matters.pagination.totalPages > 1 && (
+            <div className="flex items-center justify-end gap-3 px-6 pt-4">
+              <span className="text-sm text-muted-foreground">
+                Page {matters.pagination.page} of {matters.pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("page", String(matters.pagination!.page - 1));
+                  router.push(`?${params.toString()}`);
+                }}
+                disabled={matters.pagination.page <= 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("page", String(matters.pagination!.page + 1));
+                  router.push(`?${params.toString()}`);
+                }}
+                disabled={matters.pagination.page >= matters.pagination.totalPages}
+              >
+                Next
+              </Button>
+            </div>
           )}
         </div>
-        )}
       </div>
 
-      <MatterDetailSheet
-        matter={selectedMatter}
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
+      {/* View Drawer */}
+      <Drawer open={viewDrawerOpen} onOpenChange={setViewDrawerOpen} direction="right">
+        <DrawerContent side="right" className="w-full max-w-2xl overflow-x-hidden">
+          {viewMatter && (
+            <>
+              <DrawerHeader>
+                <div className="flex flex-col gap-1">
+                  <DrawerTitle className="text-xl font-medium">{viewMatter.title}</DrawerTitle>
+                  <DrawerDescription className="flex items-center gap-2">
+                    {viewMatter.matterType && <span>{viewMatter.matterType}</span>}
+                    {viewMatter.matterType && viewMatter.clientName && <span>•</span>}
+                    {viewMatter.clientName && <span>{viewMatter.clientName}</span>}
+                  </DrawerDescription>
+                </div>
+                <DrawerClose asChild>
+                  <Button variant="ghost" size="icon-lg">
+                    <X />
+                  </Button>
+                </DrawerClose>
+              </DrawerHeader>
+
+              <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden p-6">
+                {/* Status Badges */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {viewMatter.workflowStage && (
+                    <Badge variant="outline">{viewMatter.workflowStage}</Badge>
+                  )}
+                  {viewMatter.billingStatus && (
+                    <Badge variant={getBillingStatusColor(viewMatter.billingStatus) as "default" | "secondary" | "destructive" | "outline"}>
+                      {formatBillingStatus(viewMatter.billingStatus)}
+                    </Badge>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Matter Information */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Matter Information</h4>
+                  
+                  <div className="grid gap-3">
+                    {viewMatter.matterType && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Matter Type</p>
+                          <p className="text-sm font-medium">{viewMatter.matterType}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.clientName && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <User className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Client Name</p>
+                          <p className="text-sm font-medium">{viewMatter.clientName}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.workflowStage && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Workflow Stage</p>
+                          <p className="text-sm font-medium">{viewMatter.workflowStage}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.billingStatus && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Billing Status</p>
+                          <Badge variant={getBillingStatusColor(viewMatter.billingStatus) as "default" | "secondary" | "destructive" | "outline"}>
+                            {formatBillingStatus(viewMatter.billingStatus)}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.paralegalAssigned && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <User className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Paralegal Assigned</p>
+                          <p className="text-sm font-medium">{viewMatter.paralegalAssigned}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Deadlines & Dates */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Deadlines & Dates</h4>
+                  
+                  <div className="grid gap-3">
+                    {viewMatter.assignedDate && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <Calendar className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned Date</p>
+                          <p className="text-sm font-medium">{format(new Date(viewMatter.assignedDate), "MMM d, yyyy")}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.estimatedDeadline && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <Calendar className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Estimated Deadline</p>
+                          <p className="text-sm font-medium">{format(new Date(viewMatter.estimatedDeadline), "MMM d, yyyy")}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {viewMatter.actualDeadline && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <Calendar className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Actual Deadline</p>
+                          <p className="text-sm font-medium">{format(new Date(viewMatter.actualDeadline), "MMM d, yyyy")}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {viewMatter.customNotes && (
+                  <>
+                    <Separator />
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Custom Notes</h4>
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm break-words whitespace-pre-wrap">{viewMatter.customNotes}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <Separator />
+
+                {/* Timeline */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Timeline</h4>
+                  
+                  <div className="grid gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Created</span>
+                      <span className="text-sm">{format(new Date(viewMatter.createdAt), "MMM d, yyyy")}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Last Updated</span>
+                      <span className="text-sm">{format(new Date(viewMatter.updatedAt), "MMM d, yyyy h:mm a")}</span>
+                    </div>
+                    {viewMatter.lastSyncedAt && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Last Synced</span>
+                        <span className="text-sm">{format(new Date(viewMatter.lastSyncedAt), "MMM d, yyyy h:mm a")}</span>
+                      </div>
+                    )}
+                    {viewMatter.isEdited && viewMatter.editedAt && viewMatter.editedByUser && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Last Edited By</span>
+                        <div className="text-right">
+                          <p className="text-sm">{viewMatter.editedByUser.name}</p>
+                          <p className="text-xs text-muted-foreground">{viewMatter.editedByUser.email}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </DrawerContent>
+      </Drawer>
+
+      {/* Edit Drawer */}
+      <EditMatterDrawer
+        matter={editMatter}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onSuccess={handleSuccess}
       />
+
+      {/* Delete AlertDialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Matter</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{deleteMatter?.title}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };

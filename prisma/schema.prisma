@@ -8,16 +8,21 @@ datasource db {
 }
 
 model users {
-  id            String     @id @default(ulid())
-  name          String
-  email         String     @unique
-  emailVerified Boolean    @default(false)
-  image         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @default(now()) @updatedAt
-  sessions      sessions[]
-  accounts      accounts[]
-  todos         todos[]
+  id                  String                @id @default(ulid())
+  name                String
+  email               String                @unique
+  emailVerified       Boolean               @default(false)
+  image               String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @default(now()) @updatedAt
+  sessions            sessions[]
+  accounts            accounts[]
+  todos               todos[]
+  syncSettings        syncSettings?
+  matters             matters[]
+  matterTypeDeadlines matterTypeDeadlines[]
+  paralegalMetrics    paralegalMetrics[]
+  editedMatters       matters[]             @relation("editedMatters")
 }
 
 model sessions {
@@ -79,4 +84,122 @@ model todos {
   user        users      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+}
+
+model syncSettings {
+  id              String    @id @default(ulid())
+  userId          String    @unique
+  user            users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pollingInterval Int       @default(30)
+  lastSyncAt      DateTime?
+  isEnabled       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+enum BillingStatus {
+  PAID
+  DEPOSIT_PAID
+  PAYMENT_PLAN
+  DUE
+}
+
+model matters {
+  id String @id @default(ulid())
+
+  // Docketwise Data (synced)
+  docketwiseId        Int       @unique
+  docketwiseUpdatedAt DateTime?
+  title               String
+  matterType          String?
+  matterTypeId        Int?
+  workflowStage       String?
+  workflowStageId     Int?
+  clientName          String?
+  clientId            Int?
+  status              String?
+  statusId            Int?
+  openedAt            DateTime?
+  closedAt            DateTime?
+
+  // Custom Fields (admin editable)
+  assignedDate      DateTime?
+  estimatedDeadline DateTime?
+  actualDeadline    DateTime?
+  billingStatus     BillingStatus?
+  paralegalAssigned String?
+  customNotes       String?
+
+  // Metadata
+  lastSyncedAt DateTime @default(now())
+  isStale      Boolean  @default(false)
+
+  // Edit Protection & Audit Trail
+  isEdited     Boolean   @default(false)
+  editedBy     String?
+  editedByUser users?    @relation("editedMatters", fields: [editedBy], references: [id], onDelete: SetNull)
+  editedAt     DateTime?
+
+  userId    String
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deadlineNotifications deadlineNotifications[]
+
+  @@index([docketwiseId])
+  @@index([userId])
+  @@index([assignedDate])
+  @@index([estimatedDeadline])
+  @@index([isStale])
+}
+
+model matterTypeDeadlines {
+  id           String   @id @default(ulid())
+  matterType   String
+  matterTypeId Int?
+  deadlineDays Int
+  description  String?
+  userId       String
+  user         users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, matterType])
+  @@index([userId])
+}
+
+model deadlineNotifications {
+  id               String   @id @default(ulid())
+  matterId         String
+  matter           matters  @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  sentAt           DateTime @default(now())
+  recipientEmail   String
+  notificationType String
+
+  @@index([matterId])
+  @@index([sentAt])
+}
+
+model paralegalMetrics {
+  id            String   @id @default(ulid())
+  paralegalName String
+  periodStart   DateTime
+  periodEnd     DateTime
+
+  totalMatters        Int    @default(0)
+  completedMatters    Int    @default(0)
+  staleMatters        Int    @default(0)
+  pastDeadlineMatters Int    @default(0)
+  avgDaysToFile       Float?
+  onTimeFilingRate    Float?
+
+  calculatedAt DateTime @default(now())
+  userId       String
+  user         users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([paralegalName, periodStart])
+  @@index([userId])
 }

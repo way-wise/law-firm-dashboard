@@ -1,5 +1,6 @@
 "use client";
 
+import { SyncSettingsModal } from "@/components/sync-settings-modal";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/orpc/client";
-import { CheckCircle2, ExternalLink, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Loader2, Settings, XCircle } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
@@ -18,6 +19,7 @@ export function IntegrationsTab() {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showSyncSettings, setShowSyncSettings] = useState(false);
 
   useEffect(() => {
     checkDocketwiseConnection();
@@ -74,19 +76,30 @@ export function IntegrationsTab() {
               data
             </CardDescription>
           </div>
-          {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          ) : isConnected ? (
-            <div className="flex items-center gap-2 text-sm font-medium text-green-600">
-              <CheckCircle2 className="h-5 w-5" />
-              Connected
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <XCircle className="h-5 w-5" />
-              Not Connected
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {isLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            ) : isConnected ? (
+              <div className="flex items-center gap-2 text-sm font-medium text-green-600">
+                <CheckCircle2 className="h-5 w-5" />
+                Connected
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <XCircle className="h-5 w-5" />
+                Not Connected
+              </div>
+            )}
+            {isConnected && (
+              <Button
+                variant="secondary"
+                size="icon-lg"
+                onClick={() => setShowSyncSettings(true)}
+              >
+                <Settings />
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg border bg-muted/50 p-4">
@@ -128,7 +141,7 @@ export function IntegrationsTab() {
                     rel="noopener noreferrer"
                   >
                     Open Docketwise
-                    <ExternalLink className="ml-2 h-4 w-4" />
+                    <ExternalLink />
                   </a>
                 </Button>
               </>
@@ -150,6 +163,11 @@ export function IntegrationsTab() {
           </div>
         </CardContent>
       </Card>
+
+      <SyncSettingsModal
+        open={showSyncSettings}
+        onOpenChange={setShowSyncSettings}
+      />
     </div>
   );
 }

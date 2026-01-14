@@ -1,15 +1,20 @@
 import { client } from "@/lib/orpc/client";
 import MattersTable from "./matters-table";
 
+export const revalidate = 60; // Revalidate every 60 seconds
+
 const MattersPage = async ({
   searchParams,
 }: PageProps<"/dashboard/matters">) => {
-  const { page, archived, client_id } = await searchParams;
+  const { page, search, billingStatus, paralegalAssigned, isStale, hasDeadline } = await searchParams;
 
-  const matters = await client.matters.get({
+  const matters = await client.customMatters.get({
     page: page ? Number(page) : undefined,
-    archived: archived === "true" ? true : archived === "false" ? false : undefined,
-    client_id: client_id ? Number(client_id) : undefined,
+    search: typeof search === "string" ? search : undefined,
+    billingStatus: billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE" | undefined,
+    paralegalAssigned: typeof paralegalAssigned === "string" ? paralegalAssigned : undefined,
+    isStale: isStale === "true" ? true : isStale === "false" ? false : undefined,
+    hasDeadline: hasDeadline === "true" ? true : hasDeadline === "false" ? false : undefined,
   });
 
   return <MattersTable matters={matters} />;
