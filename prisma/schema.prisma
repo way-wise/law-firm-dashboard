@@ -8,21 +8,22 @@ datasource db {
 }
 
 model users {
-  id                  String                @id @default(ulid())
-  name                String
-  email               String                @unique
-  emailVerified       Boolean               @default(false)
-  image               String?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @default(now()) @updatedAt
-  sessions            sessions[]
-  accounts            accounts[]
-  todos               todos[]
-  syncSettings        syncSettings?
-  matters             matters[]
-  matterTypeDeadlines matterTypeDeadlines[]
-  paralegalMetrics    paralegalMetrics[]
-  editedMatters       matters[]             @relation("editedMatters")
+  id                    String                  @id @default(ulid())
+  name                  String
+  email                 String                  @unique
+  emailVerified         Boolean                 @default(false)
+  image                 String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @default(now()) @updatedAt
+  sessions              sessions[]
+  accounts              accounts[]
+  todos                 todos[]
+  syncSettings          syncSettings?
+  matters               matters[]
+  matterTypeDeadlines   matterTypeDeadlines[]
+  paralegalMetrics      paralegalMetrics[]
+  editedMatters         matters[]               @relation("editedMatters")
+  deadlineNotifications deadlineNotifications[]
 }
 
 model sessions {
@@ -123,6 +124,7 @@ model matters {
   statusId            Int?
   openedAt            DateTime?
   closedAt            DateTime?
+  docketwiseUserIds   String? // JSON array of assigned user IDs from Docketwise
 
   // Custom Fields (admin editable)
   assignedDate      DateTime?
@@ -172,14 +174,22 @@ model matterTypeDeadlines {
 }
 
 model deadlineNotifications {
-  id               String   @id @default(ulid())
-  matterId         String
-  matter           matters  @relation(fields: [matterId], references: [id], onDelete: Cascade)
-  sentAt           DateTime @default(now())
-  recipientEmail   String
-  notificationType String
+  id                 String    @id @default(ulid())
+  matterId           String
+  matter             matters   @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  userId             String
+  user               users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sentAt             DateTime  @default(now())
+  recipientEmail     String
+  notificationType   String // "email" | "in-app"
+  daysBeforeDeadline Int // 7, 3, 1, 0 (on deadline day)
+  subject            String
+  message            String
+  isRead             Boolean   @default(false)
+  readAt             DateTime?
 
   @@index([matterId])
+  @@index([userId, isRead])
   @@index([sentAt])
 }
 

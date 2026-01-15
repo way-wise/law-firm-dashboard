@@ -39,6 +39,7 @@ import {
   updateTodo,
   updateTodoStatus,
 } from "./todos";
+import { getNotifications, markNotificationRead, markAllNotificationsRead, subscribeToNotifications } from "./notifications";
 
 export const router = {
   todos: {
@@ -83,5 +84,11 @@ export const router = {
     getSettings: getSyncSettings,
     updateSettings: updateSyncSettings,
     trigger: triggerManualSync,
+  },
+  notifications: {
+    list: getNotifications,
+    markRead: markNotificationRead,
+    markAllRead: markAllNotificationsRead,
+    subscribe: subscribeToNotifications,
   },
 };

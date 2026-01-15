@@ -1,5 +1,6 @@
 import ProfileDropdown from "@/components/ui/profile-dropdown";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
+import { NotificationBell } from "@/components/notification-bell";
 import NotificationToggle from "./notification-toggle";
 import SidebarToggle from "./sidebar-toggle";
 
@@ -36,6 +37,7 @@ const Header = async () => {
       </div>
       <div className="flex items-center gap-2">
         <ThemeSwitcher />
+        <NotificationBell />
         <NotificationToggle />
         <ProfileDropdown session={session} />
       </div>
