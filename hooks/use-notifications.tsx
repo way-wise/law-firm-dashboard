@@ -1,44 +1,42 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { client } from "@/lib/orpc/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { orpc } from "@/lib/orpc/tanstack-query";
 
 export function useNotifications() {
   const queryClient = useQueryClient();
   const [isConnected, setIsConnected] = useState(false);
 
-  // Fetch notifications
-  const { data, isLoading } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: async () => {
-      const result = await client.notifications.list({
-        limit: 50,
-      });
-      return result;
-    },
-    refetchInterval: 30000, // Refetch every 30 seconds as fallback
-  });
+  // Fetch notifications using oRPC query options
+  const { data, isLoading } = useQuery(
+    orpc.notifications.list.queryOptions({
+      input: { limit: 50 },
+      refetchInterval: 30000, // Refetch every 30 seconds as fallback
+    })
+  );
 
-  // Mark as read mutation
-  const markAsReadMutation = useMutation({
-    mutationFn: async (notificationId: string) => {
-      await client.notifications.markRead({ id: notificationId });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
+  // Mark as read mutation using oRPC mutation options
+  const markAsReadMutation = useMutation(
+    orpc.notifications.markRead.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
+        });
+      },
+    })
+  );
 
-  // Mark all as read mutation
-  const markAllAsReadMutation = useMutation({
-    mutationFn: async () => {
-      await client.notifications.markAllRead();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
+  // Mark all as read mutation using oRPC mutation options
+  const markAllAsReadMutation = useMutation(
+    orpc.notifications.markAllRead.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
+        });
+      },
+    })
+  );
 
   // SSE subscription for real-time updates
   useEffect(() => {
@@ -46,9 +44,8 @@ export function useNotifications() {
 
     const connectSSE = async () => {
       try {
-        // Get the SSE endpoint URL
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-        const sseUrl = `${baseUrl}/api/orpc/notifications.subscribe`;
+        const sseUrl = `${baseUrl}/api/notifications/subscribe`;
 
         eventSource = new EventSource(sseUrl, {
           withCredentials: true,
@@ -62,12 +59,11 @@ export function useNotifications() {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            
+
             if (data.type === "created") {
-              // New notification received - refetch
-              queryClient.invalidateQueries({ queryKey: ["notifications"] });
-              
-              // Optional: Show toast notification
+              queryClient.invalidateQueries({
+                queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
+              });
               console.log("[SSE] New notification:", data.notification);
             }
           } catch (error) {
@@ -79,8 +75,7 @@ export function useNotifications() {
           console.error("[SSE] Connection error:", error);
           setIsConnected(false);
           eventSource?.close();
-          
-          // Reconnect after 5 seconds
+
           setTimeout(connectSSE, 5000);
         };
       } catch (error) {
@@ -103,7 +98,7 @@ export function useNotifications() {
     unreadCount: data?.unreadCount || 0,
     isLoading,
     isConnected,
-    markAsRead: (id: string) => markAsReadMutation.mutate(id),
-    markAllAsRead: () => markAllAsReadMutation.mutate(),
+    markAsRead: (id: string) => markAsReadMutation.mutate({ id }),
+    markAllAsRead: () => markAllAsReadMutation.mutate({}),
   };
 }

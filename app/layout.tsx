@@ -6,6 +6,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ProgressProvider } from "@/providers/progress-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
+import { TanstackQueryProvider } from "@/providers/tanstack-query-provider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -26,10 +27,12 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
         <ThemeProvider attribute="class" enableSystem disableTransitionOnChange>
-          <ProgressProvider>
-            {children}
-            <Toaster />
-          </ProgressProvider>
+          <TanstackQueryProvider>
+            <ProgressProvider>
+              {children}
+              <Toaster />
+            </ProgressProvider>
+          </TanstackQueryProvider>
         </ThemeProvider>
       </body>
     </html>

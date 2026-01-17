@@ -11,12 +11,18 @@ const handler = new RPCHandler(router, {
 });
 
 async function handleRequest(request: Request) {
+  console.log(`[RPC] ${request.method} ${request.url}`);
+
   const { response } = await handler.handle(request, {
     prefix: "/rpc",
     context: {
       headers: request.headers, // Pass headers for auth middleware
     },
   });
+
+  if (!response) {
+    console.log(`[RPC] No response found for ${request.method} ${request.url}`);
+  }
 
   return response ?? new Response("Not found", { status: 404 });
 }

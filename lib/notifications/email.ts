@@ -1,7 +1,8 @@
 import "server-only";
+import nodemailer from "nodemailer";
 
 // Email service for sending deadline notifications
-// Using Resend for email delivery
+// Using Nodemailer with Gmail SMTP
 
 interface DeadlineEmailData {
   to: string;
@@ -15,17 +16,33 @@ interface DeadlineEmailData {
   matterUrl: string;
 }
 
+// Create reusable transporter
+function createTransporter() {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+
+  if (!host || !user || !pass) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // true for 465, false for other ports
+    auth: { user, pass },
+  });
+}
+
 export async function sendDeadlineReminderEmail(data: DeadlineEmailData): Promise<boolean> {
-  // Check if Resend is configured
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (!resendApiKey) {
-    console.warn("[EMAIL] Resend API key not configured, skipping email send");
+  const transporter = createTransporter();
+  if (!transporter) {
+    console.warn("[EMAIL] SMTP not configured, skipping email send");
     return false;
   }
 
   try {
-    const { Resend } = await import("resend");
-    const resend = new Resend(resendApiKey);
 
     const urgencyLevel = data.daysRemaining <= 1 ? "URGENT" : data.daysRemaining <= 3 ? "Important" : "Reminder";
     const subject = `${urgencyLevel}: Deadline in ${data.daysRemaining} day${data.daysRemaining !== 1 ? "s" : ""} - ${data.matterTitle}`;
@@ -136,15 +153,15 @@ View Matter Details: ${data.matterUrl}
 Law Firm Dashboard - Automated Deadline Notification
     `.trim();
 
-    const result = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || "notifications@lawfirm.com",
+    const result = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
       to: data.to,
       subject,
       html: htmlContent,
       text: textContent,
     });
 
-    console.log(`[EMAIL] Sent deadline reminder to ${data.to} for matter: ${data.matterTitle}`, result);
+    console.log(`[EMAIL] Sent deadline reminder to ${data.to} for matter: ${data.matterTitle}`, result.messageId);
     return true;
   } catch (error) {
     console.error("[EMAIL] Failed to send deadline reminder:", error);

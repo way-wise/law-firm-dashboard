@@ -213,3 +213,20 @@ model paralegalMetrics {
   @@index([paralegalName, periodStart])
   @@index([userId])
 }
+
+// Docketwise users synced from the API
+model docketwiseUsers {
+  id              String   @id @default(ulid())
+  docketwiseId    Int      @unique
+  email           String
+  firstName       String?
+  lastName        String?
+  fullName        String? // Computed: firstName + lastName
+  isActive        Boolean  @default(true)
+  lastSyncedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([docketwiseId])
+  @@index([isActive])
+}

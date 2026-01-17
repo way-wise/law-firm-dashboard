@@ -4,7 +4,7 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { formatDistanceToNow } from "date-fns";
-import { CheckCheck, Clock } from "lucide-react";
+import { CheckCheck, Clock, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function NotificationPanel() {
@@ -27,7 +27,7 @@ export function NotificationPanel() {
   if (notifications.length === 0) {
     return (
       <div className="p-8 text-center">
-        <Bell className="mx-auto h-12 w-12 text-muted-foreground/50" />
+        <Bell className="mx-auto size-12 text-muted-foreground/50" />
         <p className="mt-2 text-sm text-muted-foreground">
           No notifications yet
         </p>
@@ -54,7 +54,7 @@ export function NotificationPanel() {
             onClick={markAllAsRead}
             className="text-xs"
           >
-            <CheckCheck className="h-3 w-3 mr-1" />
+            <CheckCheck className="size-3 mr-1" />
             Mark all read
           </Button>
         )}
@@ -82,35 +82,41 @@ export function NotificationPanel() {
               >
                 {/* Unread indicator */}
                 {!notification.isRead && (
-                  <div className="absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-500 rounded-full" />
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 size-2 bg-blue-500 rounded-full" />
                 )}
 
                 <div className="ml-3">
                   {/* Subject */}
-                  <p className="text-sm font-medium leading-tight">
-                    {notification.subject}
-                  </p>
+                  {notification.subject && (
+                    <p className="text-sm font-medium leading-tight">
+                      {notification.subject}
+                    </p>
+                  )}
 
                   {/* Message */}
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                    {notification.message}
-                  </p>
+                  {notification.message && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      {notification.message}
+                    </p>
+                  )}
 
                   {/* Deadline info */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {notification.daysBeforeDeadline === 0
-                        ? "Today"
-                        : `${notification.daysBeforeDeadline} day${notification.daysBeforeDeadline !== 1 ? "s" : ""} remaining`}
-                    </span>
-                    <span className="text-xs text-muted-foreground">•</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(notification.sentAt), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                  </div>
+                  {notification.daysBeforeDeadline !== undefined && notification.sentAt && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <Clock className="size-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {notification.daysBeforeDeadline === 0
+                          ? "Today"
+                          : `${notification.daysBeforeDeadline} day${notification.daysBeforeDeadline !== 1 ? "s" : ""} remaining`}
+                      </span>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(notification.sentAt), {
+                          addSuffix: true,
+                        })}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
               <Separator />
@@ -126,23 +132,5 @@ export function NotificationPanel() {
         </Button>
       </div>
     </div>
-  );
-}
-
-function Bell({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-    </svg>
   );
 }

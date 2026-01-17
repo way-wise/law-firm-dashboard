@@ -97,7 +97,7 @@ export const getContacts = authorized
 export const getContactById = authorized
   .route({
     method: "GET",
-    path: "/contacts/:id",
+    path: "/contacts/{id}",
     summary: "Get a single contact by ID",
     tags: ["Contacts"],
   })
@@ -192,7 +192,7 @@ export const createContact = authorized
 export const updateContact = authorized
   .route({
     method: "PATCH",
-    path: "/contacts/:id",
+    path: "/contacts/{id}",
     summary: "Update a contact",
     tags: ["Contacts"],
   })
@@ -248,7 +248,7 @@ export const updateContact = authorized
 export const deleteContact = authorized
   .route({
     method: "DELETE",
-    path: "/contacts/:id",
+    path: "/contacts/{id}",
     summary: "Delete a contact",
     tags: ["Contacts"],
   })

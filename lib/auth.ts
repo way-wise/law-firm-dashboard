@@ -47,14 +47,14 @@ export const auth = betterAuth({
           scopes: ["public", "write"],
           pkce: false,
           accessType: "offline",
-          getUserInfo: async (tokens) => {
-            const tokenId =
-              tokens.accessToken?.slice(0, 16).replace(/[^a-zA-Z0-9]/g, "") ??
-              "unknown";
+          getUserInfo: async () => {
+            // Docketwise doesn't have a /me endpoint, so we create a consistent
+            // placeholder user for the firm's Docketwise connection.
+            // This ensures only one Docketwise account is created per firm.
             return {
-              id: `docketwise_${tokenId}`,
-              email: `docketwise_${tokenId}@linked.local`,
-              name: "Docketwise Account",
+              id: "docketwise_firm_connection",
+              email: "docketwise@firm.local",
+              name: "Docketwise Connection",
               emailVerified: true,
             };
           },

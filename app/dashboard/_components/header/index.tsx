@@ -38,7 +38,6 @@ const Header = async () => {
       <div className="flex items-center gap-2">
         <ThemeSwitcher />
         <NotificationBell />
-        <NotificationToggle />
         <ProfileDropdown session={session} />
       </div>
     </header>

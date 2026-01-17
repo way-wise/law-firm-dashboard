@@ -1,3 +1,14 @@
+/**
+ * Worker/Paralegal data
+ * 
+ * NOTE: This file contains fallback static data for when Docketwise users
+ * haven't been synced yet. In production, use the getDocketwiseUsers() 
+ * function from @/lib/sync/docketwise-users-sync.ts to get real users.
+ * 
+ * After running prisma migrate and syncing users, the docketwiseUsers table
+ * will contain the actual team members from Docketwise.
+ */
+
 export interface Worker {
   id: string;
   name: string;
@@ -14,6 +25,8 @@ export interface Worker {
   createdAt: Date;
 }
 
+// Fallback static workers - used when Docketwise users haven't been synced
+// TODO: Remove this after implementing full Docketwise user sync
 export const workers: Worker[] = [
   {
     id: "w1",
