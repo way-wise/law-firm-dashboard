@@ -1,11 +1,10 @@
-import { getDashboardStats, getMatters, getTeamStats } from "@/data/matters";
+import { getDashboardStats, getMatters } from "@/data/matters";
 import { MatterFiltersList } from "./_components/matter-filters-list";
 import { StatsCards } from "./_components/stats-cards";
-import { TeamSection } from "./_components/team-section";
+import { ParalegalKPI } from "./_components/paralegal-kpi";
 
 const DashboardOverviewPage = () => {
   const stats = getDashboardStats();
-  const teamStats = getTeamStats();
   const mattersData = getMatters(1, 10);
 
   return (
@@ -19,10 +18,10 @@ const DashboardOverviewPage = () => {
       {/* Stats Cards */}
       <StatsCards stats={stats} />
 
-      {/* Team Section */}
-      <TeamSection teamStats={teamStats} />
+      {/* Paralegal KPI Section */}
+      <ParalegalKPI />
 
-      {/* Matters with Filters */}
+      {/* Recent Matters */}
       <MatterFiltersList matters={mattersData.data} meta={mattersData.meta} />
     </div>
   );

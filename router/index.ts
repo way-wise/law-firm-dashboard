@@ -2,10 +2,12 @@ import {
   createContact,
   deleteContact,
   getContactById,
+  getContactDocuments,
   getContacts,
   updateContact,
 } from "./contacts";
 import {
+  createCustomMatter,
   deleteCustomMatter,
   getCustomMatterById,
   getCustomMatters,
@@ -40,6 +42,19 @@ import {
   updateTodoStatus,
 } from "./todos";
 import { getNotifications, markNotificationRead, markAllNotificationsRead, subscribeToNotifications } from "./notifications";
+import {
+  getMatterTypes,
+  syncMatterTypes,
+  updateMatterType,
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+} from "./matterTypes";
+import {
+  getNotificationSettings,
+  updateNotificationSettings,
+} from "./notificationSettings";
 
 export const router = {
   todos: {
@@ -55,6 +70,7 @@ export const router = {
     create: createContact,
     update: updateContact,
     delete: deleteContact,
+    getDocuments: getContactDocuments,
   },
   matters: {
     get: getMatters,
@@ -67,6 +83,7 @@ export const router = {
   customMatters: {
     get: getCustomMatters,
     getById: getCustomMatterById,
+    create: createCustomMatter,
     update: updateCustomMatter,
     delete: deleteCustomMatter,
   },
@@ -90,5 +107,20 @@ export const router = {
     markRead: markNotificationRead,
     markAllRead: markAllNotificationsRead,
     subscribe: subscribeToNotifications,
+  },
+  matterTypes: {
+    get: getMatterTypes,
+    sync: syncMatterTypes,
+    update: updateMatterType,
+  },
+  categories: {
+    get: getCategories,
+    create: createCategory,
+    update: updateCategory,
+    delete: deleteCategory,
+  },
+  notificationSettings: {
+    get: getNotificationSettings,
+    update: updateNotificationSettings,
   },
 };

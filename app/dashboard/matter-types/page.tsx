@@ -1,17 +1,11 @@
-import { matterTypes } from "@/data/matter-types";
+import { client } from "@/lib/orpc/client";
 import MatterTypesTable from "./matter-types-table";
 
-const MatterTypesPage = () => {
-  const paginatedMatterTypes = {
-    data: matterTypes,
-    meta: {
-      page: 1,
-      limit: 10,
-      total: matterTypes.length,
-    },
-  };
+const MatterTypesPage = async () => {
+  const matterTypes = await client.matterTypes.get();
+  const categories = await client.categories.get();
 
-  return <MatterTypesTable matterTypes={paginatedMatterTypes} />;
+  return <MatterTypesTable matterTypes={matterTypes} categories={categories} />;
 };
 
 export default MatterTypesPage;

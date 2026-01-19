@@ -1,13 +1,12 @@
 import {
   Briefcase,
-  CreditCard,
-  FileText,
   FolderKanban,
   LayoutGrid,
-  Receipt,
   Settings,
   Users,
   UserRound,
+  Shield,
+  Tags,
 } from "lucide-react";
 
 export interface SubMenuItem {
@@ -52,30 +51,24 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 5,
-    title: "Documents",
-    icon: <FileText className="icon" />,
-    url: "/dashboard/documents",
+    title: "Users",
+    icon: <Shield className="icon" />,
+    url: "/dashboard/users",
   },
   {
     id: 6,
-    title: "Charges",
-    icon: <CreditCard className="icon" />,
-    url: "/dashboard/charges",
-  },
-  {
-    id: 7,
     title: "Matter Types",
     icon: <FolderKanban className="icon" />,
     url: "/dashboard/matter-types",
   },
   {
-    id: 8,
-    title: "Invoices",
-    icon: <Receipt className="icon" />,
-    url: "/dashboard/invoices",
+    id: 7,
+    title: "Categories",
+    icon: <Tags className="icon" />,
+    url: "/dashboard/categories",
   },
   {
-    id: 9,
+    id: 8,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",

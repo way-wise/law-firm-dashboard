@@ -1,0 +1,353 @@
+"use client";
+
+import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  Legend,
+} from "recharts";
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Clock,
+  XCircle,
+  Trophy,
+  Medal,
+  Award,
+} from "lucide-react";
+
+// Mock data - will be replaced with API data
+const paralegalData = [
+  { name: "Sarah Johnson", cases: 32, onTime: 94, avgDays: 12.3, status: "good" },
+  { name: "Mike Chen", cases: 24, onTime: 88, avgDays: 14.1, status: "good" },
+  { name: "Lisa Park", cases: 18, onTime: 72, avgDays: 18.5, status: "watch" },
+  { name: "John Smith", cases: 15, onTime: 60, avgDays: 22.0, status: "alert" },
+  { name: "Emma Wilson", cases: 21, onTime: 85, avgDays: 15.2, status: "good" },
+];
+
+const trendData = [
+  { day: "Mon", filings: 4, onTime: 3 },
+  { day: "Tue", filings: 6, onTime: 5 },
+  { day: "Wed", filings: 3, onTime: 3 },
+  { day: "Thu", filings: 8, onTime: 7 },
+  { day: "Fri", filings: 5, onTime: 4 },
+  { day: "Sat", filings: 2, onTime: 2 },
+  { day: "Sun", filings: 1, onTime: 1 },
+];
+
+const statusDistribution = [
+  { name: "On Time", value: 78, color: "#10B981" },
+  { name: "At Risk", value: 15, color: "#F59E0B" },
+  { name: "Late", value: 7, color: "#EF4444" },
+];
+
+// Status icon component
+function StatusIcon({ status }: { status: string }) {
+  if (status === "good") {
+    return <CheckCircle2 className="size-4 text-emerald-500" />;
+  } else if (status === "watch") {
+    return <AlertTriangle className="size-4 text-amber-500" />;
+  }
+  return <XCircle className="size-4 text-red-500" />;
+}
+
+// Rank icon component
+function RankIcon({ rank }: { rank: number }) {
+  if (rank === 0) {
+    return <Trophy className="size-5 text-yellow-500" />;
+  } else if (rank === 1) {
+    return <Medal className="size-5 text-gray-400" />;
+  } else if (rank === 2) {
+    return <Award className="size-5 text-amber-600" />;
+  }
+  return <span className="text-sm font-medium text-muted-foreground">{rank + 1}</span>;
+}
+
+export function ParalegalKPI() {
+  const totalCases = paralegalData.reduce((sum, p) => sum + p.cases, 0);
+  const avgOnTimeRate = Math.round(paralegalData.reduce((sum, p) => sum + p.onTime, 0) / paralegalData.length);
+  const avgDaysToFile = (paralegalData.reduce((sum, p) => sum + p.avgDays, 0) / paralegalData.length).toFixed(1);
+  const attentionNeeded = paralegalData.filter(p => p.status !== "good").length;
+
+  return (
+    <div className="space-y-6">
+      {/* Section Header */}
+      <div>
+        <h3 className="text-lg font-semibold">Paralegal Performance</h3>
+        <p className="text-sm text-muted-foreground">
+          KPI metrics and team performance overview
+        </p>
+      </div>
+
+      {/* KPI Summary Cards - matching existing stats-cards design */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="overflow-hidden h-[140px] flex flex-col">
+          <div className="p-5 flex-1 flex flex-col">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Total Active Cases</p>
+              <div className="rounded-lg p-2.5 bg-blue-500/10">
+                <Clock className="size-5 text-blue-500" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <p className="text-2xl font-bold">{totalCases}</p>
+            </div>
+            <div className="mt-auto flex items-center text-xs text-muted-foreground">
+              <TrendingUp className="mr-1 size-3 text-emerald-500" />
+              <span className="text-emerald-500">+12%</span>
+              <span className="ml-1">from last month</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden h-[140px] flex flex-col">
+          <div className="p-5 flex-1 flex flex-col">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">On-Time Filing Rate</p>
+              <div className="rounded-lg p-2.5 bg-emerald-500/10">
+                <CheckCircle2 className="size-5 text-emerald-500" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <p className="text-2xl font-bold">{avgOnTimeRate}%</p>
+            </div>
+            <div className="mt-auto flex items-center text-xs text-muted-foreground">
+              <TrendingUp className="mr-1 size-3 text-emerald-500" />
+              <span className="text-emerald-500">+3%</span>
+              <span className="ml-1">improvement</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden h-[140px] flex flex-col">
+          <div className="p-5 flex-1 flex flex-col">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Avg Days to File</p>
+              <div className="rounded-lg p-2.5 bg-blue-500/10">
+                <Clock className="size-5 text-blue-500" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <p className="text-2xl font-bold">{avgDaysToFile}</p>
+            </div>
+            <div className="mt-auto flex items-center text-xs text-muted-foreground">
+              <TrendingDown className="mr-1 size-3 text-emerald-500" />
+              <span className="text-emerald-500">-2 days</span>
+              <span className="ml-1">faster</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden h-[140px] flex flex-col">
+          <div className="p-5 flex-1 flex flex-col">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Attention Needed</p>
+              <div className="rounded-lg p-2.5 bg-amber-500/10">
+                <AlertTriangle className="size-5 text-amber-500" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <p className="text-2xl font-bold">{attentionNeeded}</p>
+            </div>
+            <div className="mt-auto flex items-center text-xs text-muted-foreground">
+              <span>Paralegals below target</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Cases by Paralegal - Vertical Bar Chart */}
+        <Card className="p-5">
+          <h4 className="font-medium mb-4">Cases by Paralegal</h4>
+          <div className="h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={paralegalData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 11 }} 
+                  tickFormatter={(value) => value.split(" ")[0]}
+                  interval={0}
+                  angle={0}
+                />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                  formatter={(value) => [`${value} cases`, "Cases"]}
+                  labelFormatter={(label) => label}
+                />
+                <Bar 
+                  dataKey="cases" 
+                  fill="#3B82F6" 
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={50}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        {/* Filing Status Distribution - Better Layout */}
+        <Card className="p-5">
+          <h4 className="font-medium mb-4">Filing Status Distribution</h4>
+          <div className="h-[220px] flex items-center">
+            <div className="flex-1 h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statusDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {statusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                    }}
+                    formatter={(value) => [`${value}%`, ""]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-3 min-w-[120px]">
+              {statusDistribution.map((item) => (
+                <div key={item.name} className="flex items-center gap-2">
+                  <div className="size-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                  <span className="text-sm whitespace-nowrap">{item.name}</span>
+                  <span className="text-sm font-semibold ml-auto">{item.value}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Weekly Trend */}
+      <Card className="p-5">
+        <h4 className="font-medium mb-4">Weekly Filing Trend</h4>
+        <div className="h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+              <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: "12px" }} />
+              <Line
+                type="monotone"
+                dataKey="filings"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                dot={{ fill: "#3B82F6", strokeWidth: 0, r: 4 }}
+                name="Total Filings"
+              />
+              <Line
+                type="monotone"
+                dataKey="onTime"
+                stroke="#10B981"
+                strokeWidth={2}
+                dot={{ fill: "#10B981", strokeWidth: 0, r: 4 }}
+                name="On Time"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* Paralegal Leaderboard */}
+      <Card className="p-5">
+        <h4 className="font-medium mb-4">Paralegal Leaderboard</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b text-left text-sm text-muted-foreground">
+                <th className="pb-3 font-medium">Rank</th>
+                <th className="pb-3 font-medium">Paralegal</th>
+                <th className="pb-3 font-medium text-right">Cases</th>
+                <th className="pb-3 font-medium text-right">On-Time %</th>
+                <th className="pb-3 font-medium text-right">Avg Days</th>
+                <th className="pb-3 font-medium text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paralegalData
+                .sort((a, b) => b.onTime - a.onTime)
+                .map((paralegal, index) => (
+                  <tr key={paralegal.name} className="border-b last:border-0">
+                    <td className="py-3">
+                      <div className="flex items-center justify-center w-8">
+                        <RankIcon rank={index} />
+                      </div>
+                    </td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="size-8">
+                          <AvatarFallback className="text-xs">
+                            {paralegal.name.split(" ").map(n => n[0]).join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{paralegal.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 text-right">{paralegal.cases}</td>
+                    <td className="py-3 text-right">
+                      <span className={paralegal.onTime >= 80 ? "text-emerald-500" : paralegal.onTime >= 70 ? "text-amber-500" : "text-red-500"}>
+                        {paralegal.onTime}%
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">{paralegal.avgDays}</td>
+                    <td className="py-3 text-right">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        paralegal.status === "good" 
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          : paralegal.status === "watch"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                      }`}>
+                        <StatusIcon status={paralegal.status} />
+                        {paralegal.status === "good" ? "Good" : paralegal.status === "watch" ? "Watch" : "Alert"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}

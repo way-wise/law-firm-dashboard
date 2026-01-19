@@ -13,6 +13,10 @@ model users {
   email                 String                  @unique
   emailVerified         Boolean                 @default(false)
   image                 String?
+  role                  String?                 @default("user")
+  banned                Boolean?                @default(false)
+  banReason             String?
+  banExpires            DateTime?
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @default(now()) @updatedAt
   sessions              sessions[]
@@ -24,6 +28,9 @@ model users {
   paralegalMetrics      paralegalMetrics[]
   editedMatters         matters[]               @relation("editedMatters")
   deadlineNotifications deadlineNotifications[]
+  editedContacts        contacts[]              @relation("editedContacts")
+  editedMatterTypes     matterTypes[]           @relation("editedMatterTypes")
+  notificationSettings  notificationSettings?
 }
 
 model sessions {
@@ -214,19 +221,139 @@ model paralegalMetrics {
   @@index([userId])
 }
 
-// Docketwise users synced from the API
+// Docketwise users synced from the API (Team/Paralegals)
 model docketwiseUsers {
-  id              String   @id @default(ulid())
-  docketwiseId    Int      @unique
-  email           String
-  firstName       String?
-  lastName        String?
-  fullName        String? // Computed: firstName + lastName
-  isActive        Boolean  @default(true)
-  lastSyncedAt    DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id           String   @id @default(ulid())
+  docketwiseId Int      @unique
+  email        String
+  firstName    String?
+  lastName     String?
+  fullName     String? // Computed: firstName + lastName
+  isActive     Boolean  @default(true)
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([docketwiseId])
   @@index([isActive])
+}
+
+// Contacts (Clients) - synced from Docketwise with edit protection
+model contacts {
+  id           String  @id @default(ulid())
+  docketwiseId Int     @unique
+  firstName    String?
+  lastName     String?
+  middleName   String?
+  companyName  String?
+  email        String?
+  phone        String?
+  type         String? // "Person" or "Institution"
+  isLead       Boolean @default(false)
+
+  // Address
+  streetAddress   String?
+  apartmentNumber String?
+  city            String?
+  state           String?
+  province        String?
+  zipCode         String?
+  country         String?
+
+  // Custom fields (edit protected)
+  customNotes  String?
+  isEdited     Boolean   @default(false)
+  editedBy     String?
+  editedByUser users?    @relation("editedContacts", fields: [editedBy], references: [id], onDelete: SetNull)
+  editedAt     DateTime?
+
+  // Metadata
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([docketwiseId])
+  @@index([lastName, firstName])
+}
+
+// Immigration Categories (static, admin-managed)
+model categories {
+  id          String   @id @default(ulid())
+  name        String   @unique
+  description String?
+  color       String? // Hex color for UI
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matterTypes matterTypes[]
+}
+
+// Matter Types - synced from Docketwise with custom fields
+model matterTypes {
+  id           String @id @default(ulid())
+  docketwiseId Int    @unique
+  name         String
+
+  // Custom fields (edit protected)
+  estimatedDays Int? // Custom: Est. days to complete
+  categoryId    String?
+  category      categories? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  isEdited     Boolean   @default(false)
+  editedBy     String?
+  editedByUser users?    @relation("editedMatterTypes", fields: [editedBy], references: [id], onDelete: SetNull)
+  editedAt     DateTime?
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  matterStatuses matterStatuses[]
+
+  @@index([docketwiseId])
+  @@index([categoryId])
+}
+
+// Matter Statuses (Workflow Stages) - synced from Docketwise
+model matterStatuses {
+  id           String       @id @default(ulid())
+  docketwiseId Int          @unique
+  name         String
+  duration     Int? // Duration in days (from Docketwise)
+  sort         Int? // Sort order
+  matterTypeId String?
+  matterType   matterTypes? @relation(fields: [matterTypeId], references: [id], onDelete: SetNull)
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([docketwiseId])
+  @@index([matterTypeId])
+}
+
+// User notification preferences
+model notificationSettings {
+  id     String @id @default(ulid())
+  userId String @unique
+  user   users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Email notifications
+  emailRfe          Boolean @default(true)
+  emailApproval     Boolean @default(true)
+  emailDenial       Boolean @default(true)
+  emailStatusChange Boolean @default(false)
+  emailDeadlines    Boolean @default(true)
+
+  // In-app notifications
+  inAppRfe          Boolean @default(true)
+  inAppApproval     Boolean @default(true)
+  inAppDenial       Boolean @default(true)
+  inAppStatusChange Boolean @default(true)
+  inAppDeadlines    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

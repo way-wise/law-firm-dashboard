@@ -160,6 +160,64 @@ export const updateCustomMatter = authorized
     return updatedMatter;
   });
 
+// Create Custom Matter (local only, with isEdited flag)
+export const createCustomMatter = authorized
+  .route({
+    method: "POST",
+    path: "/custom-matters",
+    summary: "Create a new custom matter",
+    tags: ["Custom Matters"],
+  })
+  .input(
+    z.object({
+      title: z.string().min(1, "Title is required"),
+      clientName: z.string().optional(),
+      clientId: z.number().optional(),
+      matterType: z.string().optional(),
+      matterTypeId: z.number().optional(),
+      paralegalAssigned: z.string().optional(),
+      assignedDate: z.coerce.date().optional(),
+      estimatedDeadline: z.coerce.date().optional(),
+      billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).optional(),
+      customNotes: z.string().optional(),
+    })
+  )
+  .output(matterSchema)
+  .handler(async ({ input, context }) => {
+    // Generate a unique docketwiseId for local matters (negative to distinguish from real ones)
+    const localId = -Math.floor(Date.now() / 1000);
+
+    const matter = await prisma.matters.create({
+      data: {
+        docketwiseId: localId,
+        title: input.title,
+        clientName: input.clientName,
+        clientId: input.clientId,
+        matterType: input.matterType,
+        matterTypeId: input.matterTypeId,
+        paralegalAssigned: input.paralegalAssigned,
+        assignedDate: input.assignedDate,
+        estimatedDeadline: input.estimatedDeadline,
+        billingStatus: input.billingStatus,
+        customNotes: input.customNotes,
+        userId: context.user.id,
+        isEdited: true, // Mark as edited so sync won't overwrite
+        editedBy: context.user.id,
+        editedAt: new Date(),
+      },
+      include: {
+        editedByUser: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return matter;
+  });
+
 // Delete Custom Matter
 export const deleteCustomMatter = authorized
   .route({

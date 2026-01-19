@@ -151,8 +151,8 @@ export function MatterFiltersList({ matters, meta }: MatterFiltersListProps) {
       <div className="flex flex-col gap-4">
         {/* Header outside card */}
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold">Matters</h3>
-          <Badge>{meta.total}</Badge>
+          <h3 className="text-lg font-semibold">Recent Matters</h3>
+          <Badge variant="secondary">{meta.total}</Badge>
         </div>
         
         {/* Card with search and table */}

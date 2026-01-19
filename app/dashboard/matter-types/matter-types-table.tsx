@@ -7,19 +7,13 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  FieldSet,
-} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Pagination } from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -27,83 +21,151 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { MatterType } from "@/data/matter-types";
-import { PaginatedData } from "@/types";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, Pencil, Plus, Search, Trash } from "lucide-react";
-import Link from "next/link";
+import { Eye, Pencil, RefreshCw, Search, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { z } from "zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { client } from "@/lib/orpc/client";
 
-const matterTypeSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  code: z.string().min(1, "Code is required"),
-  category: z.enum(["Employment", "Family", "Humanitarian", "Citizenship"]),
-  estimatedDays: z.string().optional(),
-});
+interface MatterType {
+  id: string;
+  docketwiseId: number;
+  name: string;
+  estimatedDays: number | null;
+  categoryId: string | null;
+  category: {
+    id: string;
+    name: string;
+    color: string | null;
+  } | null;
+  isEdited: boolean;
+  editedAt: Date | null;
+  lastSyncedAt: Date;
+  matterStatuses: {
+    id: string;
+    docketwiseId: number;
+    name: string;
+    duration: number | null;
+    sort: number | null;
+  }[];
+}
 
-type MatterTypeInput = z.infer<typeof matterTypeSchema>;
+interface Category {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
 
-const MatterTypesTable = ({ matterTypes }: { matterTypes: PaginatedData<MatterType> }) => {
+interface MatterTypesTableProps {
+  matterTypes: MatterType[];
+  categories: Category[];
+}
+
+const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) => {
+  const queryClient = useQueryClient();
   const [openViewDialog, setOpenViewDialog] = useState(false);
-  const [openAddDialog, setOpenAddDialog] = useState(false);
+  const [editingType, setEditingType] = useState<MatterType | null>(null);
   const [selectedMatterType, setSelectedMatterType] = useState<MatterType | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const form = useForm<MatterTypeInput>({
-    resolver: zodResolver(matterTypeSchema),
-    defaultValues: {
-      name: "",
-      code: "",
-      category: "Employment",
-      estimatedDays: "",
+  const [formData, setFormData] = useState({
+    estimatedDays: "",
+    categoryId: "",
+  });
+
+  // Sync mutation
+  const syncMutation = useMutation({
+    mutationFn: () => client.matterTypes.sync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["matterTypes"] });
     },
   });
 
-  const onSubmit = async (data: MatterTypeInput) => {
-    console.log("New matter type:", data);
-    // TODO: API call
-    setOpenAddDialog(false);
-    form.reset();
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; estimatedDays?: number; categoryId?: string }) =>
+      client.matterTypes.update(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["matterTypes"] });
+      setEditingType(null);
+    },
+  });
+
+  const handleEdit = (matterType: MatterType) => {
+    setEditingType(matterType);
+    setFormData({
+      estimatedDays: matterType.estimatedDays?.toString() || "",
+      categoryId: matterType.categoryId || "",
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editingType) return;
+    updateMutation.mutate({
+      id: editingType.id,
+      estimatedDays: formData.estimatedDays ? parseInt(formData.estimatedDays) : undefined,
+      categoryId: formData.categoryId || undefined,
+    });
   };
 
   const columns: ColumnDef<MatterType>[] = [
     {
       header: "Name",
       accessorKey: "name",
-    },
-    {
-      header: "Code",
-      accessorKey: "code",
       cell: ({ row }) => (
-        <Badge variant="outline">{row.original.code}</Badge>
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">ID: {row.original.docketwiseId}</p>
+        </div>
       ),
     },
     {
       header: "Category",
       accessorKey: "category",
+      cell: ({ row }) => (
+        row.original.category ? (
+          <div className="flex items-center gap-2">
+            <div
+              className="size-3 rounded-full"
+              style={{ backgroundColor: row.original.category.color || "#6B7280" }}
+            />
+            <span>{row.original.category.name}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      ),
     },
     {
       header: "Est. Days",
       accessorKey: "estimatedDays",
+      cell: ({ row }) => (
+        <span>{row.original.estimatedDays ?? "—"}</span>
+      ),
     },
     {
-      header: "Status",
-      accessorKey: "isActive",
+      header: "Statuses",
       cell: ({ row }) => (
-        <Badge variant={row.original.isActive ? "success" : "secondary"}>
-          {row.original.isActive ? "Active" : "Inactive"}
+        <Badge variant="secondary">{row.original.matterStatuses.length} stages</Badge>
+      ),
+    },
+    {
+      header: "Edited",
+      accessorKey: "isEdited",
+      cell: ({ row }) => (
+        <Badge variant={row.original.isEdited ? "default" : "outline"}>
+          {row.original.isEdited ? "Custom" : "Synced"}
         </Badge>
       ),
     },
     {
       id: "actions",
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -111,62 +173,49 @@ const MatterTypesTable = ({ matterTypes }: { matterTypes: PaginatedData<MatterTy
               setSelectedMatterType(row.original);
               setOpenViewDialog(true);
             }}
-            title="View"
           >
             <Eye className="size-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              // TODO: Implement edit
-              console.log("Edit matter type:", row.original.id);
-            }}
-            title="Edit"
+            onClick={() => handleEdit(row.original)}
           >
             <Pencil className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              // TODO: Implement delete
-              console.log("Delete matter type:", row.original.id);
-            }}
-            title="Delete"
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash className="size-4" />
           </Button>
         </div>
       ),
     },
   ];
 
-  const handlePageChange = (page: string) => {
-    console.log("Page changed to:", page);
-  };
-
-  const handleLimitChange = (limit: string) => {
-    console.log("Limit changed to:", limit);
-  };
+  // Filter data
+  const filteredData = matterTypes.filter((mt) => {
+    const matchesSearch = mt.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === "all" || mt.categoryId === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <>
       <div className="flex flex-col gap-6">
         {/* Page Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/dashboard">
-                <ArrowLeft />
-              </Link>
-            </Button>
-            <h1 className="text-2xl font-semibold">Matter Types</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Matter Types</h1>
+            <p className="text-muted-foreground">
+              Immigration matter types synced from Docketwise
+            </p>
           </div>
-          <Button onClick={() => setOpenAddDialog(true)}>
-            <Plus />
-            Add Matter Type
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Sync from Docketwise
           </Button>
         </div>
 
@@ -186,167 +235,136 @@ const MatterTypesTable = ({ matterTypes }: { matterTypes: PaginatedData<MatterTy
               />
             </InputGroup>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="Employment">Employment</SelectItem>
-                <SelectItem value="Family">Family</SelectItem>
-                <SelectItem value="Humanitarian">Humanitarian</SelectItem>
-                <SelectItem value="Citizenship">Citizenship</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
           {/* Table */}
           <DataTable
-            data={matterTypes.data}
+            data={filteredData}
             columns={columns}
-            emptyMessage="No matter types available"
-          />
-
-          {/* Pagination */}
-          <Pagination
-            meta={matterTypes.meta}
-            onPageChange={handlePageChange}
-            onLimitChange={handleLimitChange}
+            emptyMessage="No matter types available. Click 'Sync from Docketwise' to import."
           />
         </div>
       </div>
 
-      {/* Matter Type view dialog */}
+      {/* View Dialog */}
       <Dialog open={openViewDialog} onOpenChange={setOpenViewDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Matter Type Details</DialogTitle>
-            <DialogDescription>View matter type information</DialogDescription>
+            <DialogDescription>View matter type information and workflow stages</DialogDescription>
           </DialogHeader>
           {selectedMatterType && (
-            <div className="flex flex-col gap-4">
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Name</h3>
-                <p className="text-sm">{selectedMatterType.name}</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Name</p>
+                  <p className="font-medium">{selectedMatterType.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Docketwise ID</p>
+                  <p className="font-medium">{selectedMatterType.docketwiseId}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Category</p>
+                  <p className="font-medium">{selectedMatterType.category?.name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Est. Days</p>
+                  <p className="font-medium">{selectedMatterType.estimatedDays ?? "—"}</p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Code</h3>
-                <Badge variant="outline">{selectedMatterType.code}</Badge>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Category</h3>
-                <p className="text-sm">{selectedMatterType.category}</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Estimated Days</h3>
-                <p className="text-sm">{selectedMatterType.estimatedDays} days</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Status</h3>
-                <Badge variant={selectedMatterType.isActive ? "success" : "secondary"}>
-                  {selectedMatterType.isActive ? "Active" : "Inactive"}
-                </Badge>
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">Workflow Stages</p>
+                <div className="space-y-1">
+                  {selectedMatterType.matterStatuses
+                    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+                    .map((status, idx) => (
+                      <div key={status.id} className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">{idx + 1}.</span>
+                        <span>{status.name}</span>
+                        {status.duration && (
+                          <Badge variant="outline" className="ml-auto">
+                            {status.duration} days
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                </div>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Add Matter Type dialog */}
-      <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
-        <DialogContent className="max-w-md">
+      {/* Edit Dialog */}
+      <Dialog open={!!editingType} onOpenChange={(open) => !open && setEditingType(null)}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Add Matter Type</DialogTitle>
-            <DialogDescription>Create a new immigration matter type</DialogDescription>
+            <DialogTitle>Edit Matter Type</DialogTitle>
+            <DialogDescription>
+              Update custom fields for {editingType?.name}. These changes won&apos;t be overwritten by Docketwise sync.
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={form.handleSubmit(onSubmit)} autoComplete="off">
-            <FieldSet disabled={form.formState.isSubmitting}>
-              <FieldGroup>
-                <Controller
-                  name="name"
-                  control={form.control}
-                  render={({ field, fieldState }) => (
-                    <Field>
-                      <FieldLabel htmlFor="name">
-                        Name <span className="text-destructive">*</span>
-                      </FieldLabel>
-                      <Input {...field} id="name" placeholder="e.g., H-1B Petition" />
-                      <FieldError errors={[fieldState.error]} />
-                    </Field>
-                  )}
-                />
-
-                <FieldGroup className="grid sm:grid-cols-2">
-                  <Controller
-                    name="code"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="code">
-                          Code <span className="text-destructive">*</span>
-                        </FieldLabel>
-                        <Input {...field} id="code" placeholder="e.g., H1B" />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                  <Controller
-                    name="estimatedDays"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="estimatedDays">Est. Days</FieldLabel>
-                        <Input {...field} id="estimatedDays" type="number" placeholder="90" />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-                </FieldGroup>
-
-                <Controller
-                  name="category"
-                  control={form.control}
-                  render={({ field, fieldState }) => (
-                    <Field>
-                      <FieldLabel htmlFor="category">
-                        Category <span className="text-destructive">*</span>
-                      </FieldLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Employment">Employment</SelectItem>
-                          <SelectItem value="Family">Family</SelectItem>
-                          <SelectItem value="Humanitarian">Humanitarian</SelectItem>
-                          <SelectItem value="Citizenship">Citizenship</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldError errors={[fieldState.error]} />
-                    </Field>
-                  )}
-                />
-              </FieldGroup>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setOpenAddDialog(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" isLoading={form.formState.isSubmitting}>
-                  Add Type
-                </Button>
-              </div>
-            </FieldSet>
-          </form>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="estimatedDays">Estimated Days</Label>
+              <Input
+                id="estimatedDays"
+                type="number"
+                placeholder="e.g., 90"
+                value={formData.estimatedDays}
+                onChange={(e) => setFormData({ ...formData, estimatedDays: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category">Category</Label>
+              <Select
+                value={formData.categoryId}
+                onValueChange={(value) => setFormData({ ...formData, categoryId: value })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-3 rounded-full"
+                          style={{ backgroundColor: cat.color || "#6B7280" }}
+                        />
+                        {cat.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingType(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdate}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending && <Loader2 className="animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

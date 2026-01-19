@@ -3,80 +3,68 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Bell, Mail } from "lucide-react";
-import { useState } from "react";
+import { Bell, Mail, Loader2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { client } from "@/lib/orpc/client";
 
 type NotificationSettings = {
-  email: {
-    rfe: boolean;
-    approval: boolean;
-    denial: boolean;
-    statusChange: boolean;
-    deadlines: boolean;
-  };
-  inApp: {
-    rfe: boolean;
-    approval: boolean;
-    denial: boolean;
-    statusChange: boolean;
-    deadlines: boolean;
-  };
+  emailRfe: boolean;
+  emailApproval: boolean;
+  emailDenial: boolean;
+  emailStatusChange: boolean;
+  emailDeadlines: boolean;
+  inAppRfe: boolean;
+  inAppApproval: boolean;
+  inAppDenial: boolean;
+  inAppStatusChange: boolean;
+  inAppDeadlines: boolean;
 };
 
 export function NotificationsTab() {
-  const [settings, setSettings] = useState<NotificationSettings>({
-    email: {
-      rfe: true,
-      approval: true,
-      denial: true,
-      statusChange: false,
-      deadlines: true,
-    },
-    inApp: {
-      rfe: true,
-      approval: true,
-      denial: true,
-      statusChange: true,
-      deadlines: true,
+  const queryClient = useQueryClient();
+
+  // Fetch settings from API
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["notification-settings"],
+    queryFn: () => client.notificationSettings.get(),
+  });
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: (data: Partial<NotificationSettings>) => 
+      client.notificationSettings.update(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notification-settings"] });
     },
   });
 
-  const handleToggle = (type: "email" | "inApp", key: keyof NotificationSettings["email"]) => {
-    setSettings((prev) => ({
-      ...prev,
-      [type]: {
-        ...prev[type],
-        [key]: !prev[type][key],
-      },
-    }));
+  const handleToggle = (key: keyof NotificationSettings) => {
+    if (!settings) return;
+    updateMutation.mutate({ [key]: !settings[key] });
   };
 
-  const notificationTypes = [
-    {
-      key: "rfe" as const,
-      label: "Request for Evidence (RFE)",
-      description: "Get notified when an RFE is received for any matter",
-    },
-    {
-      key: "approval" as const,
-      label: "Case Approval",
-      description: "Receive notifications when a case is approved",
-    },
-    {
-      key: "denial" as const,
-      label: "Case Denial",
-      description: "Get alerted when a case is denied",
-    },
-    {
-      key: "statusChange" as const,
-      label: "Status Changes",
-      description: "Notifications for any case status updates",
-    },
-    {
-      key: "deadlines" as const,
-      label: "Upcoming Deadlines",
-      description: "Reminders for approaching deadlines and important dates",
-    },
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const emailNotifications = [
+    { key: "emailRfe" as const, label: "Request for Evidence (RFE)", description: "Get notified when an RFE is received for any matter" },
+    { key: "emailApproval" as const, label: "Case Approval", description: "Receive notifications when a case is approved" },
+    { key: "emailDenial" as const, label: "Case Denial", description: "Get alerted when a case is denied" },
+    { key: "emailStatusChange" as const, label: "Status Changes", description: "Notifications for any case status updates" },
+    { key: "emailDeadlines" as const, label: "Upcoming Deadlines", description: "Reminders for approaching deadlines and important dates" },
+  ];
+
+  const inAppNotifications = [
+    { key: "inAppRfe" as const, label: "Request for Evidence (RFE)", description: "Get notified when an RFE is received for any matter" },
+    { key: "inAppApproval" as const, label: "Case Approval", description: "Receive notifications when a case is approved" },
+    { key: "inAppDenial" as const, label: "Case Denial", description: "Get alerted when a case is denied" },
+    { key: "inAppStatusChange" as const, label: "Status Changes", description: "Notifications for any case status updates" },
+    { key: "inAppDeadlines" as const, label: "Upcoming Deadlines", description: "Reminders for approaching deadlines and important dates" },
   ];
 
   return (
@@ -97,13 +85,13 @@ export function NotificationsTab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {notificationTypes.map((type) => (
+          {emailNotifications.map((type) => (
             <div
-              key={`email-${type.key}`}
+              key={type.key}
               className="flex items-center justify-between space-x-4 rounded-lg border p-4"
             >
               <div className="flex-1 space-y-1">
-                <Label htmlFor={`email-${type.key}`} className="cursor-pointer font-medium">
+                <Label htmlFor={type.key} className="cursor-pointer font-medium">
                   {type.label}
                 </Label>
                 <p className="text-sm text-muted-foreground">
@@ -111,9 +99,10 @@ export function NotificationsTab() {
                 </p>
               </div>
               <Switch
-                id={`email-${type.key}`}
-                checked={settings.email[type.key]}
-                onCheckedChange={() => handleToggle("email", type.key)}
+                id={type.key}
+                checked={settings?.[type.key] ?? false}
+                onCheckedChange={() => handleToggle(type.key)}
+                disabled={updateMutation.isPending}
               />
             </div>
           ))}
@@ -136,13 +125,13 @@ export function NotificationsTab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {notificationTypes.map((type) => (
+          {inAppNotifications.map((type) => (
             <div
-              key={`inApp-${type.key}`}
+              key={type.key}
               className="flex items-center justify-between space-x-4 rounded-lg border p-4"
             >
               <div className="flex-1 space-y-1">
-                <Label htmlFor={`inApp-${type.key}`} className="cursor-pointer font-medium">
+                <Label htmlFor={type.key} className="cursor-pointer font-medium">
                   {type.label}
                 </Label>
                 <p className="text-sm text-muted-foreground">
@@ -150,9 +139,10 @@ export function NotificationsTab() {
                 </p>
               </div>
               <Switch
-                id={`inApp-${type.key}`}
-                checked={settings.inApp[type.key]}
-                onCheckedChange={() => handleToggle("inApp", type.key)}
+                id={type.key}
+                checked={settings?.[type.key] ?? false}
+                onCheckedChange={() => handleToggle(type.key)}
+                disabled={updateMutation.isPending}
               />
             </div>
           ))}

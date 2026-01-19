@@ -292,3 +292,65 @@ export const deleteContact = authorized
       });
     }
   });
+
+// Document schema for Docketwise documents
+const documentSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  firm_id: z.number().optional(),
+  client_id: z.number().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  archived: z.boolean().optional(),
+  size: z.number().optional(),
+  user_id: z.number().optional(),
+  uploaded_by_email: z.string().nullable().optional(),
+  doc_url: z.string().optional(),
+});
+
+// Get Contact Documents (on-demand fetch from Docketwise)
+export const getContactDocuments = authorized
+  .route({
+    method: "GET",
+    path: "/contacts/{clientId}/documents",
+    summary: "Get documents for a specific contact/client",
+    tags: ["Contacts", "Documents"],
+  })
+  .input(z.object({ clientId: z.number(), search: z.string().optional() }))
+  .output(z.object({ data: z.array(documentSchema) }))
+  .handler(async ({ input }) => {
+    const token = await getDocketwiseToken();
+
+    if (!token) {
+      throw new ORPCError("UNAUTHORIZED", {
+        message: "Docketwise not connected",
+      });
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append("client_id", input.clientId.toString());
+      if (input.search) params.append("search", input.search);
+
+      const response = await fetch(
+        `${DOCKETWISE_API_URL}/documents?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (!response.ok) {
+        console.error("Docketwise API Error:", response.status);
+        return { data: [] };
+      }
+
+      const data = await response.json();
+      return { data: Array.isArray(data) ? data : [] };
+    } catch (error) {
+      console.error("Docketwise API Error:", error);
+      return { data: [] };
+    }
+  });
