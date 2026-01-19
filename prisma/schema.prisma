@@ -8,29 +8,30 @@ datasource db {
 }
 
 model users {
-  id                    String                  @id @default(ulid())
-  name                  String
-  email                 String                  @unique
-  emailVerified         Boolean                 @default(false)
-  image                 String?
-  role                  String?                 @default("user")
-  banned                Boolean?                @default(false)
-  banReason             String?
-  banExpires            DateTime?
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @default(now()) @updatedAt
-  sessions              sessions[]
-  accounts              accounts[]
-  todos                 todos[]
-  syncSettings          syncSettings?
-  matters               matters[]
-  matterTypeDeadlines   matterTypeDeadlines[]
-  paralegalMetrics      paralegalMetrics[]
-  editedMatters         matters[]               @relation("editedMatters")
-  deadlineNotifications deadlineNotifications[]
-  editedContacts        contacts[]              @relation("editedContacts")
-  editedMatterTypes     matterTypes[]           @relation("editedMatterTypes")
-  notificationSettings  notificationSettings?
+  id                     String                  @id @default(ulid())
+  name                   String
+  email                  String                  @unique
+  emailVerified          Boolean                 @default(false)
+  image                  String?
+  role                   String?                 @default("user")
+  banned                 Boolean?                @default(false)
+  banReason              String?
+  banExpires             DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @default(now()) @updatedAt
+  sessions               sessions[]
+  accounts               accounts[]
+  todos                  todos[]
+  syncSettings           syncSettings?
+  matters                matters[]
+  matterTypeDeadlines    matterTypeDeadlines[]
+  paralegalMetrics       paralegalMetrics[]
+  editedMatters          matters[]               @relation("editedMatters")
+  deadlineNotifications  deadlineNotifications[]
+  editedContacts         contacts[]              @relation("editedContacts")
+  editedMatterTypes      matterTypes[]           @relation("editedMatterTypes")
+  notificationSettings   notificationSettings?
+  notificationRecipients notificationRecipients?
 }
 
 model sessions {
@@ -353,6 +354,18 @@ model notificationSettings {
   inAppDenial       Boolean @default(true)
   inAppStatusChange Boolean @default(true)
   inAppDeadlines    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Notification recipients - which users receive email/in-app notifications
+model notificationRecipients {
+  id           String  @id @default(ulid())
+  userId       String  @unique
+  user         users   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled Boolean @default(true)
+  inAppEnabled Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

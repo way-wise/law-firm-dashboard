@@ -1,6 +1,7 @@
 import "server-only";
 import { getDocketwiseToken } from "@/lib/docketwise";
 import prisma from "@/lib/prisma";
+import { sendNotification, detectNotificationType } from "@/lib/notifications/notification-service";
 
 const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
 
@@ -121,11 +122,23 @@ export async function syncMatters(userId: string) {
       // Get all docketwise IDs from this page
       const docketwiseIds = matters.map(m => m.id);
       
-      // Batch fetch existing matters to check isEdited status
+      // Batch fetch existing matters to check isEdited status and current status for change detection
       const existingMatters = await prisma.matters.findMany({
         where: { docketwiseId: { in: docketwiseIds } },
-        select: { docketwiseId: true, isEdited: true },
+        select: { 
+          id: true,
+          docketwiseId: true, 
+          isEdited: true,
+          status: true,
+          workflowStage: true,
+          title: true,
+          clientName: true,
+          matterType: true,
+          paralegalAssigned: true,
+          estimatedDeadline: true,
+        },
       });
+      const existingMattersMap = new Map(existingMatters.map(m => [m.docketwiseId, m]));
       const editedMatterIds = new Set(
         existingMatters.filter(m => m.isEdited).map(m => m.docketwiseId)
       );
@@ -141,6 +154,34 @@ export async function syncMatters(userId: string) {
               data: { lastSyncedAt: new Date() },
             });
             continue;
+          }
+
+          // Get existing matter for change detection
+          const existingMatter = existingMattersMap.get(docketwiseMatter.id);
+          const newStatus = typeof docketwiseMatter.status === 'object' && docketwiseMatter.status 
+            ? docketwiseMatter.status.name 
+            : docketwiseMatter.status;
+
+          // Detect status change and send notification
+          if (existingMatter && existingMatter.status !== newStatus) {
+            const notificationType = detectNotificationType(existingMatter.status, newStatus);
+            if (notificationType) {
+              console.log(`[SYNC] Status change detected for matter ${docketwiseMatter.id}: ${existingMatter.status} -> ${newStatus} (${notificationType})`);
+              
+              // Send notification asynchronously (don't block sync)
+              sendNotification({
+                type: notificationType,
+                matterId: existingMatter.id,
+                matterTitle: docketwiseMatter.title || existingMatter.title,
+                clientName: existingMatter.clientName,
+                matterType: docketwiseMatter.matter_type?.name || existingMatter.matterType,
+                workflowStage: docketwiseMatter.workflow_stage?.name || existingMatter.workflowStage,
+                status: newStatus,
+                oldStatus: existingMatter.status,
+                paralegalName: existingMatter.paralegalAssigned,
+                deadlineDate: existingMatter.estimatedDeadline,
+              }).catch(err => console.error(`[SYNC] Failed to send notification:`, err));
+            }
           }
 
           await prisma.matters.upsert({

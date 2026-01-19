@@ -55,6 +55,13 @@ import {
   getNotificationSettings,
   updateNotificationSettings,
 } from "./notificationSettings";
+import {
+  getNotificationRecipients,
+  getAvailableUsers,
+  updateEmailRecipients,
+  updateInAppRecipients,
+  initializeRecipients,
+} from "./notificationRecipients";
 
 export const router = {
   todos: {
@@ -122,5 +129,12 @@ export const router = {
   notificationSettings: {
     get: getNotificationSettings,
     update: updateNotificationSettings,
+  },
+  notificationRecipients: {
+    get: getNotificationRecipients,
+    getAvailableUsers: getAvailableUsers,
+    updateEmail: updateEmailRecipients,
+    updateInApp: updateInAppRecipients,
+    initialize: initializeRecipients,
   },
 };
