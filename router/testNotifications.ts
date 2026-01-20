@@ -4,7 +4,29 @@ import { sendNotificationEmail } from "@/lib/notifications/email";
 import { publishNotificationCreated } from "@/lib/notifications/publisher";
 import * as z from "zod";
 
-// Test email notification
+// Get email recipients from notificationRecipients table
+async function getEmailRecipients() {
+  const recipients = await prisma.notificationRecipients.findMany({
+    where: { emailEnabled: true },
+    include: {
+      user: { select: { id: true, email: true, name: true } },
+    },
+  });
+  return recipients.map((r) => r.user);
+}
+
+// Get in-app recipients from notificationRecipients table
+async function getInAppRecipients() {
+  const recipients = await prisma.notificationRecipients.findMany({
+    where: { inAppEnabled: true },
+    include: {
+      user: { select: { id: true, email: true, name: true } },
+    },
+  });
+  return recipients.map((r) => r.user);
+}
+
+// Test email notification - sends to all configured email recipients
 export const sendTestEmail = authorized
   .route({
     method: "POST",
@@ -23,45 +45,57 @@ export const sendTestEmail = authorized
       return { success: false, message: "Not authenticated", recipientCount: 0 };
     }
 
-    // Get current user's email
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
-
-    if (!user) {
-      return { success: false, message: "User not found", recipientCount: 0 };
+    const recipients = await getEmailRecipients();
+    
+    if (recipients.length === 0) {
+      return { 
+        success: false, 
+        message: "No email recipients configured. Add users in Settings > Notifications.",
+        recipientCount: 0,
+      };
     }
 
-    // Send test email to current user
-    const success = await sendNotificationEmail({
-      to: user.email,
-      type: "test",
-      subject: "Test Email Notification",
-      message: "This is a test email to verify that your email notification settings are configured correctly. If you received this email, your email notifications are working!",
-      matterTitle: "Sample Matter - H1B Visa Application",
-      clientName: "John Doe",
-      matterType: "Immigration",
-      matterUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard`,
-      isTest: true,
-    });
+    let successCount = 0;
+    const failedEmails: string[] = [];
 
-    if (success) {
+    // Send to all configured recipients (don't wait for failures)
+    for (const recipient of recipients) {
+      try {
+        const success = await sendNotificationEmail({
+          to: recipient.email,
+          type: "test",
+          subject: "Test Email Notification",
+          message: "This is a test email to verify that your email notification settings are configured correctly.",
+          matterTitle: "Sample Matter - H1B Visa Application",
+          clientName: "John Doe",
+          matterType: "Immigration",
+          matterUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard`,
+          isTest: true,
+        });
+        if (success) successCount++;
+        else failedEmails.push(recipient.email);
+      } catch {
+        failedEmails.push(recipient.email);
+      }
+    }
+
+    if (successCount > 0) {
+      const emails = recipients.map(r => r.email).join(", ");
       return { 
         success: true, 
-        message: `Test email sent successfully to ${user.email}`,
-        recipientCount: 1,
+        message: `Test email sent to ${successCount} recipient(s): ${emails}`,
+        recipientCount: successCount,
       };
     } else {
       return { 
         success: false, 
-        message: "Failed to send test email. Please check your SMTP configuration.",
+        message: "Failed to send test emails. Check SMTP configuration.",
         recipientCount: 0,
       };
     }
   });
 
-// Test in-app notification
+// Test in-app notification - sends to configured recipients AND the current user
 export const sendTestInApp = authorized
   .route({
     method: "POST",
@@ -72,6 +106,7 @@ export const sendTestInApp = authorized
   .output(z.object({ 
     success: z.boolean(), 
     message: z.string(),
+    recipientCount: z.number().optional(),
   }))
   .handler(async ({ context }) => {
     const userId = context.session?.userId;
@@ -79,13 +114,26 @@ export const sendTestInApp = authorized
       return { success: false, message: "Not authenticated" };
     }
 
-    // Get current user's email
-    const user = await prisma.users.findUnique({
+    // Get current user info
+    const currentUser = await prisma.users.findUnique({
       where: { id: userId },
-      select: { email: true },
+      select: { id: true, email: true, name: true },
     });
 
-    // Find a real matter to link the notification to (required by foreign key)
+    if (!currentUser) {
+      return { success: false, message: "User not found" };
+    }
+
+    // Get configured recipients
+    const configuredRecipients = await getInAppRecipients();
+    
+    // Always include current user so they can see the test (merge and dedupe)
+    const recipientIds = new Set(configuredRecipients.map(r => r.id));
+    const recipients = [...configuredRecipients];
+    if (!recipientIds.has(currentUser.id)) {
+      recipients.push(currentUser);
+    }
+
     const matter = await prisma.matters.findFirst({
       select: { id: true, title: true },
       orderBy: { createdAt: "desc" },
@@ -98,41 +146,49 @@ export const sendTestInApp = authorized
       };
     }
 
-    try {
-      // Create a test in-app notification
-      const notification = await prisma.deadlineNotifications.create({
-        data: {
+    let successCount = 0;
+
+    for (const recipient of recipients) {
+      try {
+        const notification = await prisma.deadlineNotifications.create({
+          data: {
+            matterId: matter.id,
+            userId: recipient.id,
+            recipientEmail: recipient.email,
+            notificationType: "in-app",
+            daysBeforeDeadline: 0,
+            subject: "🧪 Test In-App Notification",
+            message: `This is a test notification. If you see this, your in-app notifications are working! (Sample matter: ${matter.title})`,
+            isRead: false,
+          },
+        });
+
+        await publishNotificationCreated({
+          id: notification.id,
+          userId: recipient.id,
           matterId: matter.id,
-          userId: userId,
-          recipientEmail: user?.email || "",
-          notificationType: "in-app",
-          daysBeforeDeadline: 0,
           subject: "🧪 Test In-App Notification",
-          message: `This is a test notification to verify that your in-app notification settings are configured correctly. If you see this, your in-app notifications are working! (Sample matter: ${matter.title})`,
-          isRead: false,
-        },
-      });
+          message: `This is a test notification. If you see this, your in-app notifications are working! (Sample matter: ${matter.title})`,
+          daysBeforeDeadline: 0,
+          sentAt: notification.sentAt,
+        });
 
-      // Publish real-time event
-      await publishNotificationCreated({
-        id: notification.id,
-        userId: userId,
-        matterId: matter.id,
-        subject: "🧪 Test In-App Notification",
-        message: `This is a test notification to verify that your in-app notification settings are configured correctly. If you see this, your in-app notifications are working! (Sample matter: ${matter.title})`,
-        daysBeforeDeadline: 0,
-        sentAt: notification.sentAt,
-      });
+        successCount++;
+      } catch (error) {
+        console.error(`[TEST-NOTIFICATION] Failed for user ${recipient.id}:`, error);
+      }
+    }
 
+    if (successCount > 0) {
       return { 
         success: true, 
-        message: "Test in-app notification created successfully. Check your notification bell!",
+        message: `Test notification sent to ${successCount} recipient(s). Check your notification bell!`,
+        recipientCount: successCount,
       };
-    } catch (error) {
-      console.error("[TEST-NOTIFICATION] Failed to create test in-app notification:", error);
+    } else {
       return { 
         success: false, 
-        message: "Failed to create test notification",
+        message: "Failed to create test notifications.",
       };
     }
   });

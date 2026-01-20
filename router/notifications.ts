@@ -2,9 +2,7 @@ import "server-only";
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
 import { notificationFilterSchema, notificationListSchema, markNotificationReadSchema } from "@/schema/notificationSchema";
-import { notificationPublisher, publishNotificationRead } from "@/lib/notifications/publisher";
-import { eventIterator } from "@orpc/server";
-import { z } from "zod";
+import { publishNotificationRead } from "@/lib/notifications/publisher";
 
 // Get user's notifications
 export const getNotifications = authorized
@@ -93,47 +91,3 @@ export const markAllNotificationsRead = authorized
     return { success: true };
   });
 
-// Real-time notification subscription using SSE
-export const subscribeToNotifications = authorized
-  .output(
-    eventIterator(
-      z.object({
-        type: z.enum(["created", "read"]),
-        notification: z.object({
-          id: z.string(),
-          matterId: z.string().optional(),
-          subject: z.string().optional(),
-          message: z.string().optional(),
-          daysBeforeDeadline: z.number().optional(),
-          sentAt: z.date().optional(),
-        }),
-      })
-    )
-  )
-  .handler(async function* ({ context, signal }) {
-    const { user } = context;
-
-    try {
-      // Subscribe to notification created events for this user
-      const createdIterator = notificationPublisher.subscribe("notification:created", { signal });
-
-      for await (const payload of createdIterator) {
-        // Only yield notifications for this specific user
-        if (payload.userId === user.id) {
-          yield {
-            type: "created" as const,
-            notification: {
-              id: payload.id,
-              matterId: payload.matterId,
-              subject: payload.subject,
-              message: payload.message,
-              daysBeforeDeadline: payload.daysBeforeDeadline,
-              sentAt: payload.sentAt,
-            },
-          };
-        }
-      }
-    } finally {
-      console.log(`[NOTIFICATIONS] User ${user.id} disconnected from notification stream`);
-    }
-  });

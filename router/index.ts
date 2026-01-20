@@ -41,7 +41,7 @@ import {
   updateTodo,
   updateTodoStatus,
 } from "./todos";
-import { getNotifications, markNotificationRead, markAllNotificationsRead, subscribeToNotifications } from "./notifications";
+import { getNotifications, markNotificationRead, markAllNotificationsRead } from "./notifications";
 import {
   getMatterTypes,
   syncMatterTypes,
@@ -117,7 +117,6 @@ export const router = {
     list: getNotifications,
     markRead: markNotificationRead,
     markAllRead: markAllNotificationsRead,
-    subscribe: subscribeToNotifications,
   },
   matterTypes: {
     get: getMatterTypes,

@@ -7,33 +7,63 @@ import { orpc } from "@/lib/orpc/tanstack-query";
 export function useNotifications() {
   const queryClient = useQueryClient();
   const [isConnected, setIsConnected] = useState(false);
+  const queryKey = orpc.notifications.list.queryKey({ input: { limit: 50 } });
 
-  // Fetch notifications using oRPC query options
   const { data, isLoading } = useQuery(
     orpc.notifications.list.queryOptions({
       input: { limit: 50 },
-      refetchInterval: 30000, // Refetch every 30 seconds as fallback
+      refetchInterval: 30000,
     })
   );
 
-  // Mark as read mutation using oRPC mutation options
   const markAsReadMutation = useMutation(
     orpc.notifications.markRead.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
-        });
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData(queryKey) as typeof data;
+        if (previous) {
+          queryClient.setQueryData(queryKey, {
+            ...previous,
+            notifications: previous.notifications.map(n => 
+              n.id === id ? { ...n, isRead: true } : n
+            ),
+            unreadCount: Math.max(0, previous.unreadCount - 1),
+          });
+        }
+        return { previous };
+      },
+      onError: (_, __, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(queryKey, context.previous);
+        }
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey });
       },
     })
   );
 
-  // Mark all as read mutation using oRPC mutation options
   const markAllAsReadMutation = useMutation(
     orpc.notifications.markAllRead.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
-        });
+      onMutate: async () => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData(queryKey) as typeof data;
+        if (previous) {
+          queryClient.setQueryData(queryKey, {
+            ...previous,
+            notifications: previous.notifications.map(n => ({ ...n, isRead: true })),
+            unreadCount: 0,
+          });
+        }
+        return { previous };
+      },
+      onError: (_, __, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(queryKey, context.previous);
+        }
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey });
       },
     })
   );
@@ -41,55 +71,50 @@ export function useNotifications() {
   // SSE subscription for real-time updates
   useEffect(() => {
     let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
 
-    const connectSSE = async () => {
+    const connectSSE = () => {
       try {
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
         const sseUrl = `${baseUrl}/api/notifications/subscribe`;
 
-        eventSource = new EventSource(sseUrl, {
-          withCredentials: true,
-        });
+        eventSource = new EventSource(sseUrl, { withCredentials: true });
 
         eventSource.onopen = () => {
-          console.log("[SSE] Connected to notification stream");
+          console.log("[SSE] Connected");
           setIsConnected(true);
         };
 
         eventSource.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
-
-            if (data.type === "created") {
-              queryClient.invalidateQueries({
-                queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }),
+            const eventData = JSON.parse(event.data);
+            if (eventData.type === "created") {
+              // Immediately refetch notifications for real-time bell update
+              queryClient.invalidateQueries({ 
+                queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }) 
               });
-              console.log("[SSE] New notification:", data.notification);
             }
           } catch (error) {
-            console.error("[SSE] Error parsing message:", error);
+            console.error("[SSE] Parse error:", error);
           }
         };
 
-        eventSource.onerror = (error) => {
-          console.error("[SSE] Connection error:", error);
+        eventSource.onerror = () => {
           setIsConnected(false);
           eventSource?.close();
-
-          setTimeout(connectSSE, 5000);
+          reconnectTimeout = setTimeout(connectSSE, 5000);
         };
       } catch (error) {
-        console.error("[SSE] Failed to connect:", error);
+        console.error("[SSE] Connect error:", error);
       }
     };
 
     connectSSE();
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-        setIsConnected(false);
-      }
+      eventSource?.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      setIsConnected(false);
     };
   }, [queryClient]);
 

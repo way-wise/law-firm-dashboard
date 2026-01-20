@@ -143,91 +143,96 @@ export async function syncMatters(userId: string) {
         existingMatters.filter(m => m.isEdited).map(m => m.docketwiseId)
       );
 
-      // Process matters - skip edited ones
-      for (const docketwiseMatter of matters) {
-        try {
-          // Skip update if user has edited this matter
-          if (editedMatterIds.has(docketwiseMatter.id)) {
-            // Only update lastSyncedAt to track that we checked it
-            await prisma.matters.update({
-              where: { docketwiseId: docketwiseMatter.id },
-              data: { lastSyncedAt: new Date() },
-            });
-            continue;
-          }
+      const BATCH_SIZE = 50;
+      const mattersToProcess = matters.filter(m => !editedMatterIds.has(m.id));
+      const editedMattersToUpdate = matters.filter(m => editedMatterIds.has(m.id));
 
-          // Get existing matter for change detection
-          const existingMatter = existingMattersMap.get(docketwiseMatter.id);
-          const newStatus = typeof docketwiseMatter.status === 'object' && docketwiseMatter.status 
-            ? docketwiseMatter.status.name 
-            : docketwiseMatter.status;
-
-          // Detect status change and send notification
-          if (existingMatter && existingMatter.status !== newStatus) {
-            const notificationType = detectNotificationType(existingMatter.status, newStatus);
-            if (notificationType) {
-              console.log(`[SYNC] Status change detected for matter ${docketwiseMatter.id}: ${existingMatter.status} -> ${newStatus} (${notificationType})`);
-              
-              // Send notification asynchronously (don't block sync)
-              sendNotification({
-                type: notificationType,
-                matterId: existingMatter.id,
-                matterTitle: docketwiseMatter.title || existingMatter.title,
-                clientName: existingMatter.clientName,
-                matterType: docketwiseMatter.matter_type?.name || existingMatter.matterType,
-                workflowStage: docketwiseMatter.workflow_stage?.name || existingMatter.workflowStage,
-                status: newStatus,
-                oldStatus: existingMatter.status,
-                paralegalName: existingMatter.paralegalAssigned,
-                deadlineDate: existingMatter.estimatedDeadline,
-              }).catch(err => console.error(`[SYNC] Failed to send notification:`, err));
-            }
-          }
-
-          await prisma.matters.upsert({
-            where: { docketwiseId: docketwiseMatter.id },
-            update: {
-              docketwiseUpdatedAt: docketwiseMatter.updated_at ? new Date(docketwiseMatter.updated_at) : null,
-              title: docketwiseMatter.title || "Untitled",
-              matterType: docketwiseMatter.matter_type?.name || docketwiseMatter.type || null,
-              matterTypeId: docketwiseMatter.matter_type?.id || null,
-              workflowStage: docketwiseMatter.workflow_stage?.name || null,
-              workflowStageId: docketwiseMatter.workflow_stage?.id || null,
-              clientId: docketwiseMatter.client_id || null,
-              status: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : docketwiseMatter.status,
-              statusId: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.id : null,
-              openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
-              closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
-              docketwiseUserIds: docketwiseMatter.attorney_id ? String(docketwiseMatter.attorney_id) : null,
-              lastSyncedAt: new Date(),
-              isStale: false,
-            },
-            create: {
-              docketwiseId: docketwiseMatter.id,
-              docketwiseUpdatedAt: docketwiseMatter.updated_at ? new Date(docketwiseMatter.updated_at) : null,
-              title: docketwiseMatter.title || "Untitled",
-              matterType: docketwiseMatter.matter_type?.name || docketwiseMatter.type || null,
-              matterTypeId: docketwiseMatter.matter_type?.id || null,
-              workflowStage: docketwiseMatter.workflow_stage?.name || null,
-              workflowStageId: docketwiseMatter.workflow_stage?.id || null,
-              clientId: docketwiseMatter.client_id || null,
-              status: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : docketwiseMatter.status,
-              statusId: null,
-              openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
-              closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
-              docketwiseUserIds: docketwiseMatter.attorney_id ? String(docketwiseMatter.attorney_id) : null,
-              userId,
-              lastSyncedAt: new Date(),
-              isStale: false,
-            },
-          });
-        } catch (error) {
-          console.error(`[SYNC] Error saving matter ${docketwiseMatter.id}:`, error);
-        }
+      if (editedMattersToUpdate.length > 0) {
+        const editedIds = editedMattersToUpdate.map(m => m.id);
+        await prisma.matters.updateMany({
+          where: { docketwiseId: { in: editedIds } },
+          data: { lastSyncedAt: new Date() },
+        });
       }
 
-      // Batch fetch all clients once per page
-      if (page === 1) { // Only fetch on first page
+      for (let i = 0; i < mattersToProcess.length; i += BATCH_SIZE) {
+        const batch = mattersToProcess.slice(i, i + BATCH_SIZE);
+        
+        await prisma.$transaction(async (tx) => {
+          for (const docketwiseMatter of batch) {
+            try {
+              const existingMatter = existingMattersMap.get(docketwiseMatter.id);
+              const newStatus = typeof docketwiseMatter.status === 'object' && docketwiseMatter.status 
+                ? docketwiseMatter.status.name 
+                : docketwiseMatter.status;
+
+              if (existingMatter && existingMatter.status !== newStatus) {
+                const notificationType = detectNotificationType(existingMatter.status, newStatus);
+                if (notificationType) {
+                  console.log(`[SYNC] Status change detected for matter ${docketwiseMatter.id}: ${existingMatter.status} -> ${newStatus} (${notificationType})`);
+                  
+                  sendNotification({
+                    type: notificationType,
+                    matterId: existingMatter.id,
+                    matterTitle: docketwiseMatter.title || existingMatter.title,
+                    clientName: existingMatter.clientName,
+                    matterType: docketwiseMatter.matter_type?.name || existingMatter.matterType,
+                    workflowStage: docketwiseMatter.workflow_stage?.name || existingMatter.workflowStage,
+                    status: newStatus,
+                    oldStatus: existingMatter.status,
+                    paralegalName: existingMatter.paralegalAssigned,
+                    deadlineDate: existingMatter.estimatedDeadline,
+                  }).catch(err => console.error(`[SYNC] Failed to send notification:`, err));
+                }
+              }
+
+              await tx.matters.upsert({
+                where: { docketwiseId: docketwiseMatter.id },
+                update: {
+                  docketwiseUpdatedAt: docketwiseMatter.updated_at ? new Date(docketwiseMatter.updated_at) : null,
+                  title: docketwiseMatter.title || "Untitled",
+                  matterType: docketwiseMatter.matter_type?.name || docketwiseMatter.type || null,
+                  matterTypeId: docketwiseMatter.matter_type?.id || null,
+                  workflowStage: docketwiseMatter.workflow_stage?.name || null,
+                  workflowStageId: docketwiseMatter.workflow_stage?.id || null,
+                  clientId: docketwiseMatter.client_id || null,
+                  status: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : docketwiseMatter.status,
+                  statusId: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.id : null,
+                  openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
+                  closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
+                  docketwiseUserIds: docketwiseMatter.attorney_id ? String(docketwiseMatter.attorney_id) : null,
+                  lastSyncedAt: new Date(),
+                  isStale: false,
+                },
+                create: {
+                  docketwiseId: docketwiseMatter.id,
+                  docketwiseUpdatedAt: docketwiseMatter.updated_at ? new Date(docketwiseMatter.updated_at) : null,
+                  title: docketwiseMatter.title || "Untitled",
+                  matterType: docketwiseMatter.matter_type?.name || docketwiseMatter.type || null,
+                  matterTypeId: docketwiseMatter.matter_type?.id || null,
+                  workflowStage: docketwiseMatter.workflow_stage?.name || null,
+                  workflowStageId: docketwiseMatter.workflow_stage?.id || null,
+                  clientId: docketwiseMatter.client_id || null,
+                  status: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : docketwiseMatter.status,
+                  statusId: null,
+                  openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
+                  closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
+                  docketwiseUserIds: docketwiseMatter.attorney_id ? String(docketwiseMatter.attorney_id) : null,
+                  userId,
+                  lastSyncedAt: new Date(),
+                  isStale: false,
+                },
+              });
+            } catch (error) {
+              console.error(`[SYNC] Error saving matter ${docketwiseMatter.id}:`, error);
+            }
+          }
+        }, { timeout: 60000 });
+        
+        console.log(`[SYNC] Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(mattersToProcess.length / BATCH_SIZE)}`);
+      }
+
+      if (page === 1) {
         const clientIds = [...new Set(matters.filter((m) => m.client_id).map((m) => m.client_id))];
         if (clientIds.length > 0) {
           console.log(`[SYNC] Fetching all clients...`);
@@ -248,21 +253,31 @@ export async function syncMatters(userId: string) {
                 ])
               );
 
-              // Update all matters with client names (only if not edited by user)
               const mattersToUpdate = await prisma.matters.findMany({
                 where: { 
                   userId, 
                   clientId: { not: null },
-                  isEdited: false, // Don't overwrite user-edited matters
+                  isEdited: false,
                 },
                 select: { id: true, clientId: true },
               });
 
+              const mattersByClient = new Map<number, string[]>();
               for (const matter of mattersToUpdate) {
                 if (matter.clientId && clientMap.has(matter.clientId)) {
-                  await prisma.matters.update({
-                    where: { id: matter.id },
-                    data: { clientName: clientMap.get(matter.clientId) as string | null },
+                  if (!mattersByClient.has(matter.clientId)) {
+                    mattersByClient.set(matter.clientId, []);
+                  }
+                  mattersByClient.get(matter.clientId)!.push(matter.id);
+                }
+              }
+
+              for (const [clientId, matterIds] of mattersByClient) {
+                const clientName = clientMap.get(clientId);
+                if (clientName) {
+                  await prisma.matters.updateMany({
+                    where: { id: { in: matterIds } },
+                    data: { clientName },
                   });
                 }
               }
@@ -274,8 +289,6 @@ export async function syncMatters(userId: string) {
         }
       }
 
-      // Check if there are more pages
-      // Use pagination header if available, otherwise check if we got a full page (200 records)
       const hasNextPage = pagination 
         ? (pagination.next_page !== null && pagination.next_page !== undefined)
         : matters.length >= 200; // Docketwise returns max 200 per page
@@ -285,7 +298,6 @@ export async function syncMatters(userId: string) {
         break;
       }
 
-      // Rate limiting - small delay between pages
       await delay(RATE_LIMIT_DELAY_MS);
       page++;
     }
@@ -296,8 +308,7 @@ export async function syncMatters(userId: string) {
 
     console.log(`[SYNC] Completed: ${recordsProcessed} total records processed`);
 
-    // After all matters are synced, fetch users and update paralegal assignments
-    console.log(`[SYNC] Fetching all users for paralegal assignments...`);
+    console.log(`[SYNC] Fetching users for paralegal assignments...`);
     try {
       const usersResponse = await fetch(`${DOCKETWISE_API_URL}/users`, {
         headers: {
@@ -319,34 +330,39 @@ export async function syncMatters(userId: string) {
 
         console.log(`[SYNC] Fetched ${allUsers.length} users from Docketwise`);
 
-        // Update all matters that have attorney_id (stored in docketwiseUserIds)
-        // Only update paralegalAssigned if isEdited is false (not manually edited by user)
         const mattersToUpdate = await prisma.matters.findMany({
           where: { 
             userId, 
             docketwiseUserIds: { not: null },
-            isEdited: false, // Don't overwrite user-edited matters
+            isEdited: false,
           },
           select: { id: true, docketwiseUserIds: true },
         });
 
         console.log(`[SYNC] Found ${mattersToUpdate.length} matters with attorney_id to process`);
 
-        let updatedCount = 0;
+        const mattersByAttorney = new Map<number, string[]>();
         for (const matter of mattersToUpdate) {
           if (matter.docketwiseUserIds) {
-            // docketwiseUserIds now stores attorney_id as a simple string
             const attorneyId = parseInt(matter.docketwiseUserIds, 10);
-            if (!isNaN(attorneyId)) {
-              const userName = userMap.get(attorneyId);
-              if (userName) {
-                await prisma.matters.update({
-                  where: { id: matter.id },
-                  data: { paralegalAssigned: userName },
-                });
-                updatedCount++;
+            if (!isNaN(attorneyId) && userMap.has(attorneyId)) {
+              if (!mattersByAttorney.has(attorneyId)) {
+                mattersByAttorney.set(attorneyId, []);
               }
+              mattersByAttorney.get(attorneyId)!.push(matter.id);
             }
+          }
+        }
+
+        let updatedCount = 0;
+        for (const [attorneyId, matterIds] of mattersByAttorney) {
+          const userName = userMap.get(attorneyId);
+          if (userName) {
+            await prisma.matters.updateMany({
+              where: { id: { in: matterIds } },
+              data: { paralegalAssigned: userName },
+            });
+            updatedCount += matterIds.length;
           }
         }
         console.log(`[SYNC] Updated ${updatedCount} paralegal assignments (attorney names)`);
