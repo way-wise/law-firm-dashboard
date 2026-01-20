@@ -4,6 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, admin } from "better-auth/plugins";
 import { headers } from "next/headers";
 import prisma from "./prisma";
+import { ac, superRole, adminRole, userRole } from "./permissions";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -37,7 +38,13 @@ export const auth = betterAuth({
     nextCookies(),
     admin({
       defaultRole: "user",
-      adminRoles: ["admin"],
+      adminRoles: ["super"],
+      ac,
+      roles: {
+        super: superRole,
+        admin: adminRole,
+        user: userRole,
+      },
     }),
     genericOAuth({
       config: [
@@ -52,9 +59,7 @@ export const auth = betterAuth({
           pkce: false,
           accessType: "offline",
           getUserInfo: async () => {
-            // Docketwise doesn't have a /me endpoint, so we create a consistent
-            // placeholder user for the firm's Docketwise connection.
-            // This ensures only one Docketwise account is created per firm.
+            // For Docketwise OAuth, we create a placeholder user, So it's shared across all users
             return {
               id: "docketwise_firm_connection",
               email: "docketwise@firm.local",
