@@ -41,6 +41,7 @@ export const getNotificationRecipients = authorized
   });
 
 // Get all users available for notification (for multi-select dropdown)
+// Note: Super admin is excluded from selection - they always receive notifications automatically
 export const getAvailableUsers = authorized
   .route({
     method: "GET",
@@ -56,9 +57,12 @@ export const getAvailableUsers = authorized
     inAppEnabled: z.boolean(),
   })))
   .handler(async () => {
-    // Get all users from the system
+    // Get all users from the system, excluding super admin (they always get notifications)
     const users = await prisma.users.findMany({
-      where: { banned: { not: true } },
+      where: { 
+        banned: { not: true },
+        role: { not: "super" }, // Exclude super admin from selection
+      },
       select: {
         id: true,
         name: true,

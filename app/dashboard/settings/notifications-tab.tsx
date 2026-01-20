@@ -13,7 +13,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { MultiSelect, type Option } from "@/components/ui/multi-select";
-import { Bell, Mail, Loader2, Settings } from "lucide-react";
+import { Bell, Mail, Loader2, Settings, FlaskConical } from "lucide-react";
+import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/orpc/client";
 import { useState } from "react";
@@ -93,6 +94,36 @@ export function NotificationsTab() {
     },
   });
 
+  // Test email notification mutation
+  const testEmailMutation = useMutation({
+    mutationFn: () => client.testNotifications.sendEmail(),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message);
+      } else {
+        toast.error(data.message);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to send test email");
+    },
+  });
+
+  // Test in-app notification mutation
+  const testInAppMutation = useMutation({
+    mutationFn: () => client.testNotifications.sendInApp(),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message);
+      } else {
+        toast.error(data.message);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to send test notification");
+    },
+  });
+
   const handleToggle = (key: keyof NotificationSettings) => {
     if (!settings) return;
     updateMutation.mutate({ [key]: !settings[key] });
@@ -153,12 +184,26 @@ export function NotificationsTab() {
                 </CardDescription>
               </div>
             </div>
-            <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Settings className="size-5" />
-                </Button>
-              </DialogTrigger>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => testEmailMutation.mutate()}
+                disabled={testEmailMutation.isPending}
+                title="Send test email"
+              >
+                {testEmailMutation.isPending ? (
+                  <Loader2 className="size-5 animate-spin" />
+                ) : (
+                  <FlaskConical className="size-5" />
+                )}
+              </Button>
+              <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <Settings className="size-5" />
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Email Recipients</DialogTitle>
@@ -195,7 +240,8 @@ export function NotificationsTab() {
                   </Button>
                 </div>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -238,12 +284,26 @@ export function NotificationsTab() {
                 </CardDescription>
               </div>
             </div>
-            <Dialog open={inAppDialogOpen} onOpenChange={setInAppDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Settings className="size-5" />
-                </Button>
-              </DialogTrigger>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => testInAppMutation.mutate()}
+                disabled={testInAppMutation.isPending}
+                title="Send test notification"
+              >
+                {testInAppMutation.isPending ? (
+                  <Loader2 className="size-5 animate-spin" />
+                ) : (
+                  <FlaskConical className="size-5" />
+                )}
+              </Button>
+              <Dialog open={inAppDialogOpen} onOpenChange={setInAppDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <Settings className="size-5" />
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>In-App Recipients</DialogTitle>
@@ -280,7 +340,8 @@ export function NotificationsTab() {
                   </Button>
                 </div>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">

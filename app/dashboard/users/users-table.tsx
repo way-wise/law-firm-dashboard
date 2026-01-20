@@ -10,8 +10,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
@@ -42,25 +44,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { Controller, useForm } from "react-hook-form";
 import {
-  LuEllipsisVertical,
-  LuPlus,
-  LuTrash,
-  LuShield,
-  LuUser,
   LuCheck,
   LuCrown,
+  LuEllipsisVertical,
+  LuPlus,
+  LuShield,
+  LuTrash,
+  LuUser,
 } from "react-icons/lu";
 import { toast } from "sonner";
+import { z } from "zod";
 
 // User type from Better-Auth
 interface UserType {
@@ -134,7 +134,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
       setOpenCreateDialog(false);
       createForm.reset();
       router.refresh();
-    } catch (error) {
+    } catch {
       toast.error("An unexpected error occurred");
     } finally {
       setIsSubmitting(false);
@@ -160,7 +160,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
       setOpenDeleteDialog(false);
       setSelectedUser(null);
       router.refresh();
-    } catch (error) {
+    } catch {
       toast.error("An unexpected error occurred");
     } finally {
       setIsSubmitting(false);
@@ -188,7 +188,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
       setOpenRoleDialog(false);
       setSelectedUser(null);
       router.refresh();
-    } catch (error) {
+    } catch {
       toast.error("An unexpected error occurred");
     } finally {
       setIsSubmitting(false);
@@ -264,15 +264,6 @@ const UsersTable = ({ users }: UsersTableProps) => {
       cell: ({ row }) => getRoleBadge(row.original.role),
     },
     {
-      header: "Status",
-      accessorKey: "emailVerified",
-      cell: ({ row }) => (
-        <Badge variant={row.original.emailVerified ? "success" : "warning"}>
-          {row.original.emailVerified ? "Verified" : "Pending"}
-        </Badge>
-      ),
-    },
-    {
       header: "Action",
       cell: ({ row }) => (
         <DropdownMenu>
@@ -327,7 +318,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
 
       {/* Role Permissions Card */}
       <Card className="mb-6 p-5">
-        <h3 className="font-semibold mb-4">Role Permissions</h3>
+        <h3 className="mb-4 font-semibold">Role Permissions</h3>
         <div className="grid gap-6 md:grid-cols-3">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -340,7 +331,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
                   key={permission}
                   className="flex items-center gap-2 text-sm text-muted-foreground"
                 >
-                  <LuCheck className="size-4 text-emerald-500 shrink-0" />
+                  <LuCheck className="size-4 shrink-0 text-emerald-500" />
                   <span>{permission}</span>
                 </div>
               ))}
@@ -357,7 +348,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
                   key={permission}
                   className="flex items-center gap-2 text-sm text-muted-foreground"
                 >
-                  <LuCheck className="size-4 text-emerald-500 shrink-0" />
+                  <LuCheck className="size-4 shrink-0 text-emerald-500" />
                   <span>{permission}</span>
                 </div>
               ))}
@@ -374,7 +365,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
                   key={permission}
                   className="flex items-center gap-2 text-sm text-muted-foreground"
                 >
-                  <LuCheck className="size-4 text-emerald-500 shrink-0" />
+                  <LuCheck className="size-4 shrink-0 text-emerald-500" />
                   <span>{permission}</span>
                 </div>
               ))}
@@ -496,7 +487,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
           <div className="grid grid-cols-2 gap-3 py-4">
             <Button
               variant={selectedUser?.role === "user" ? "default" : "outline"}
-              className="flex-col h-auto py-4 gap-2"
+              className="h-auto flex-col gap-2 py-4"
               onClick={() => handleSetRole("user")}
               disabled={isSubmitting || selectedUser?.role === "user"}
             >
@@ -505,7 +496,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
             </Button>
             <Button
               variant={selectedUser?.role === "admin" ? "default" : "outline"}
-              className="flex-col h-auto py-4 gap-2"
+              className="h-auto flex-col gap-2 py-4"
               onClick={() => handleSetRole("admin")}
               disabled={isSubmitting || selectedUser?.role === "admin"}
             >

@@ -62,6 +62,10 @@ import {
   updateInAppRecipients,
   initializeRecipients,
 } from "./notificationRecipients";
+import {
+  sendTestEmail,
+  sendTestInApp,
+} from "./testNotifications";
 
 export const router = {
   todos: {
@@ -136,5 +140,9 @@ export const router = {
     updateEmail: updateEmailRecipients,
     updateInApp: updateInAppRecipients,
     initialize: initializeRecipients,
+  },
+  testNotifications: {
+    sendEmail: sendTestEmail,
+    sendInApp: sendTestInApp,
   },
 };

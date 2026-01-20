@@ -1,8 +1,24 @@
 import "server-only";
 import nodemailer from "nodemailer";
 
-// Email service for sending deadline notifications
-// Using Nodemailer with Gmail SMTP
+// Email service for sending notifications
+// Using Nodemailer with SMTP
+
+// Notification types
+export type EmailNotificationType = "rfe" | "approval" | "denial" | "statusChange" | "deadline" | "test";
+
+// Generic notification email data
+interface NotificationEmailData {
+  to: string;
+  type: EmailNotificationType;
+  subject: string;
+  message: string;
+  matterTitle: string;
+  clientName?: string | null;
+  matterType?: string | null;
+  matterUrl?: string;
+  isTest?: boolean;
+}
 
 interface DeadlineEmailData {
   to: string;
@@ -165,6 +181,155 @@ Law Firm Dashboard - Automated Deadline Notification
     return true;
   } catch (error) {
     console.error("[EMAIL] Failed to send deadline reminder:", error);
+    return false;
+  }
+}
+
+// Get notification type styling
+function getNotificationTypeStyle(type: EmailNotificationType): { 
+  icon: string; 
+  color: string; 
+  bgColor: string; 
+  title: string;
+} {
+  switch (type) {
+    case "rfe":
+      return { icon: "📋", color: "#f59e0b", bgColor: "#fef3c7", title: "Request for Evidence (RFE)" };
+    case "approval":
+      return { icon: "✅", color: "#10b981", bgColor: "#d1fae5", title: "Case Approved" };
+    case "denial":
+      return { icon: "❌", color: "#ef4444", bgColor: "#fee2e2", title: "Case Denied" };
+    case "statusChange":
+      return { icon: "🔄", color: "#3b82f6", bgColor: "#dbeafe", title: "Status Update" };
+    case "deadline":
+      return { icon: "⏰", color: "#8b5cf6", bgColor: "#ede9fe", title: "Deadline Reminder" };
+    case "test":
+      return { icon: "🧪", color: "#6366f1", bgColor: "#e0e7ff", title: "Test Notification" };
+    default:
+      return { icon: "📢", color: "#6b7280", bgColor: "#f3f4f6", title: "Notification" };
+  }
+}
+
+// Send a generic notification email (works for all notification types)
+export async function sendNotificationEmail(data: NotificationEmailData): Promise<boolean> {
+  const transporter = createTransporter();
+  if (!transporter) {
+    console.warn("[EMAIL] SMTP not configured, skipping email send");
+    return false;
+  }
+
+  try {
+    const style = getNotificationTypeStyle(data.type);
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1f2937; background-color: #f9fafb;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <!-- Header -->
+          <tr>
+            <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #e5e7eb;">
+              <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #111827;">
+                ${style.icon} ${style.title}
+              </h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 32px;">
+              ${data.isTest ? `
+              <div style="background-color: #fef3c7; border: 1px solid #fcd34d; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px;">
+                <p style="margin: 0; font-size: 14px; color: #92400e; font-weight: 500;">🧪 This is a test notification to verify your settings are working correctly.</p>
+              </div>
+              ` : ""}
+              
+              <p style="margin: 0 0 24px 0; font-size: 16px; color: #374151;">${data.message}</p>
+              
+              <!-- Matter Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; border-radius: 6px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <p style="margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Matter Details</p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 120px;">Matter</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 500;">${data.matterTitle}</td>
+                      </tr>
+                      ${data.clientName ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Client</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.clientName}</td>
+                      </tr>
+                      ` : ""}
+                      ${data.matterType ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Type</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.matterType}</td>
+                      </tr>
+                      ` : ""}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              ${data.matterUrl ? `
+              <a href="${data.matterUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">View Matter Details</a>
+              ` : ""}
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; border-top: 1px solid #e5e7eb; background-color: #f9fafb; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0; font-size: 13px; color: #6b7280; text-align: center;">Law Firm Dashboard</p>
+              <p style="margin: 4px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center;">You received this email because you are subscribed to notifications.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const textContent = `
+${style.title}
+${data.isTest ? "\n🧪 TEST NOTIFICATION - This is a test email to verify your notification settings.\n" : ""}
+${data.subject}
+
+${data.message}
+
+Matter Details:
+- Matter: ${data.matterTitle}
+${data.clientName ? `- Client: ${data.clientName}` : ""}
+${data.matterType ? `- Matter Type: ${data.matterType}` : ""}
+${data.matterUrl ? `\nView Matter Details: ${data.matterUrl}` : ""}
+
+---
+Law Firm Dashboard - Automated Notification
+    `.trim();
+
+    const result = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+      to: data.to,
+      subject: data.isTest ? `[TEST] ${data.subject}` : data.subject,
+      html: htmlContent,
+      text: textContent,
+    });
+
+    console.log(`[EMAIL] Sent ${data.type} notification to ${data.to}`, result.messageId);
+    return true;
+  } catch (error) {
+    console.error(`[EMAIL] Failed to send ${data.type} notification:`, error);
     return false;
   }
 }

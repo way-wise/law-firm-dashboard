@@ -48,7 +48,9 @@ async function getNotificationSettings() {
 }
 
 // Get recipients who should receive notifications
+// Super admin always receives notifications (respecting their toggle settings)
 async function getRecipients(channel: "email" | "inApp") {
+  // Get regular recipients from notificationRecipients table
   const recipients = await prisma.notificationRecipients.findMany({
     where: channel === "email" 
       ? { emailEnabled: true }
@@ -59,12 +61,55 @@ async function getRecipients(channel: "email" | "inApp") {
           id: true,
           email: true,
           name: true,
+          role: true,
         },
       },
     },
   });
 
-  return recipients.map((r) => r.user);
+  const recipientUsers = recipients.map((r) => r.user);
+
+  // Always include super admin if they have notifications enabled
+  // First check if super admin exists and has a notificationRecipients entry
+  const superAdmin = await prisma.users.findFirst({
+    where: { role: "super", banned: { not: true } },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      notificationRecipients: {
+        select: {
+          emailEnabled: true,
+          inAppEnabled: true,
+        },
+      },
+    },
+  });
+
+  if (superAdmin) {
+    // Check if super admin is already in the list
+    const superAlreadyIncluded = recipientUsers.some((u) => u.id === superAdmin.id);
+    
+    if (!superAlreadyIncluded) {
+      // Check if super admin has this channel enabled (or if they have no settings, default to enabled)
+      const superSettings = superAdmin.notificationRecipients;
+      const isChannelEnabled = channel === "email" 
+        ? (superSettings?.emailEnabled ?? true)  // Default to true if no settings
+        : (superSettings?.inAppEnabled ?? true); // Default to true if no settings
+      
+      if (isChannelEnabled) {
+        recipientUsers.push({
+          id: superAdmin.id,
+          email: superAdmin.email,
+          name: superAdmin.name,
+          role: superAdmin.role,
+        });
+      }
+    }
+  }
+
+  return recipientUsers;
 }
 
 // Check if a notification type is enabled
