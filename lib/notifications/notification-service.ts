@@ -1,7 +1,7 @@
 import "server-only";
 import prisma from "@/lib/prisma";
 import { publishNotificationCreated } from "./publisher";
-import { queueDeadlineReminderEmail } from "./email-queue";
+import { sendNotificationEmail } from "./email";
 
 // Notification types that match the settings
 export type NotificationType = 
@@ -9,7 +9,10 @@ export type NotificationType =
   | "approval"
   | "denial"
   | "statusChange"
-  | "deadline";
+  | "deadline"
+  | "pastDeadline"
+  | "workflowChange"
+  | "billingChange";
 
 // Notification data structure
 interface NotificationData {
@@ -19,8 +22,11 @@ interface NotificationData {
   clientName?: string | null;
   matterType?: string | null;
   workflowStage?: string | null;
+  oldWorkflowStage?: string | null;
   status?: string | null;
   oldStatus?: string | null;
+  billingStatus?: string | null;
+  oldBillingStatus?: string | null;
   deadlineDate?: Date | null;
   daysRemaining?: number;
   paralegalName?: string | null;
@@ -138,38 +144,89 @@ function isNotificationEnabled(
   return settings[mappedKey] === true;
 }
 
-// Generate notification subject and message based on type
-function generateNotificationContent(data: NotificationData): { subject: string; message: string } {
+// Generate notification content - separate email and in-app formats
+function generateNotificationContent(data: NotificationData): { 
+  subject: string; 
+  emailMessage: string; 
+  inAppMessage: string;
+  emailGreeting: string;
+  emailClosing: string;
+} {
+  const matterType = data.matterType || "matter";
+  const clientName = data.clientName || "the client";
+  
   switch (data.type) {
-    case "rfe":
+    case "pastDeadline":
       return {
-        subject: `RFE Received: ${data.matterTitle}`,
-        message: `A Request for Evidence (RFE) has been received for "${data.matterTitle}"${data.clientName ? ` (Client: ${data.clientName})` : ""}. Please review and respond promptly.`,
-      };
-    case "approval":
-      return {
-        subject: `Case Approved: ${data.matterTitle}`,
-        message: `Great news! The case "${data.matterTitle}"${data.clientName ? ` for ${data.clientName}` : ""} has been approved.`,
-      };
-    case "denial":
-      return {
-        subject: `Case Denied: ${data.matterTitle}`,
-        message: `The case "${data.matterTitle}"${data.clientName ? ` for ${data.clientName}` : ""} has been denied. Please review the decision and consider next steps.`,
-      };
-    case "statusChange":
-      return {
-        subject: `Status Update: ${data.matterTitle}`,
-        message: `The status of "${data.matterTitle}" has changed${data.oldStatus ? ` from "${data.oldStatus}"` : ""} to "${data.status || "Unknown"}".`,
+        subject: `Action Required – Past Deadline`,
+        emailGreeting: "Hello,",
+        emailMessage: `The ${matterType} for ${clientName} is past the set deadline. Please provide an explanation as to why this filing has not yet been completed.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `The ${matterType} for ${clientName} is past the set deadline. Please review immediately.`,
       };
     case "deadline":
       return {
-        subject: `Deadline Reminder: ${data.matterTitle}`,
-        message: `The deadline for "${data.matterTitle}" is approaching in ${data.daysRemaining} day${data.daysRemaining !== 1 ? "s" : ""}. Please ensure all necessary actions are completed.`,
+        subject: `Deadline Approaching – ${data.daysRemaining} Day${data.daysRemaining !== 1 ? "s" : ""} Remaining`,
+        emailGreeting: "Hello,",
+        emailMessage: `The ${matterType} for ${clientName} has a deadline approaching in ${data.daysRemaining} day${data.daysRemaining !== 1 ? "s" : ""}. Please ensure all necessary actions are completed before the deadline.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `The ${matterType} for ${clientName} has a deadline in ${data.daysRemaining} day${data.daysRemaining !== 1 ? "s" : ""}.`,
+      };
+    case "workflowChange":
+      return {
+        subject: `Workflow Stage Updated – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: `The workflow stage for the ${matterType} for ${clientName} has been updated${data.oldWorkflowStage ? ` from "${data.oldWorkflowStage}"` : ""} to "${data.workflowStage || "Unknown"}". Please review and take any necessary actions.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `Workflow stage changed to "${data.workflowStage}" for ${matterType} (${clientName}).`,
+      };
+    case "billingChange":
+      return {
+        subject: `Billing Status Updated – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: `The billing status for the ${matterType} for ${clientName} has been updated${data.oldBillingStatus ? ` from "${data.oldBillingStatus}"` : ""} to "${data.billingStatus || "Unknown"}".`,
+        emailClosing: "Thank you.",
+        inAppMessage: `Billing status changed to "${data.billingStatus}" for ${matterType} (${clientName}).`,
+      };
+    case "statusChange":
+      return {
+        subject: `Status Update – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: `The status of the ${matterType} for ${clientName} has been updated${data.oldStatus ? ` from "${data.oldStatus}"` : ""} to "${data.status || "Unknown"}". Please review and take any necessary actions.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `Status changed to "${data.status}" for ${matterType} (${clientName}).`,
+      };
+    case "rfe":
+      return {
+        subject: `Action Required – RFE Received`,
+        emailGreeting: "Hello,",
+        emailMessage: `A Request for Evidence (RFE) has been received for the ${matterType} for ${clientName}. Please review and respond promptly to avoid any delays.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `RFE received for ${matterType} (${clientName}). Please respond promptly.`,
+      };
+    case "approval":
+      return {
+        subject: `Case Approved – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: `Great news! The ${matterType} for ${clientName} has been approved. Please proceed with any final steps as needed.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `Case approved: ${matterType} for ${clientName}.`,
+      };
+    case "denial":
+      return {
+        subject: `Case Denied – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: `The ${matterType} for ${clientName} has been denied. Please review the decision and consider next steps, including any appeal options.`,
+        emailClosing: "Thank you.",
+        inAppMessage: `Case denied: ${matterType} for ${clientName}. Please review.`,
       };
     default:
       return {
-        subject: `Notification: ${data.matterTitle}`,
-        message: data.customMessage || `An update has occurred for "${data.matterTitle}".`,
+        subject: `Notification – ${data.matterTitle}`,
+        emailGreeting: "Hello,",
+        emailMessage: data.customMessage || `An update has occurred for the ${matterType} for ${clientName}.`,
+        emailClosing: "Thank you.",
+        inAppMessage: data.customMessage || `Update for ${matterType} (${clientName}).`,
       };
   }
 }
@@ -180,18 +237,22 @@ export async function sendNotification(data: NotificationData): Promise<{
   inAppCreated: number;
 }> {
   const settings = await getNotificationSettings();
-  const { subject, message } = generateNotificationContent(data);
+  const content = generateNotificationContent(data);
   
   let emailsSent = 0;
   let inAppCreated = 0;
 
+  // Map new notification types to existing settings (use statusChange for workflow/billing)
+  const effectiveType = ["workflowChange", "billingChange", "pastDeadline"].includes(data.type) 
+    ? (data.type === "pastDeadline" ? "deadline" : "statusChange") as NotificationType
+    : data.type;
+
   // Check if in-app notifications are enabled for this type
-  if (isNotificationEnabled(settings, data.type, "inApp")) {
+  if (isNotificationEnabled(settings, effectiveType, "inApp")) {
     const inAppRecipients = await getRecipients("inApp");
     
     for (const recipient of inAppRecipients) {
       try {
-        // Create in-app notification
         const notification = await prisma.deadlineNotifications.create({
           data: {
             matterId: data.matterId,
@@ -199,19 +260,18 @@ export async function sendNotification(data: NotificationData): Promise<{
             recipientEmail: recipient.email,
             notificationType: "in-app",
             daysBeforeDeadline: data.daysRemaining ?? 0,
-            subject,
-            message,
+            subject: content.subject,
+            message: content.inAppMessage,
             isRead: false,
           },
         });
 
-        // Publish real-time event
         await publishNotificationCreated({
           id: notification.id,
           userId: recipient.id,
           matterId: data.matterId,
-          subject,
-          message,
+          subject: content.subject,
+          message: content.inAppMessage,
           daysBeforeDeadline: data.daysRemaining ?? 0,
           sentAt: notification.sentAt,
         });
@@ -225,27 +285,27 @@ export async function sendNotification(data: NotificationData): Promise<{
   }
 
   // Check if email notifications are enabled for this type
-  if (isNotificationEnabled(settings, data.type, "email")) {
+  if (isNotificationEnabled(settings, effectiveType, "email")) {
     const emailRecipients = await getRecipients("email");
+    const matterUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/matters?matterId=${data.matterId}`;
     
     for (const recipient of emailRecipients) {
       try {
-        // Queue email for sending (uses bulk-friendly queue)
-        const matterUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/matters?matterId=${data.matterId}`;
-        
-        await queueDeadlineReminderEmail({
+        await sendNotificationEmail({
           to: recipient.email,
+          type: data.type === "pastDeadline" ? "deadline" : data.type as "rfe" | "approval" | "denial" | "statusChange" | "deadline",
+          subject: content.subject,
+          message: content.emailMessage,
+          greeting: content.emailGreeting,
+          closing: content.emailClosing,
           matterTitle: data.matterTitle,
-          clientName: data.clientName ?? null,
-          matterType: data.matterType ?? null,
-          deadlineDate: data.deadlineDate ?? new Date(),
-          daysRemaining: data.daysRemaining ?? 0,
-          workflowStage: data.workflowStage ?? null,
-          paralegalName: data.paralegalName ?? null,
+          clientName: data.clientName,
+          matterType: data.matterType,
+          workflowStage: data.workflowStage,
+          deadlineDate: data.deadlineDate,
           matterUrl,
         });
 
-        // Record email notification
         await prisma.deadlineNotifications.create({
           data: {
             matterId: data.matterId,
@@ -253,9 +313,9 @@ export async function sendNotification(data: NotificationData): Promise<{
             recipientEmail: recipient.email,
             notificationType: "email",
             daysBeforeDeadline: data.daysRemaining ?? 0,
-            subject,
-            message,
-            isRead: true, // Email notifications are always "read"
+            subject: content.subject,
+            message: content.emailMessage,
+            isRead: true,
           },
         });
 
@@ -281,25 +341,178 @@ export function detectNotificationType(
   
   const statusLower = newStatus.toLowerCase();
   
-  // Check for RFE
   if (statusLower.includes("rfe") || statusLower.includes("request for evidence")) {
     return "rfe";
   }
   
-  // Check for Approval
   if (statusLower.includes("approved") || statusLower.includes("approval")) {
     return "approval";
   }
   
-  // Check for Denial
   if (statusLower.includes("denied") || statusLower.includes("denial") || statusLower.includes("rejected")) {
     return "denial";
   }
   
-  // If status changed but doesn't match specific types, it's a general status change
   if (oldStatus !== newStatus) {
     return "statusChange";
   }
   
   return null;
 }
+
+// Matter change data for detecting field changes
+interface MatterChangeData {
+  matterId: string;
+  matterTitle: string;
+  clientName?: string | null;
+  matterType?: string | null;
+  // Current values
+  status?: string | null;
+  workflowStage?: string | null;
+  billingStatus?: string | null;
+  estimatedDeadline?: Date | null;
+  actualDeadline?: Date | null;
+  // Previous values
+  oldStatus?: string | null;
+  oldWorkflowStage?: string | null;
+  oldBillingStatus?: string | null;
+  oldEstimatedDeadline?: Date | null;
+  oldActualDeadline?: Date | null;
+}
+
+// Check if a deadline is past
+function isDeadlinePast(deadline: Date | null | undefined): boolean {
+  if (!deadline) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const deadlineDate = new Date(deadline);
+  deadlineDate.setHours(0, 0, 0, 0);
+  return deadlineDate < today;
+}
+
+// Check if deadline is approaching (within N days)
+function getDaysUntilDeadline(deadline: Date | null | undefined): number | null {
+  if (!deadline) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const deadlineDate = new Date(deadline);
+  deadlineDate.setHours(0, 0, 0, 0);
+  const diffTime = deadlineDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+}
+
+// Check if deadline was just added or changed
+function isDeadlineChanged(
+  oldDeadline: Date | null | undefined,
+  newDeadline: Date | null | undefined
+): boolean {
+  if (!newDeadline) return false;
+  if (!oldDeadline) return true; // New deadline added
+  
+  const oldDate = new Date(oldDeadline);
+  const newDate = new Date(newDeadline);
+  oldDate.setHours(0, 0, 0, 0);
+  newDate.setHours(0, 0, 0, 0);
+  
+  return oldDate.getTime() !== newDate.getTime();
+}
+
+// Detect and send notifications for matter field changes
+export async function checkMatterChangesAndNotify(data: MatterChangeData): Promise<void> {
+  const notifications: Array<{ type: NotificationType; data: NotificationData }> = [];
+
+  // Check estimated deadline change
+  const estimatedDeadlineChanged = isDeadlineChanged(data.oldEstimatedDeadline, data.estimatedDeadline);
+  if (estimatedDeadlineChanged && data.estimatedDeadline) {
+    const daysUntil = getDaysUntilDeadline(data.estimatedDeadline);
+    notifications.push({
+      type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
+      data: {
+        type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        deadlineDate: data.estimatedDeadline,
+        daysRemaining: daysUntil ?? 0,
+      },
+    });
+  }
+
+  // Check actual deadline change
+  const actualDeadlineChanged = isDeadlineChanged(data.oldActualDeadline, data.actualDeadline);
+  if (actualDeadlineChanged && data.actualDeadline) {
+    const daysUntil = getDaysUntilDeadline(data.actualDeadline);
+    notifications.push({
+      type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
+      data: {
+        type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        deadlineDate: data.actualDeadline,
+        daysRemaining: daysUntil ?? 0,
+      },
+    });
+  }
+
+  // Check for workflow stage change
+  if (data.oldWorkflowStage !== data.workflowStage && data.workflowStage) {
+    notifications.push({
+      type: "workflowChange",
+      data: {
+        type: "workflowChange",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        workflowStage: data.workflowStage,
+        oldWorkflowStage: data.oldWorkflowStage,
+      },
+    });
+  }
+
+  // Check for billing status change
+  if (data.oldBillingStatus !== data.billingStatus && data.billingStatus) {
+    notifications.push({
+      type: "billingChange",
+      data: {
+        type: "billingChange",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        billingStatus: data.billingStatus,
+        oldBillingStatus: data.oldBillingStatus,
+      },
+    });
+  }
+
+  // Check for status change - send notification for any status update
+  if (data.oldStatus !== data.status && data.status) {
+    notifications.push({
+      type: "statusChange",
+      data: {
+        type: "statusChange",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        status: data.status,
+        oldStatus: data.oldStatus,
+      },
+    });
+  }
+
+  // Send all notifications (don't await to avoid blocking)
+  for (const notification of notifications) {
+    sendNotification(notification.data).catch((err) => {
+      console.error(`[NOTIFICATION] Failed to send ${notification.type} notification:`, err);
+    });
+  }
+}
+
+// Export type for external use
+export type { NotificationData };

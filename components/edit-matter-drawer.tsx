@@ -20,10 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AdvancedSelect, type AdvancedSelectOption } from "@/components/ui/advanced-select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { client } from "@/lib/orpc/client";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { format } from "date-fns";
 import { X } from "lucide-react";
 import type { MatterType } from "@/schema/customMatterSchema";
 import { workers } from "@/data/workers";
@@ -46,9 +46,9 @@ export function EditMatterDrawer({
   const [matterType, setMatterType] = useState("");
   const [clientName, setClientName] = useState("");
   const [workflowStage, setWorkflowStage] = useState("");
-  const [assignedDate, setAssignedDate] = useState("");
-  const [estimatedDeadline, setEstimatedDeadline] = useState("");
-  const [actualDeadline, setActualDeadline] = useState("");
+  const [assignedDate, setAssignedDate] = useState<Date | null>(null);
+  const [estimatedDeadline, setEstimatedDeadline] = useState<Date | null>(null);
+  const [actualDeadline, setActualDeadline] = useState<Date | null>(null);
   const [billingStatus, setBillingStatus] = useState<string>("");
   const [paralegalAssigned, setParalegalAssigned] = useState("");
   const [customNotes, setCustomNotes] = useState("");
@@ -68,19 +68,9 @@ export function EditMatterDrawer({
       setMatterType(matter.matterType || "");
       setClientName(matter.clientName || "");
       setWorkflowStage(matter.workflowStage || "");
-      setAssignedDate(
-        matter.assignedDate ? format(new Date(matter.assignedDate), "yyyy-MM-dd") : ""
-      );
-      setEstimatedDeadline(
-        matter.estimatedDeadline
-          ? format(new Date(matter.estimatedDeadline), "yyyy-MM-dd")
-          : ""
-      );
-      setActualDeadline(
-        matter.actualDeadline
-          ? format(new Date(matter.actualDeadline), "yyyy-MM-dd")
-          : ""
-      );
+      setAssignedDate(matter.assignedDate ? new Date(matter.assignedDate) : null);
+      setEstimatedDeadline(matter.estimatedDeadline ? new Date(matter.estimatedDeadline) : null);
+      setActualDeadline(matter.actualDeadline ? new Date(matter.actualDeadline) : null);
       setBillingStatus(matter.billingStatus || "");
       setParalegalAssigned(matter.paralegalAssigned || "");
       setCustomNotes(matter.customNotes || "");
@@ -98,9 +88,9 @@ export function EditMatterDrawer({
         matterType: matterType || null,
         clientName: clientName || null,
         workflowStage: workflowStage || null,
-        assignedDate: assignedDate ? new Date(assignedDate) : null,
-        estimatedDeadline: estimatedDeadline ? new Date(estimatedDeadline) : null,
-        actualDeadline: actualDeadline ? new Date(actualDeadline) : null,
+        assignedDate: assignedDate || null,
+        estimatedDeadline: estimatedDeadline || null,
+        actualDeadline: actualDeadline || null,
         billingStatus: billingStatus ? (billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE") : null,
         paralegalAssigned: paralegalAssigned || null,
         customNotes: customNotes || null,
@@ -186,34 +176,31 @@ export function EditMatterDrawer({
 
               {/* Assigned Date */}
               <div className="space-y-2">
-                <Label htmlFor="assignedDate">Assigned Date</Label>
-                <Input
-                  id="assignedDate"
-                  type="date"
+                <Label>Assigned Date</Label>
+                <DatePicker
                   value={assignedDate}
-                  onChange={(e) => setAssignedDate(e.target.value)}
+                  onChange={(date) => setAssignedDate(date || null)}
+                  placeholder="Select assigned date"
                 />
               </div>
 
               {/* Estimated Deadline */}
               <div className="space-y-2">
-                <Label htmlFor="estimatedDeadline">Estimated Deadline</Label>
-                <Input
-                  id="estimatedDeadline"
-                  type="date"
+                <Label>Estimated Deadline</Label>
+                <DatePicker
                   value={estimatedDeadline}
-                  onChange={(e) => setEstimatedDeadline(e.target.value)}
+                  onChange={(date) => setEstimatedDeadline(date || null)}
+                  placeholder="Select estimated deadline"
                 />
               </div>
 
               {/* Actual Deadline */}
               <div className="space-y-2">
-                <Label htmlFor="actualDeadline">Actual Deadline</Label>
-                <Input
-                  id="actualDeadline"
-                  type="date"
+                <Label>Actual Deadline</Label>
+                <DatePicker
                   value={actualDeadline}
-                  onChange={(e) => setActualDeadline(e.target.value)}
+                  onChange={(date) => setActualDeadline(date || null)}
+                  placeholder="Select actual deadline"
                 />
               </div>
 

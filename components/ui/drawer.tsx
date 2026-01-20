@@ -21,10 +21,11 @@ const sheetVariants = cva("fixed flex flex-col bg-card outline-none", {
 
 function Drawer({
   direction = "left",
+  modal = false,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   return (
-    <DrawerPrimitive.Root autoFocus={true} direction={direction} {...props} />
+    <DrawerPrimitive.Root autoFocus={true} direction={direction} modal={modal} {...props} />
   );
 }
 
@@ -43,9 +44,9 @@ function DrawerContent({
   VariantProps<typeof sheetVariants>) {
   return (
     <DrawerPrimitive.Portal>
-      <DrawerPrimitive.Overlay className="fixed inset-0 bg-black/70" />
+      <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />
       <DrawerPrimitive.Content
-        className={cn(sheetVariants({ side }), className)}
+        className={cn(sheetVariants({ side }), "z-50", className)}
         {...props}
       >
         {children}

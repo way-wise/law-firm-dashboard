@@ -5,7 +5,7 @@ import nodemailer from "nodemailer";
 // Using Nodemailer with SMTP
 
 // Notification types
-export type EmailNotificationType = "rfe" | "approval" | "denial" | "statusChange" | "deadline" | "test";
+export type EmailNotificationType = "rfe" | "approval" | "denial" | "statusChange" | "deadline" | "test" | "workflowChange" | "billingChange" | "pastDeadline";
 
 // Generic notification email data
 interface NotificationEmailData {
@@ -13,9 +13,13 @@ interface NotificationEmailData {
   type: EmailNotificationType;
   subject: string;
   message: string;
+  greeting?: string;
+  closing?: string;
   matterTitle: string;
   clientName?: string | null;
   matterType?: string | null;
+  workflowStage?: string | null;
+  deadlineDate?: Date | null;
   matterUrl?: string;
   isTest?: boolean;
 }
@@ -220,6 +224,8 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
 
   try {
     const style = getNotificationTypeStyle(data.type);
+    const greeting = data.greeting || "Hello,";
+    const closing = data.closing || "Thank you.";
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -237,7 +243,7 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
           <tr>
             <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #e5e7eb;">
               <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #111827;">
-                ${style.icon} ${style.title}
+                ${style.icon} ${data.subject}
               </h1>
             </td>
           </tr>
@@ -251,6 +257,10 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
               </div>
               ` : ""}
               
+              <!-- Greeting -->
+              <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151;">${greeting}</p>
+              
+              <!-- Main Message -->
               <p style="margin: 0 0 24px 0; font-size: 16px; color: #374151;">${data.message}</p>
               
               <!-- Matter Details -->
@@ -275,10 +285,25 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
                         <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.matterType}</td>
                       </tr>
                       ` : ""}
+                      ${data.workflowStage ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Workflow</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.workflowStage}</td>
+                      </tr>
+                      ` : ""}
+                      ${data.deadlineDate ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Deadline</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.deadlineDate.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</td>
+                      </tr>
+                      ` : ""}
                     </table>
                   </td>
                 </tr>
               </table>
+              
+              <!-- Closing -->
+              <p style="margin: 0 0 24px 0; font-size: 16px; color: #374151;">${closing}</p>
               
               ${data.matterUrl ? `
               <a href="${data.matterUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">View Matter Details</a>
@@ -302,9 +327,10 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
     `.trim();
 
     const textContent = `
-${style.title}
-${data.isTest ? "\n🧪 TEST NOTIFICATION - This is a test email to verify your notification settings.\n" : ""}
 ${data.subject}
+${data.isTest ? "\n🧪 TEST NOTIFICATION - This is a test email to verify your notification settings.\n" : ""}
+
+${greeting}
 
 ${data.message}
 
@@ -312,7 +338,11 @@ Matter Details:
 - Matter: ${data.matterTitle}
 ${data.clientName ? `- Client: ${data.clientName}` : ""}
 ${data.matterType ? `- Matter Type: ${data.matterType}` : ""}
+${data.workflowStage ? `- Workflow Stage: ${data.workflowStage}` : ""}
+${data.deadlineDate ? `- Deadline: ${data.deadlineDate.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}` : ""}
 ${data.matterUrl ? `\nView Matter Details: ${data.matterUrl}` : ""}
+
+${closing}
 
 ---
 Law Firm Dashboard - Automated Notification

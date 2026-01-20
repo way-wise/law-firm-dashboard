@@ -6,6 +6,7 @@ import {
   paginatedMattersSchema,
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
+import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -129,11 +130,11 @@ export const updateCustomMatter = authorized
   .handler(async ({ input, context }) => {
     const { id, ...updateData } = input;
 
-    const matter = await prisma.matters.findUnique({
+    const existingMatter = await prisma.matters.findUnique({
       where: { id, userId: context.user.id },
     });
 
-    if (!matter) {
+    if (!existingMatter) {
       throw new ORPCError("NOT_FOUND", {
         message: "Matter not found",
       });
@@ -155,6 +156,28 @@ export const updateCustomMatter = authorized
           },
         },
       },
+    });
+
+    // Check for field changes and send notifications
+    checkMatterChangesAndNotify({
+      matterId: updatedMatter.id,
+      matterTitle: updatedMatter.title,
+      clientName: updatedMatter.clientName,
+      matterType: updatedMatter.matterType,
+      // Workflow stage changes
+      workflowStage: updatedMatter.workflowStage,
+      oldWorkflowStage: existingMatter.workflowStage,
+      // Billing status changes
+      billingStatus: updatedMatter.billingStatus,
+      oldBillingStatus: existingMatter.billingStatus,
+      // Estimated deadline changes
+      estimatedDeadline: updatedMatter.estimatedDeadline,
+      oldEstimatedDeadline: existingMatter.estimatedDeadline,
+      // Actual deadline changes
+      actualDeadline: updatedMatter.actualDeadline,
+      oldActualDeadline: existingMatter.actualDeadline,
+    }).catch((err) => {
+      console.error("[NOTIFICATION] Failed to check matter changes:", err);
     });
 
     return updatedMatter;
@@ -201,7 +224,7 @@ export const createCustomMatter = authorized
         billingStatus: input.billingStatus,
         customNotes: input.customNotes,
         userId: context.user.id,
-        isEdited: true, // Mark as edited so sync won't overwrite
+        isEdited: true,
         editedBy: context.user.id,
         editedAt: new Date(),
       },
@@ -214,6 +237,20 @@ export const createCustomMatter = authorized
         },
       },
     });
+
+    // Check if new matter has a deadline and send notifications
+    if (input.estimatedDeadline) {
+      checkMatterChangesAndNotify({
+        matterId: matter.id,
+        matterTitle: matter.title,
+        clientName: matter.clientName,
+        matterType: matter.matterType,
+        estimatedDeadline: matter.estimatedDeadline,
+        oldEstimatedDeadline: null,
+      }).catch((err) => {
+        console.error("[NOTIFICATION] Failed to check new matter deadline:", err);
+      });
+    }
 
     return matter;
   });
