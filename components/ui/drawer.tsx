@@ -21,11 +21,10 @@ const sheetVariants = cva("fixed flex flex-col bg-card outline-none", {
 
 function Drawer({
   direction = "left",
-  modal = false,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
   return (
-    <DrawerPrimitive.Root autoFocus={true} direction={direction} modal={modal} {...props} />
+    <DrawerPrimitive.Root autoFocus={true} direction={direction} {...props} />
   );
 }
 

@@ -140,10 +140,18 @@ export const updateCustomMatter = authorized
       });
     }
 
+    // Filter out undefined values - only include fields that were explicitly set
+    const filteredUpdateData = Object.fromEntries(
+      Object.entries(updateData).filter(([, value]) => value !== undefined)
+    );
+
+    console.log("[MATTER UPDATE] Input:", JSON.stringify(input, null, 2));
+    console.log("[MATTER UPDATE] Filtered data:", JSON.stringify(filteredUpdateData, null, 2));
+
     const updatedMatter = await prisma.matters.update({
       where: { id },
       data: {
-        ...updateData,
+        ...filteredUpdateData,
         isEdited: true,
         editedBy: context.user.id,
         editedAt: new Date(),
