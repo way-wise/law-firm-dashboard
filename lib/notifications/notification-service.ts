@@ -303,6 +303,8 @@ export async function sendNotification(data: NotificationData): Promise<{
           matterType: data.matterType,
           workflowStage: data.workflowStage,
           deadlineDate: data.deadlineDate,
+          paralegalAssigned: data.paralegalName,
+          billingStatus: data.billingStatus,
           matterUrl,
         });
 
@@ -366,6 +368,7 @@ interface MatterChangeData {
   matterTitle: string;
   clientName?: string | null;
   matterType?: string | null;
+  paralegalAssigned?: string | null;
   // Current values
   status?: string | null;
   workflowStage?: string | null;
@@ -436,6 +439,8 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
         matterType: data.matterType,
         deadlineDate: data.estimatedDeadline,
         daysRemaining: daysUntil ?? 0,
+        paralegalName: data.paralegalAssigned,
+        billingStatus: data.billingStatus,
       },
     });
   }
@@ -454,6 +459,8 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
         matterType: data.matterType,
         deadlineDate: data.actualDeadline,
         daysRemaining: daysUntil ?? 0,
+        paralegalName: data.paralegalAssigned,
+        billingStatus: data.billingStatus,
       },
     });
   }
@@ -470,6 +477,8 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
         matterType: data.matterType,
         workflowStage: data.workflowStage,
         oldWorkflowStage: data.oldWorkflowStage,
+        paralegalName: data.paralegalAssigned,
+        billingStatus: data.billingStatus,
       },
     });
   }
@@ -486,6 +495,7 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
         matterType: data.matterType,
         billingStatus: data.billingStatus,
         oldBillingStatus: data.oldBillingStatus,
+        paralegalName: data.paralegalAssigned,
       },
     });
   }

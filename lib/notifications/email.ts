@@ -20,6 +20,8 @@ interface NotificationEmailData {
   matterType?: string | null;
   workflowStage?: string | null;
   deadlineDate?: Date | null;
+  paralegalAssigned?: string | null;
+  billingStatus?: string | null;
   matterUrl?: string;
   isTest?: boolean;
 }
@@ -295,6 +297,18 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
                       <tr>
                         <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Deadline</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.deadlineDate.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</td>
+                      </tr>
+                      ` : ""}
+                      ${data.paralegalAssigned ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Assignee</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.paralegalAssigned}</td>
+                      </tr>
+                      ` : ""}
+                      ${data.billingStatus ? `
+                      <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Billing Status</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.billingStatus.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}</td>
                       </tr>
                       ` : ""}
                     </table>

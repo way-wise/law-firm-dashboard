@@ -172,6 +172,7 @@ export const updateCustomMatter = authorized
       matterTitle: updatedMatter.title,
       clientName: updatedMatter.clientName,
       matterType: updatedMatter.matterType,
+      paralegalAssigned: updatedMatter.paralegalAssigned,
       // Workflow stage changes
       workflowStage: updatedMatter.workflowStage,
       oldWorkflowStage: existingMatter.workflowStage,
