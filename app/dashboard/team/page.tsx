@@ -1,3 +1,4 @@
+import "@/lib/orpc/server";
 import { client } from "@/lib/orpc/client";
 import TeamTable from "./team-table";
 
