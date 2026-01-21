@@ -7,7 +7,6 @@ export const customMatterFieldsSchema = z.object({
   estimatedDeadline: z.date().nullable(),
   actualDeadline: z.date().nullable(),
   billingStatus: billingStatusEnum.nullable(),
-  paralegalAssigned: z.string().nullable(),
   customNotes: z.string().nullable(),
 });
 
@@ -16,21 +15,23 @@ export const matterSchema = z.object({
   docketwiseId: z.number(),
   docketwiseUpdatedAt: z.date().nullable(),
   title: z.string(),
+  description: z.string().nullable(),
   matterType: z.string().nullable(),
   matterTypeId: z.number().nullable(),
-  workflowStage: z.string().nullable(),
-  workflowStageId: z.number().nullable(),
+  status: z.string().nullable(),           // Workflow stage (renamed from workflowStage)
+  statusId: z.number().nullable(),
+  statusForFiling: z.string().nullable(),  // Status for filing (renamed from status)
+  statusForFilingId: z.number().nullable(),
   clientName: z.string().nullable(),
   clientId: z.number().nullable(),
-  status: z.string().nullable(),
-  statusId: z.number().nullable(),
+  assignees: z.string().nullable(),        // Comma-separated assignee names (renamed from paralegalAssigned)
+  docketwiseUserIds: z.string().nullable(),
   openedAt: z.date().nullable(),
   closedAt: z.date().nullable(),
   assignedDate: z.date().nullable(),
   estimatedDeadline: z.date().nullable(),
   actualDeadline: z.date().nullable(),
   billingStatus: billingStatusEnum.nullable(),
-  paralegalAssigned: z.string().nullable(),
   customNotes: z.string().nullable(),
   lastSyncedAt: z.date(),
   isStale: z.boolean(),
@@ -49,14 +50,16 @@ export const matterSchema = z.object({
 export const updateCustomMatterFieldsSchema = z.object({
   id: z.string(),
   title: z.string().optional(),
+  description: z.string().nullable().optional(),
   matterType: z.string().nullable().optional(),
   clientName: z.string().nullable().optional(),
-  workflowStage: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),           // Workflow stage
+  statusForFiling: z.string().nullable().optional(),  // Status for filing
+  assignees: z.string().nullable().optional(),
   assignedDate: z.date().nullable().optional(),
   estimatedDeadline: z.date().nullable().optional(),
   actualDeadline: z.date().nullable().optional(),
   billingStatus: billingStatusEnum.nullable().optional(),
-  paralegalAssigned: z.string().nullable().optional(),
   customNotes: z.string().nullable().optional(),
 });
 
@@ -64,7 +67,7 @@ export const matterFilterSchema = z.object({
   page: z.number().optional(),
   search: z.string().optional(),
   billingStatus: billingStatusEnum.optional(),
-  paralegalAssigned: z.string().optional(),
+  assignees: z.string().optional(),
   isStale: z.boolean().optional(),
   hasDeadline: z.boolean().optional(),
 });

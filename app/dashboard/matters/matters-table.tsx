@@ -37,7 +37,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Calendar, Eye, FileText, Pencil, Plus, Trash, User, X } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useMounted } from "@/hooks/use-mounted";
 import { useRouter } from "@bprogress/next";
 import { useSearchParams } from "next/navigation";
 import { useDebounceCallback } from "usehooks-ts";
@@ -83,7 +84,7 @@ interface MattersTableProps {
 const MattersTable = ({ matters }: MattersTableProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
   const [viewMatter, setViewMatter] = useState<MatterType | null>(null);
   const [viewDrawerOpen, setViewDrawerOpen] = useState(false);
@@ -92,7 +93,6 @@ const MattersTable = ({ matters }: MattersTableProps) => {
   const [deleteMatter, setDeleteMatter] = useState<MatterType | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  // Get active paralegals for filter
   const paralegalOptions = workers
     .filter((w) => w.isActive && w.teamType === "inHouse")
     .map((w) => ({
@@ -100,11 +100,6 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       label: w.name,
       description: w.title,
     }));
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleView = (matter: MatterType) => {
     setViewMatter(matter);
@@ -169,33 +164,40 @@ const MattersTable = ({ matters }: MattersTableProps) => {
 
   const columns: ColumnDef<MatterType>[] = [
     {
-      header: "Matter Title",
+      header: "Title",
       accessorKey: "title",
       cell: ({ row }) => (
-        <div className="max-w-[300px]">
+        <div className="max-w-[250px]">
           <p className="font-medium truncate">{row.original.title}</p>
         </div>
-      ),
-    },
-    {
-      header: "Matter Type",
-      accessorKey: "matterType",
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.matterType || "-"}</p>
       ),
     },
     {
       header: "Client",
       accessorKey: "clientName",
       cell: ({ row }) => (
-        <p className="text-sm">{row.original.clientName || "Unknown"}</p>
+        <p className="text-sm">{row.original.clientName || "-"}</p>
       ),
     },
     {
-      header: "Paralegal",
-      accessorKey: "paralegalAssigned",
+      header: "Assignees",
+      accessorKey: "assignees",
       cell: ({ row }) => (
-        <p className="text-sm">{row.original.paralegalAssigned || "-"}</p>
+        <p className="text-sm">{row.original.assignees || "-"}</p>
+      ),
+    },
+    {
+      header: "Type",
+      accessorKey: "matterType",
+      cell: ({ row }) => (
+        <p className="text-sm">{row.original.matterType || "-"}</p>
+      ),
+    },
+    {
+      header: "Status",
+      accessorKey: "status",
+      cell: ({ row }) => (
+        <Badge variant="outline">{row.original.status || "No Status"}</Badge>
       ),
     },
     {
@@ -214,7 +216,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       accessorKey: "billingStatus",
       cell: ({ row }) => {
         const status = row.original.billingStatus;
-        if (!status) return <span className="text-sm text-muted-foreground">Not Set</span>;
+        if (!status) return <span className="text-sm text-muted-foreground">-</span>;
         return (
           <Badge variant={getBillingStatusColor(status) as "default" | "secondary" | "destructive" | "outline"}>
             {formatBillingStatus(status)}
@@ -223,14 +225,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       },
     },
     {
-      header: "Workflow Stage",
-      accessorKey: "workflowStage",
-      cell: ({ row }) => (
-        <Badge variant="outline">{row.original.workflowStage || "No Stage"}</Badge>
-      ),
-    },
-    {
-      header: "Last Updated",
+      header: "Updated",
       accessorKey: "updatedAt",
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
@@ -332,9 +327,9 @@ const MattersTable = ({ matters }: MattersTableProps) => {
 
                   <AdvancedSelect
                     options={paralegalOptions}
-                    value={searchParams.get("paralegalAssigned") || ""}
-                    onChange={(value: string) => updateFilters("paralegalAssigned", value)}
-                    placeholder="Filter by Paralegal"
+                    value={searchParams.get("assignees") || ""}
+                    onChange={(value: string) => updateFilters("assignees", value)}
+                    placeholder="Filter by Assignee"
                     className="w-[180px]"
                     isClearable
                   />
@@ -424,16 +419,16 @@ const MattersTable = ({ matters }: MattersTableProps) => {
               <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden p-6">
                 {/* Status Badges */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {viewMatter.workflowStage && (
-                    <Badge variant="outline">{viewMatter.workflowStage}</Badge>
+                  {viewMatter.status && (
+                    <Badge variant="outline">{viewMatter.status}</Badge>
+                  )}
+                  {viewMatter.statusForFiling && (
+                    <Badge variant="secondary">{viewMatter.statusForFiling}</Badge>
                   )}
                   {viewMatter.billingStatus && (
                     <Badge variant={getBillingStatusColor(viewMatter.billingStatus) as "default" | "secondary" | "destructive" | "outline"}>
                       {formatBillingStatus(viewMatter.billingStatus)}
                     </Badge>
-                  )}
-                  {viewMatter.status && (
-                    <Badge variant="secondary">{viewMatter.status}</Badge>
                   )}
                   {viewMatter.isEdited && (
                     <Badge variant="outline" className="border-amber-500 text-amber-600">Customized</Badge>
@@ -467,13 +462,25 @@ const MattersTable = ({ matters }: MattersTableProps) => {
                       </div>
                     </div>
 
+                    {viewMatter.description && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Description</p>
+                          <p className="text-sm font-medium">{viewMatter.description}</p>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-start gap-3">
                       <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
                         <User className="size-4 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Paralegal Assigned</p>
-                        <p className="text-sm font-medium">{viewMatter.paralegalAssigned || "Not assigned"}</p>
+                        <p className="text-xs text-muted-foreground">Assignees</p>
+                        <p className="text-sm font-medium">{viewMatter.assignees || "Not assigned"}</p>
                       </div>
                     </div>
 
@@ -482,8 +489,8 @@ const MattersTable = ({ matters }: MattersTableProps) => {
                         <FileText className="size-4 text-muted-foreground" />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Workflow Stage</p>
-                        <p className="text-sm font-medium">{viewMatter.workflowStage || "No Stage"}</p>
+                        <p className="text-xs text-muted-foreground">Status</p>
+                        <p className="text-sm font-medium">{viewMatter.status || "No Status"}</p>
                       </div>
                     </div>
 
@@ -503,14 +510,14 @@ const MattersTable = ({ matters }: MattersTableProps) => {
                       </div>
                     </div>
 
-                    {viewMatter.status && (
+                    {viewMatter.statusForFiling && (
                       <div className="flex items-start gap-3">
                         <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
                           <FileText className="size-4 text-muted-foreground" />
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Status</p>
-                          <p className="text-sm font-medium">{viewMatter.status}</p>
+                          <p className="text-xs text-muted-foreground">Status For Filing</p>
+                          <p className="text-sm font-medium">{viewMatter.statusForFiling}</p>
                         </div>
                       </div>
                     )}

@@ -40,8 +40,8 @@ export const getCustomMatters = authorized
       where.billingStatus = input.billingStatus;
     }
 
-    if (input.paralegalAssigned) {
-      where.paralegalAssigned = input.paralegalAssigned;
+    if (input.assignees) {
+      where.assignees = { contains: input.assignees, mode: "insensitive" };
     }
 
     if (input.isStale !== undefined) {
@@ -172,10 +172,10 @@ export const updateCustomMatter = authorized
       matterTitle: updatedMatter.title,
       clientName: updatedMatter.clientName,
       matterType: updatedMatter.matterType,
-      paralegalAssigned: updatedMatter.paralegalAssigned,
-      // Workflow stage changes
-      workflowStage: updatedMatter.workflowStage,
-      oldWorkflowStage: existingMatter.workflowStage,
+      paralegalAssigned: updatedMatter.assignees,
+      // Status changes (workflow stage)
+      workflowStage: updatedMatter.status,
+      oldWorkflowStage: existingMatter.status,
       // Billing status changes
       billingStatus: updatedMatter.billingStatus,
       oldBillingStatus: existingMatter.billingStatus,
@@ -203,11 +203,14 @@ export const createCustomMatter = authorized
   .input(
     z.object({
       title: z.string().min(1, "Title is required"),
+      description: z.string().optional(),
       clientName: z.string().optional(),
       clientId: z.number().optional(),
       matterType: z.string().optional(),
       matterTypeId: z.number().optional(),
-      paralegalAssigned: z.string().optional(),
+      status: z.string().optional(),           // Workflow stage
+      statusForFiling: z.string().optional(),  // Status for filing
+      assignees: z.string().optional(),
       assignedDate: z.coerce.date().optional(),
       estimatedDeadline: z.coerce.date().optional(),
       billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).optional(),
@@ -223,11 +226,14 @@ export const createCustomMatter = authorized
       data: {
         docketwiseId: localId,
         title: input.title,
+        description: input.description,
         clientName: input.clientName,
         clientId: input.clientId,
         matterType: input.matterType,
         matterTypeId: input.matterTypeId,
-        paralegalAssigned: input.paralegalAssigned,
+        status: input.status,
+        statusForFiling: input.statusForFiling,
+        assignees: input.assignees,
         assignedDate: input.assignedDate,
         estimatedDeadline: input.estimatedDeadline,
         billingStatus: input.billingStatus,

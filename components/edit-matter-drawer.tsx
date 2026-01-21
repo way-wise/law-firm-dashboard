@@ -45,12 +45,13 @@ export function EditMatterDrawer({
   const [title, setTitle] = useState("");
   const [matterType, setMatterType] = useState("");
   const [clientName, setClientName] = useState("");
-  const [workflowStage, setWorkflowStage] = useState("");
+  const [status, setStatus] = useState("");
   const [assignedDate, setAssignedDate] = useState<Date | null>(null);
   const [estimatedDeadline, setEstimatedDeadline] = useState<Date | null>(null);
   const [actualDeadline, setActualDeadline] = useState<Date | null>(null);
   const [billingStatus, setBillingStatus] = useState<string>("");
-  const [paralegalAssigned, setParalegalAssigned] = useState("");
+  const [assignees, setAssignees] = useState("");
+  const [description, setDescription] = useState("");
   const [customNotes, setCustomNotes] = useState("");
 
   // Get active paralegals for dropdown
@@ -67,12 +68,13 @@ export function EditMatterDrawer({
       setTitle(matter.title || "");
       setMatterType(matter.matterType || "");
       setClientName(matter.clientName || "");
-      setWorkflowStage(matter.workflowStage || "");
+      setStatus(matter.status || "");
       setAssignedDate(matter.assignedDate ? new Date(matter.assignedDate) : null);
       setEstimatedDeadline(matter.estimatedDeadline ? new Date(matter.estimatedDeadline) : null);
       setActualDeadline(matter.actualDeadline ? new Date(matter.actualDeadline) : null);
       setBillingStatus(matter.billingStatus || "");
-      setParalegalAssigned(matter.paralegalAssigned || "");
+      setAssignees(matter.assignees || "");
+      setDescription(matter.description || "");
       setCustomNotes(matter.customNotes || "");
     }
   }, [matter]);
@@ -85,14 +87,15 @@ export function EditMatterDrawer({
       await client.customMatters.update({
         id: matter.id,
         title: title || undefined,
+        description: description || null,
         matterType: matterType || null,
         clientName: clientName || null,
-        workflowStage: workflowStage || null,
+        status: status || null,
         assignedDate: assignedDate || null,
         estimatedDeadline: estimatedDeadline || null,
         actualDeadline: actualDeadline || null,
         billingStatus: billingStatus ? (billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE") : null,
-        paralegalAssigned: paralegalAssigned || null,
+        assignees: assignees || null,
         customNotes: customNotes || null,
       });
 
@@ -162,15 +165,27 @@ export function EditMatterDrawer({
                 />
               </div>
 
-              {/* Workflow Stage */}
+              {/* Description */}
               <div className="space-y-2">
-                <Label htmlFor="workflowStage">Workflow Stage</Label>
+                <Label htmlFor="description">Description</Label>
                 <Input
-                  id="workflowStage"
+                  id="description"
+                  type="text"
+                  placeholder="Matter description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+
+              {/* Status (Workflow Stage) */}
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <Input
+                  id="status"
                   type="text"
                   placeholder="e.g., Case Evaluation"
-                  value={workflowStage}
-                  onChange={(e) => setWorkflowStage(e.target.value)}
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
                 />
               </div>
 
@@ -221,15 +236,15 @@ export function EditMatterDrawer({
                 </Select>
               </div>
 
-              {/* Paralegal Assigned - Advanced Select */}
+              {/* Assignees - Advanced Select */}
               <div className="space-y-2">
-                <Label htmlFor="paralegalAssigned">Paralegal Assigned</Label>
+                <Label htmlFor="assignees">Assignees</Label>
                 <AdvancedSelect
                   options={paralegalOptions}
-                  value={paralegalAssigned}
-                  onChange={setParalegalAssigned}
-                  placeholder="Select paralegal"
-                  emptyMessage="No paralegals found"
+                  value={assignees}
+                  onChange={setAssignees}
+                  placeholder="Select assignee"
+                  emptyMessage="No assignees found"
                   isClearable
                 />
               </div>

@@ -24,7 +24,7 @@ export const getNotifications = authorized
             title: true,
             clientName: true,
             estimatedDeadline: true,
-            paralegalAssigned: true,
+            assignees: true,
           },
         },
       },

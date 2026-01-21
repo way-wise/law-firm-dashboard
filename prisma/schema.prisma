@@ -116,37 +116,33 @@ enum BillingStatus {
 }
 
 model matters {
-  id String @id @default(ulid())
-
-  // Docketwise Data (synced)
+  id                  String    @id @default(ulid())
   docketwiseId        Int       @unique
   docketwiseUpdatedAt DateTime?
   title               String
+  description         String?
   matterType          String?
   matterTypeId        Int?
-  workflowStage       String?
-  workflowStageId     Int?
-  clientName          String?
-  clientId            Int?
   status              String?
   statusId            Int?
+  statusForFiling     String?
+  statusForFilingId   Int?
+  clientName          String?
+  clientId            Int?
+  assignees           String?
+  docketwiseUserIds   String?
   openedAt            DateTime?
   closedAt            DateTime?
-  docketwiseUserIds   String? // JSON array of assigned user IDs from Docketwise
 
-  // Custom Fields (admin editable)
   assignedDate      DateTime?
   estimatedDeadline DateTime?
   actualDeadline    DateTime?
   billingStatus     BillingStatus?
-  paralegalAssigned String?
   customNotes       String?
 
-  // Metadata
   lastSyncedAt DateTime @default(now())
   isStale      Boolean  @default(false)
 
-  // Edit Protection & Audit Trail
   isEdited     Boolean   @default(false)
   editedBy     String?
   editedByUser users?    @relation("editedMatters", fields: [editedBy], references: [id], onDelete: SetNull)
@@ -189,8 +185,8 @@ model deadlineNotifications {
   user               users     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sentAt             DateTime  @default(now())
   recipientEmail     String
-  notificationType   String // "email" | "in-app"
-  daysBeforeDeadline Int // 7, 3, 1, 0 (on deadline day)
+  notificationType   String
+  daysBeforeDeadline Int
   subject            String
   message            String
   isRead             Boolean   @default(false)
@@ -222,14 +218,13 @@ model paralegalMetrics {
   @@index([userId])
 }
 
-// Docketwise users synced from the API (Team/Paralegals)
 model docketwiseUsers {
   id           String   @id @default(ulid())
   docketwiseId Int      @unique
   email        String
   firstName    String?
   lastName     String?
-  fullName     String? // Computed: firstName + lastName
+  fullName     String?
   isActive     Boolean  @default(true)
   lastSyncedAt DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -239,7 +234,6 @@ model docketwiseUsers {
   @@index([isActive])
 }
 
-// Contacts (Clients) - synced from Docketwise with edit protection
 model contacts {
   id           String  @id @default(ulid())
   docketwiseId Int     @unique
@@ -249,10 +243,9 @@ model contacts {
   companyName  String?
   email        String?
   phone        String?
-  type         String? // "Person" or "Institution"
+  type         String?
   isLead       Boolean @default(false)
 
-  // Address
   streetAddress   String?
   apartmentNumber String?
   city            String?
@@ -261,7 +254,6 @@ model contacts {
   zipCode         String?
   country         String?
 
-  // Custom fields (edit protected)
   customNotes  String?
   isEdited     Boolean   @default(false)
   editedBy     String?
@@ -277,12 +269,11 @@ model contacts {
   @@index([lastName, firstName])
 }
 
-// Immigration Categories (static, admin-managed)
 model categories {
   id          String   @id @default(ulid())
   name        String   @unique
   description String?
-  color       String? // Hex color for UI
+  color       String?
   sortOrder   Int      @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -291,14 +282,12 @@ model categories {
   matterTypes matterTypes[]
 }
 
-// Matter Types - synced from Docketwise with custom fields
 model matterTypes {
   id           String @id @default(ulid())
   docketwiseId Int    @unique
   name         String
 
-  // Custom fields (edit protected)
-  estimatedDays Int? // Custom: Est. days to complete
+  estimatedDays Int?
   categoryId    String?
   category      categories? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
@@ -317,13 +306,12 @@ model matterTypes {
   @@index([categoryId])
 }
 
-// Matter Statuses (Workflow Stages) - synced from Docketwise
 model matterStatuses {
   id           String       @id @default(ulid())
   docketwiseId Int          @unique
   name         String
-  duration     Int? // Duration in days (from Docketwise)
-  sort         Int? // Sort order
+  duration     Int?
+  sort         Int?
   matterTypeId String?
   matterType   matterTypes? @relation(fields: [matterTypeId], references: [id], onDelete: SetNull)
 
@@ -335,7 +323,6 @@ model matterStatuses {
   @@index([matterTypeId])
 }
 
-// User notification preferences
 model notificationSettings {
   id     String @id @default(ulid())
   userId String @unique
@@ -359,7 +346,6 @@ model notificationSettings {
   updatedAt DateTime @updatedAt
 }
 
-// Notification recipients - which users receive email/in-app notifications
 model notificationRecipients {
   id           String  @id @default(ulid())
   userId       String  @unique

@@ -82,7 +82,7 @@ export function CreateMatterDialog() {
       title: formData.title,
       clientName: formData.clientName || undefined,
       matterType: formData.matterType || undefined,
-      paralegalAssigned: formData.paralegalAssigned || undefined,
+      assignees: formData.paralegalAssigned || undefined,
       assignedDate: formData.assignedDate ? new Date(formData.assignedDate) : undefined,
       estimatedDeadline: formData.estimatedDeadline ? new Date(formData.estimatedDeadline) : undefined,
       billingStatus: formData.billingStatus || undefined,

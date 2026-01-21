@@ -50,13 +50,13 @@ export async function POST(request: NextRequest) {
       matterTitle: matter.title,
       clientName: matter.clientName,
       matterType: matter.matterType,
-      workflowStage: matter.workflowStage,
+      workflowStage: matter.status,
       status: notificationType === "rfe" ? "RFE Received" 
             : notificationType === "approval" ? "Approved"
             : notificationType === "denial" ? "Denied"
             : "Status Updated",
-      oldStatus: matter.status,
-      paralegalName: matter.paralegalAssigned,
+      oldStatus: matter.statusForFiling,
+      paralegalName: matter.assignees,
       deadlineDate: matter.estimatedDeadline,
       daysRemaining: notificationType === "deadline" ? 3 : undefined,
     });

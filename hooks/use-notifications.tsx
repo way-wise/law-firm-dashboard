@@ -71,9 +71,12 @@ export function useNotifications() {
   // SSE subscription for real-time updates
   useEffect(() => {
     let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isCleanedUp = false;
 
     const connectSSE = () => {
+      if (isCleanedUp) return;
+      
       try {
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
         const sseUrl = `${baseUrl}/api/notifications/subscribe`;
@@ -81,40 +84,51 @@ export function useNotifications() {
         eventSource = new EventSource(sseUrl, { withCredentials: true });
 
         eventSource.onopen = () => {
-          console.log("[SSE] Connected");
+          if (isCleanedUp) {
+            eventSource?.close();
+            return;
+          }
           setIsConnected(true);
         };
 
         eventSource.onmessage = (event) => {
+          if (isCleanedUp) return;
           try {
             const eventData = JSON.parse(event.data);
             if (eventData.type === "created") {
-              // Immediately refetch notifications for real-time bell update
               queryClient.invalidateQueries({ 
                 queryKey: orpc.notifications.list.queryKey({ input: { limit: 50 } }) 
               });
             }
-          } catch (error) {
-            console.error("[SSE] Parse error:", error);
+          } catch {
+            // Ignore parse errors
           }
         };
 
         eventSource.onerror = () => {
+          if (isCleanedUp) return;
           setIsConnected(false);
           eventSource?.close();
+          eventSource = null;
           reconnectTimeout = setTimeout(connectSSE, 5000);
         };
-      } catch (error) {
-        console.error("[SSE] Connect error:", error);
+      } catch {
+        // Ignore connection errors, will retry
       }
     };
 
     connectSSE();
 
     return () => {
-      eventSource?.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      setIsConnected(false);
+      isCleanedUp = true;
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
     };
   }, [queryClient]);
 

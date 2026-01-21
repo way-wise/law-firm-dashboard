@@ -63,7 +63,7 @@ export async function checkAndSendDeadlineNotifications() {
 
       // Determine recipient email (paralegal or matter owner)
       const recipientEmail = matter.user.email;
-      const recipientName = matter.paralegalAssigned || matter.user.name;
+      const recipientName = matter.assignees || matter.user.name;
 
       // Create notification message
       const urgencyLevel = daysUntilDeadline <= 1 ? "URGENT" : daysUntilDeadline <= 3 ? "Important" : "Reminder";
@@ -107,8 +107,8 @@ export async function checkAndSendDeadlineNotifications() {
         matterType: matter.matterType,
         deadlineDate: matter.estimatedDeadline,
         daysRemaining: daysUntilDeadline,
-        workflowStage: matter.workflowStage,
-        paralegalName: matter.paralegalAssigned,
+        workflowStage: matter.status,
+        paralegalName: matter.assignees,
         matterUrl,
       })
         .then((success) => {

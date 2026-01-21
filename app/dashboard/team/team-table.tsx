@@ -22,8 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Eye, Pencil, Plus, Trash, User } from "lucide-react";
-import Link from "next/link";
+import { ArrowLeft, Eye, Pencil, Trash, User } from "lucide-react";
 import { useRouter } from "@bprogress/next";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -182,12 +181,7 @@ const TeamTable = ({ team }: TeamTableProps) => {
             </Button>
             <h1 className="text-2xl font-semibold">Team</h1>
           </div>
-          <Button asChild>
-            <Link href="/dashboard/team/new">
-              <Plus />
-              Add Team Member
-            </Link>
-          </Button>
+{/* Note: Docketwise API doesn't support user creation */}
         </div>
 
         {/* Card with filters and table */}

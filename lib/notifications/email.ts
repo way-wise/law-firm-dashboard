@@ -1,8 +1,13 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 
 // Email service for sending notifications
-// Using Nodemailer with SMTP
+// Using Nodemailer with SMTP and connection pooling to avoid rate limits
+
+// Singleton transporter instance - reuses connection to avoid repeated logins
+let transporterInstance: Transporter | null = null;
+let transporterInitialized = false;
 
 // Notification types
 export type EmailNotificationType = "rfe" | "approval" | "denial" | "statusChange" | "deadline" | "test" | "workflowChange" | "billingChange" | "pastDeadline";
@@ -38,29 +43,45 @@ interface DeadlineEmailData {
   matterUrl: string;
 }
 
-// Create reusable transporter
-function createTransporter() {
+// Get or create singleton transporter with connection pooling
+function getTransporter(): Transporter | null {
+  // Return cached instance if already initialized
+  if (transporterInitialized) {
+    return transporterInstance;
+  }
+
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || "587", 10);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASSWORD;
 
+  transporterInitialized = true;
+
   if (!host || !user || !pass) {
+    console.warn("[EMAIL] SMTP not configured");
     return null;
   }
 
-  return nodemailer.createTransport({
+  // Create transporter with connection pooling
+  transporterInstance = nodemailer.createTransport({
     host,
     port,
-    secure: port === 465, // true for 465, false for other ports
+    secure: port === 465,
     auth: { user, pass },
+    pool: true, // Enable connection pooling
+    maxConnections: 3, // Limit concurrent connections
+    maxMessages: 100, // Messages per connection before reconnect
+    rateDelta: 1000, // 1 second between connection attempts
+    rateLimit: 5, // Max 5 messages per second
   });
+
+  console.log("[EMAIL] SMTP transporter initialized with connection pooling");
+  return transporterInstance;
 }
 
 export async function sendDeadlineReminderEmail(data: DeadlineEmailData): Promise<boolean> {
-  const transporter = createTransporter();
+  const transporter = getTransporter();
   if (!transporter) {
-    console.warn("[EMAIL] SMTP not configured, skipping email send");
     return false;
   }
 
@@ -218,9 +239,8 @@ function getNotificationTypeStyle(type: EmailNotificationType): {
 
 // Send a generic notification email (works for all notification types)
 export async function sendNotificationEmail(data: NotificationEmailData): Promise<boolean> {
-  const transporter = createTransporter();
+  const transporter = getTransporter();
   if (!transporter) {
-    console.warn("[EMAIL] SMTP not configured, skipping email send");
     return false;
   }
 
