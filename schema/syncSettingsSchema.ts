@@ -3,7 +3,7 @@ import * as z from "zod";
 export const syncSettingsSchema = z.object({
   id: z.string(),
   userId: z.string(),
-  pollingInterval: z.number().int().min(5).max(60),
+  pollingInterval: z.number().int().min(5).max(1440), // 5 min to 24 hours
   lastSyncAt: z.date().nullable(),
   isEnabled: z.boolean(),
   createdAt: z.date(),
@@ -11,7 +11,7 @@ export const syncSettingsSchema = z.object({
 });
 
 export const updateSyncSettingsSchema = z.object({
-  pollingInterval: z.number().int().min(5).max(60),
+  pollingInterval: z.number().int().min(5).max(1440), // 5 min to 24 hours
 });
 
 export const syncResultSchema = z.object({

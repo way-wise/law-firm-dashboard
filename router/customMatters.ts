@@ -1,5 +1,6 @@
 import { authorized } from "@/lib/orpc";
 import prisma, { Prisma } from "@/lib/prisma";
+import { getOrSetCache, invalidateCache, CACHE_KEYS } from "@/lib/redis";
 import {
   matterFilterSchema,
   matterSchema,
@@ -9,6 +10,9 @@ import {
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
+
+// Shorter cache TTL for matters list (5 minutes) since data changes more frequently
+const MATTERS_CACHE_TTL = 5 * 60;
 
 // Get Custom Matters
 export const getCustomMatters = authorized
@@ -24,65 +28,78 @@ export const getCustomMatters = authorized
     const page = input.page || 1;
     const perPage = 50;
     const skip = (page - 1) * perPage;
+    
+    // Build cache key from all filter parameters
+    const filterKey = JSON.stringify({
+      page,
+      search: input.search || '',
+      billingStatus: input.billingStatus || '',
+      assignees: input.assignees || '',
+      isStale: input.isStale,
+      hasDeadline: input.hasDeadline,
+    });
+    const cacheKey = `${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:${filterKey}`;
 
-    const where: Prisma.mattersWhereInput = {
-      userId: context.user.id,
-    };
+    return getOrSetCache(cacheKey, async () => {
+      const where: Prisma.mattersWhereInput = {
+        userId: context.user.id,
+      };
 
-    if (input.search) {
-      where.OR = [
-        { title: { contains: input.search, mode: "insensitive" } },
-        { clientName: { contains: input.search, mode: "insensitive" } },
-      ];
-    }
-
-    if (input.billingStatus) {
-      where.billingStatus = input.billingStatus;
-    }
-
-    if (input.assignees) {
-      where.assignees = { contains: input.assignees, mode: "insensitive" };
-    }
-
-    if (input.isStale !== undefined) {
-      where.isStale = input.isStale;
-    }
-
-    if (input.hasDeadline !== undefined) {
-      if (input.hasDeadline) {
-        where.estimatedDeadline = { not: null };
-      } else {
-        where.estimatedDeadline = null;
+      if (input.search) {
+        where.OR = [
+          { title: { contains: input.search, mode: "insensitive" } },
+          { clientName: { contains: input.search, mode: "insensitive" } },
+        ];
       }
-    }
 
-    const [matters, total] = await Promise.all([
-      prisma.matters.findMany({
-        where,
-        skip,
-        take: perPage,
-        orderBy: { updatedAt: "desc" },
-        include: {
-          editedByUser: {
-            select: {
-              name: true,
-              email: true,
+      if (input.billingStatus) {
+        where.billingStatus = input.billingStatus;
+      }
+
+      if (input.assignees) {
+        where.assignees = { contains: input.assignees, mode: "insensitive" };
+      }
+
+      if (input.isStale !== undefined) {
+        where.isStale = input.isStale;
+      }
+
+      if (input.hasDeadline !== undefined) {
+        if (input.hasDeadline) {
+          where.estimatedDeadline = { not: null };
+        } else {
+          where.estimatedDeadline = null;
+        }
+      }
+
+      const [matters, total] = await Promise.all([
+        prisma.matters.findMany({
+          where,
+          skip,
+          take: perPage,
+          orderBy: { updatedAt: "desc" },
+          include: {
+            editedByUser: {
+              select: {
+                name: true,
+                email: true,
+              },
             },
           },
-        },
-      }),
-      prisma.matters.count({ where }),
-    ]);
+        }),
+        prisma.matters.count({ where }),
+      ]);
 
-    return {
-      data: matters,
-      pagination: {
-        total,
-        page,
-        perPage,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+      return {
+        data: matters,
+        pagination: {
+          total,
+          page,
+          perPage,
+          totalPages: Math.ceil(total / perPage),
+        },
+      };
+    }, MATTERS_CACHE_TTL);
   });
 
 // Get Custom Matter by ID
@@ -165,6 +182,9 @@ export const updateCustomMatter = authorized
         },
       },
     });
+
+    // Invalidate matters cache for this user
+    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
 
     // Check for field changes and send notifications
     checkMatterChangesAndNotify({
@@ -253,6 +273,9 @@ export const createCustomMatter = authorized
       },
     });
 
+    // Invalidate matters cache for this user
+    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
+
     // Check if new matter has a deadline and send notifications
     if (input.estimatedDeadline) {
       checkMatterChangesAndNotify({
@@ -294,6 +317,9 @@ export const deleteCustomMatter = authorized
     await prisma.matters.delete({
       where: { id: input.id },
     });
+
+    // Invalidate matters cache for this user
+    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
 
     return { success: true };
   });

@@ -204,8 +204,8 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
         {/* Cases by Paralegal - Vertical Bar Chart */}
         <Card className="p-5">
           <h4 className="font-medium mb-4">Cases by Paralegal</h4>
-          <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[220px] min-h-[220px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
               <BarChart data={paralegalData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
                 <XAxis 
                   dataKey="name" 
@@ -239,9 +239,9 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
         {/* Filing Status Distribution - Better Layout */}
         <Card className="p-5">
           <h4 className="font-medium mb-4">Filing Status Distribution</h4>
-          <div className="h-[220px] flex items-center">
-            <div className="flex-1 h-full">
-              <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[220px] min-h-[220px] flex items-center">
+            <div className="flex-1 h-full min-w-[200px]">
+              <ResponsiveContainer width="100%" height="100%" minWidth={150} minHeight={200}>
                 <PieChart>
                   <Pie
                     data={statusDistribution}
@@ -284,8 +284,8 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
       {/* Weekly Trend */}
       <Card className="p-5">
         <h4 className="font-medium mb-4">Weekly Filing Trend</h4>
-        <div className="h-[200px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-[200px] min-h-[200px]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={180}>
             <LineChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
               <XAxis dataKey="day" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
