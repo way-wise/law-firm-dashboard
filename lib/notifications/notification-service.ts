@@ -54,9 +54,9 @@ async function getNotificationSettings() {
 }
 
 // Get recipients who should receive notifications
-// Super admin always receives notifications (respecting their toggle settings)
+// Only users explicitly added to notificationRecipients table will receive notifications
 async function getRecipients(channel: "email" | "inApp") {
-  // Get regular recipients from notificationRecipients table
+  // Get recipients from notificationRecipients table only
   const recipients = await prisma.notificationRecipients.findMany({
     where: channel === "email" 
       ? { emailEnabled: true }
@@ -73,49 +73,21 @@ async function getRecipients(channel: "email" | "inApp") {
     },
   });
 
-  const recipientUsers = recipients.map((r) => r.user);
+  return recipients.map((r) => r.user);
+}
 
-  // Always include super admin if they have notifications enabled
-  // First check if super admin exists and has a notificationRecipients entry
-  const superAdmin = await prisma.users.findFirst({
-    where: { role: "super", banned: { not: true } },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      notificationRecipients: {
-        select: {
-          emailEnabled: true,
-          inAppEnabled: true,
-        },
-      },
-    },
-  });
-
-  if (superAdmin) {
-    // Check if super admin is already in the list
-    const superAlreadyIncluded = recipientUsers.some((u) => u.id === superAdmin.id);
-    
-    if (!superAlreadyIncluded) {
-      // Check if super admin has this channel enabled (or if they have no settings, default to enabled)
-      const superSettings = superAdmin.notificationRecipients;
-      const isChannelEnabled = channel === "email" 
-        ? (superSettings?.emailEnabled ?? true)  // Default to true if no settings
-        : (superSettings?.inAppEnabled ?? true); // Default to true if no settings
-      
-      if (isChannelEnabled) {
-        recipientUsers.push({
-          id: superAdmin.id,
-          email: superAdmin.email,
-          name: superAdmin.name,
-          role: superAdmin.role,
-        });
-      }
-    }
-  }
-
-  return recipientUsers;
+// Check if any recipients are configured for notifications
+// Used by sync service to skip notifications if no one will receive them
+export async function hasConfiguredRecipients(): Promise<{ email: boolean; inApp: boolean }> {
+  const [emailCount, inAppCount] = await Promise.all([
+    prisma.notificationRecipients.count({ where: { emailEnabled: true } }),
+    prisma.notificationRecipients.count({ where: { inAppEnabled: true } }),
+  ]);
+  
+  return {
+    email: emailCount > 0,
+    inApp: inAppCount > 0,
+  };
 }
 
 // Check if a notification type is enabled
@@ -423,6 +395,13 @@ function isDeadlineChanged(
 
 // Detect and send notifications for matter field changes
 export async function checkMatterChangesAndNotify(data: MatterChangeData): Promise<void> {
+  // Check if any recipients are configured - skip if no one will receive notifications
+  const recipients = await hasConfiguredRecipients();
+  if (!recipients.email && !recipients.inApp) {
+    console.log(`[NOTIFICATION] Skipping notifications - no recipients configured`);
+    return;
+  }
+
   const notifications: Array<{ type: NotificationType; data: NotificationData }> = [];
 
   // Check estimated deadline change

@@ -28,11 +28,8 @@ import {
   updateSyncSettings,
 } from "./syncSettings";
 import {
-  createTeamMember,
-  deleteTeamMember,
   getTeamMemberById,
   getTeamMembers,
-  updateTeamMember,
 } from "./team";
 import {
   createTodo,
@@ -66,6 +63,11 @@ import {
   sendTestEmail,
   sendTestInApp,
 } from "./testNotifications";
+import {
+  getDashboardStats,
+  getAssigneeStats,
+  getRecentMatters,
+} from "./dashboard";
 
 export const router = {
   todos: {
@@ -101,9 +103,6 @@ export const router = {
   team: {
     get: getTeamMembers,
     getById: getTeamMemberById,
-    create: createTeamMember,
-    update: updateTeamMember,
-    delete: deleteTeamMember,
   },
   docketwise: {
     getStatus: getConnectionStatus,
@@ -143,5 +142,10 @@ export const router = {
   testNotifications: {
     sendEmail: sendTestEmail,
     sendInApp: sendTestInApp,
+  },
+  dashboard: {
+    getStats: getDashboardStats,
+    getAssigneeStats: getAssigneeStats,
+    getRecentMatters: getRecentMatters,
   },
 };

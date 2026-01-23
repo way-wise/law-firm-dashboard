@@ -1,7 +1,8 @@
 import "server-only";
 import { getDocketwiseToken } from "@/lib/docketwise";
 import prisma from "@/lib/prisma";
-import { sendNotification, detectNotificationType } from "@/lib/notifications/notification-service";
+import { sendNotification, detectNotificationType, hasConfiguredRecipients } from "@/lib/notifications/notification-service";
+import { invalidateCache } from "@/lib/redis";
 
 const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
 
@@ -88,6 +89,7 @@ interface DocketwiseMatter {
     id: number;
     first_name: string | null;
     last_name: string | null;
+    company_name?: string | null;
   } | null;
 }
 
@@ -95,6 +97,7 @@ interface DocketwiseContact {
   id: number;
   first_name: string | null;
   last_name: string | null;
+  company_name?: string | null;
 }
 
 // Matter status (workflow stage) from /matter_statuses endpoint
@@ -136,6 +139,12 @@ export async function syncMatters(userId: string) {
       throw new Error("No Docketwise token available");
     }
 
+    // Check if any notification recipients are configured
+    // Skip sending notifications if no one will receive them
+    const recipients = await hasConfiguredRecipients();
+    const shouldSendNotifications = recipients.email || recipients.inApp;
+    console.log(`[SYNC] Notification recipients configured: email=${recipients.email}, inApp=${recipients.inApp}`);
+
     console.log("[SYNC] Token obtained, fetching reference data...");
 
     // Fetch matter_statuses (workflow stages) first for resolution
@@ -156,25 +165,53 @@ export async function syncMatters(userId: string) {
       console.warn("[SYNC] Failed to fetch matter_statuses:", err);
     }
 
-    // Fetch users for assignee resolution
+    // Fetch ALL pages of users for assignee resolution
     let userMap = new Map<number, string>();
     try {
-      const usersResponse = await fetch(`${DOCKETWISE_API_URL}/users`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (usersResponse.ok) {
-        const users = await usersResponse.json() as DocketwiseUser[];
-        userMap = new Map(users.map(u => [
-          u.id,
-          u.attorney_profile 
-            ? `${u.attorney_profile.first_name || ""} ${u.attorney_profile.last_name || ""}`.trim() || u.email
-            : u.email
-        ]));
-        console.log(`[SYNC] Loaded ${userMap.size} users for assignee resolution`);
+      let userPage = 1;
+      const MAX_USER_PAGES = 10;
+      const allUsers: DocketwiseUser[] = [];
+      
+      while (userPage <= MAX_USER_PAGES) {
+        const usersResponse = await fetch(`${DOCKETWISE_API_URL}/users?page=${userPage}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        
+        if (!usersResponse.ok) break;
+        
+        const pageUsers = await usersResponse.json() as DocketwiseUser[];
+        if (pageUsers.length === 0) break;
+        
+        allUsers.push(...pageUsers);
+        console.log(`[SYNC] Fetched users page ${userPage}: ${pageUsers.length} users`);
+        
+        // Check pagination header
+        const userPagination = usersResponse.headers.get("X-Pagination");
+        if (userPagination) {
+          try {
+            const pag = JSON.parse(userPagination) as DocketwisePagination;
+            if (!pag.next_page) break;
+          } catch {
+            if (pageUsers.length < 200) break;
+          }
+        } else if (pageUsers.length < 200) {
+          break;
+        }
+        
+        userPage++;
+        await delay(RATE_LIMIT_DELAY_MS);
       }
+      
+      userMap = new Map(allUsers.map(u => [
+        u.id,
+        u.attorney_profile 
+          ? `${u.attorney_profile.first_name || ""} ${u.attorney_profile.last_name || ""}`.trim() || u.email
+          : u.email
+      ]));
+      console.log(`[SYNC] Loaded ${userMap.size} total users for assignee resolution`);
     } catch (err) {
       console.warn("[SYNC] Failed to fetch users:", err);
     }
@@ -296,7 +333,8 @@ export async function syncMatters(userId: string) {
                 : docketwiseMatter.status;
 
               // Check for status for filing change (this triggers RFE/approval/denial notifications)
-              if (existingMatter && existingMatter.statusForFiling !== newStatus) {
+              // Only send notifications if recipients are configured AND value actually changed
+              if (shouldSendNotifications && existingMatter && existingMatter.statusForFiling !== newStatus && newStatus) {
                 const notificationType = detectNotificationType(existingMatter.statusForFiling, newStatus);
                 if (notificationType) {
                   console.log(`[SYNC] Status for filing change detected for matter ${docketwiseMatter.id}: ${existingMatter.statusForFiling} -> ${newStatus} (${notificationType})`);
@@ -317,20 +355,24 @@ export async function syncMatters(userId: string) {
               }
 
               // Build user_ids and resolve assignee names immediately
-              const userIds = docketwiseMatter.user_ids?.length 
+              // Deduplicate user IDs to avoid "Ashley Dworsky, Ashley Dworsky"
+              const rawUserIds = docketwiseMatter.user_ids?.length 
                 ? docketwiseMatter.user_ids
                 : docketwiseMatter.attorney_id 
                   ? [docketwiseMatter.attorney_id]
                   : [];
+              const userIds = [...new Set(rawUserIds)]; // Remove duplicates
               const userIdsStr = userIds.length ? JSON.stringify(userIds) : null;
               
-              // Resolve assignee names from user IDs
-              const assigneeNames = userIds
-                .map(id => userMap.get(id))
-                .filter((name): name is string => !!name);
-              const assigneesStr = assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
+              // Resolve assignee names from user IDs (also deduplicate names)
+              const assigneeNamesSet = new Set(
+                userIds
+                  .map(id => userMap.get(id))
+                  .filter((name): name is string => !!name)
+              );
+              const assigneesStr = assigneeNamesSet.size > 0 ? [...assigneeNamesSet].join(", ") : null;
               
-              // Resolve workflow stage name
+              // Resolve workflow stage name (this is the "Status" column in Docketwise)
               let workflowStageName = docketwiseMatter.workflow_stage?.name || null;
               if (!workflowStageName) {
                 // Try to resolve from ID
@@ -338,6 +380,25 @@ export async function syncMatters(userId: string) {
                 if (stageId && matterStatusMap.has(stageId)) {
                   workflowStageName = matterStatusMap.get(stageId) || null;
                 }
+              }
+              
+              // Fallback: if workflow_stage is still null, use status (status_for_filing) as display status
+              if (!workflowStageName) {
+                const statusForFiling = typeof docketwiseMatter.status === 'object' && docketwiseMatter.status 
+                  ? docketwiseMatter.status.name 
+                  : (typeof docketwiseMatter.status === 'string' ? docketwiseMatter.status : null);
+                if (statusForFiling) {
+                  workflowStageName = statusForFiling;
+                }
+              }
+
+              // Extract client name from embedded client data if available
+              // For Institution contacts, use company_name; for Person contacts, use first/last name
+              let embeddedClientName: string | null = null;
+              if (docketwiseMatter.client) {
+                embeddedClientName = docketwiseMatter.client.company_name?.trim() 
+                  || `${docketwiseMatter.client.first_name || ""} ${docketwiseMatter.client.last_name || ""}`.trim() 
+                  || null;
               }
 
               await tx.matters.upsert({
@@ -355,6 +416,8 @@ export async function syncMatters(userId: string) {
                   statusForFiling: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : (typeof docketwiseMatter.status === 'string' ? docketwiseMatter.status : null),
                   statusForFilingId: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.id : docketwiseMatter.status_id || null,
                   clientId: docketwiseMatter.client_id || null,
+                  // Use embedded client name if available
+                  ...(embeddedClientName && { clientName: embeddedClientName }),
                   openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
                   closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
                   docketwiseUserIds: userIdsStr,
@@ -376,6 +439,8 @@ export async function syncMatters(userId: string) {
                   statusForFiling: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.name : (typeof docketwiseMatter.status === 'string' ? docketwiseMatter.status : null),
                   statusForFilingId: typeof docketwiseMatter.status === 'object' && docketwiseMatter.status ? docketwiseMatter.status.id : docketwiseMatter.status_id || null,
                   clientId: docketwiseMatter.client_id || null,
+                  // Use embedded client name if available
+                  clientName: embeddedClientName,
                   openedAt: docketwiseMatter.opened_at ? new Date(docketwiseMatter.opened_at) : null,
                   closedAt: docketwiseMatter.closed_at ? new Date(docketwiseMatter.closed_at) : null,
                   docketwiseUserIds: userIdsStr,
@@ -444,7 +509,8 @@ export async function syncMatters(userId: string) {
               const clientMap = new Map<number, string | null>(
                 allClients.map((c) => [
                   c.id,
-                  `${c.first_name || ""} ${c.last_name || ""}`.trim() || null,
+                  // For Institution contacts, use company_name; for Person contacts, use first/last name
+                  c.company_name?.trim() || `${c.first_name || ""} ${c.last_name || ""}`.trim() || null,
                 ])
               );
 
@@ -505,77 +571,10 @@ export async function syncMatters(userId: string) {
 
     console.log(`[SYNC] Completed: ${recordsProcessed} total records processed`);
 
-    console.log(`[SYNC] Fetching users for assignee resolution...`);
-    try {
-      const usersResponse = await fetch(`${DOCKETWISE_API_URL}/users`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      
-      if (usersResponse.ok) {
-        const allUsers = await usersResponse.json() as DocketwiseUser[];
-        const userMap = new Map<number, string>(
-          allUsers.map((u) => [
-            u.id,
-            u.attorney_profile 
-              ? `${u.attorney_profile.first_name || ""} ${u.attorney_profile.last_name || ""}`.trim() || u.email
-              : u.email,
-          ])
-        );
-
-        console.log(`[SYNC] Fetched ${allUsers.length} users from Docketwise`);
-
-        // Get all matters with user IDs that need assignee resolution
-        const mattersToUpdate = await prisma.matters.findMany({
-          where: { 
-            userId, 
-            docketwiseUserIds: { not: null },
-            isEdited: false,
-          },
-          select: { id: true, docketwiseUserIds: true },
-        });
-
-        console.log(`[SYNC] Found ${mattersToUpdate.length} matters with user_ids to process`);
-
-        let updatedCount = 0;
-        for (const matter of mattersToUpdate) {
-          if (matter.docketwiseUserIds) {
-            try {
-              // Parse user IDs (could be JSON array or single number string)
-              let userIds: number[] = [];
-              try {
-                const parsed = JSON.parse(matter.docketwiseUserIds);
-                userIds = Array.isArray(parsed) ? parsed : [parsed];
-              } catch {
-                // Fallback: try parsing as single number
-                const singleId = parseInt(matter.docketwiseUserIds, 10);
-                if (!isNaN(singleId)) userIds = [singleId];
-              }
-
-              // Resolve user IDs to names
-              const assigneeNames = userIds
-                .map(id => userMap.get(id))
-                .filter((name): name is string => !!name);
-
-              if (assigneeNames.length > 0) {
-                await prisma.matters.update({
-                  where: { id: matter.id },
-                  data: { assignees: assigneeNames.join(", ") },
-                });
-                updatedCount++;
-              }
-            } catch (parseError) {
-              console.error(`[SYNC] Error parsing user IDs for matter ${matter.id}:`, parseError);
-            }
-          }
-        }
-        console.log(`[SYNC] Updated ${updatedCount} assignee names`);
-      }
-    } catch (userError) {
-      console.error(`[SYNC] Error fetching users:`, userError);
-    }
+    // Invalidate all dashboard cache for this user after sync
+    await invalidateCache(`dashboard:*:${userId}`);
+    await invalidateCache(`matters:*`);
+    console.log(`[SYNC] Cache invalidated for user ${userId}`);
 
     return {
       success: true,

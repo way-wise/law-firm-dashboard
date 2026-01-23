@@ -28,12 +28,10 @@ interface SyncSettingsModalProps {
 }
 
 const POLLING_OPTIONS = [
-  { value: "5", label: "5 minutes" },
-  { value: "10", label: "10 minutes" },
-  { value: "15", label: "15 minutes" },
-  { value: "20", label: "20 minutes" },
   { value: "30", label: "30 minutes" },
   { value: "60", label: "1 hour" },
+  { value: "720", label: "12 hours" },
+  { value: "1440", label: "24 hours" },
 ];
 
 export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps) {
@@ -82,14 +80,32 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
   const handleManualSync = async () => {
     try {
       setIsSyncing(true);
-      const result = await client.sync.trigger({});
+      toast.info("Sync started. This may take a few minutes for large datasets...");
+      
+      // Add timeout to prevent infinite loading (10 minutes max for large datasets)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("TIMEOUT")), 10 * 60 * 1000);
+      });
+      
+      const result = await Promise.race([
+        client.sync.trigger({}),
+        timeoutPromise,
+      ]);
+      
       setLastSyncAt(new Date());
       toast.success(
         `Sync completed: ${result.recordsProcessed} records processed`
       );
     } catch (error) {
       console.error("Error triggering sync:", error);
-      toast.error("Failed to sync data");
+      if (error instanceof Error && error.message === "TIMEOUT") {
+        // Sync likely completed on backend but response timed out
+        toast.warning("Sync is taking longer than expected. It may have completed - please refresh the page to check.");
+        setLastSyncAt(new Date()); // Assume it completed
+      } else {
+        const message = error instanceof Error ? error.message : "Failed to sync data";
+        toast.error(message);
+      }
     } finally {
       setIsSyncing(false);
     }

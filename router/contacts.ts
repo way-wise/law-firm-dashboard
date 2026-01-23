@@ -1,5 +1,7 @@
 import { getDocketwiseToken } from "@/lib/docketwise";
 import { authorized } from "@/lib/orpc";
+import prisma, { Prisma } from "@/lib/prisma";
+import { getOrSetCache, CACHE_KEYS, DEFAULT_CACHE_TTL } from "@/lib/redis";
 import {
   contactFilterSchema,
   contactInputSchema,
@@ -15,129 +17,113 @@ export type { ContactFilterSchemaType, ContactSchemaType };
 
 const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
 
-// Get Contacts
+// Get Contacts from synced database (NOT direct API)
 export const getContacts = authorized
   .route({
     method: "GET",
     path: "/contacts",
-    summary: "Get all contacts from Docketwise",
+    summary: "Get all contacts from synced database",
     tags: ["Contacts"],
   })
   .input(contactFilterSchema)
   .output(paginatedContactsSchema)
   .handler(async ({ input }) => {
-    const token = await getDocketwiseToken();
+    const page = input.page || 1;
+    const perPage = 50;
+    const cacheKey = `${CACHE_KEYS.CONTACTS_LIST}:${page}:${input.type ?? 'all'}`;
 
-    if (!token) {
-      return {
-        data: [],
-        pagination: undefined,
-        connectionError: true,
-      };
-    }
-
-    try {
-      const params = new URLSearchParams();
-      if (input.page) params.append("page", input.page.toString());
-      if (input.type) params.append("type", input.type);
-      if (input.filter) params.append("filter", input.filter);
-
-      const queryString = params.toString();
-      const endpoint = `/contacts${queryString ? `?${queryString}` : ""}`;
-
-      const response = await fetch(`${DOCKETWISE_API_URL}${endpoint}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        console.error(
-          "Docketwise API Error:",
-          response.status,
-          await response.text(),
-        );
-
-        if (response.status >= 400 && response.status < 500) {
-          return {
-            data: [],
-            pagination: undefined,
-            connectionError: true,
-          };
-        }
-
-        throw new ORPCError("INTERNAL_SERVER_ERROR", {
-          message: `Docketwise API error: ${response.status}`,
-        });
+    return getOrSetCache(cacheKey, async () => {
+      const where: Prisma.contactsWhereInput = {};
+      
+      if (input.type) {
+        where.type = input.type;
       }
 
-      const paginationHeader = response.headers.get("X-Pagination");
-      const data = await response.json();
+      const [contacts, total] = await Promise.all([
+        prisma.contacts.findMany({
+          where,
+          skip: (page - 1) * perPage,
+          take: perPage,
+          orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        }),
+        prisma.contacts.count({ where }),
+      ]);
 
-      const pagination = paginationHeader
-        ? JSON.parse(paginationHeader)
-        : undefined;
+      // Transform to match expected schema
+      const data = contacts.map(contact => ({
+        id: contact.docketwiseId,
+        first_name: contact.firstName,
+        last_name: contact.lastName,
+        middle_name: contact.middleName,
+        company_name: contact.companyName,
+        email: contact.email,
+        phone: contact.phone,
+        type: contact.type,
+        lead: contact.isLead,
+        street_address: contact.streetAddress,
+        apartment_number: contact.apartmentNumber,
+        city: contact.city,
+        state: contact.state,
+        province: contact.province,
+        zip_code: contact.zipCode,
+        country: contact.country,
+        created_at: contact.createdAt.toISOString(),
+        updated_at: contact.updatedAt.toISOString(),
+      }));
 
       return {
-        data: Array.isArray(data) ? data : data.data || data,
-        pagination,
+        data,
+        pagination: total > perPage ? {
+          total,
+          next_page: page * perPage < total ? page + 1 : null,
+          previous_page: page > 1 ? page - 1 : null,
+          total_pages: Math.ceil(total / perPage),
+        } : undefined,
       };
-    } catch (error) {
-      console.error("Docketwise API Error:", error);
-
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error ? error.message : "Failed to fetch contacts",
-      });
-    }
+    }, DEFAULT_CACHE_TTL);
   });
 
-// Get Contact by ID
+// Get Contact by ID from database
 export const getContactById = authorized
   .route({
     method: "GET",
     path: "/contacts/{id}",
-    summary: "Get a single contact by ID",
+    summary: "Get a single contact by ID from synced database",
     tags: ["Contacts"],
   })
   .input(z.object({ id: z.number() }))
   .output(contactSchema)
   .handler(async ({ input }) => {
-    const token = await getDocketwiseToken();
+    const contact = await prisma.contacts.findUnique({
+      where: { docketwiseId: input.id },
+    });
 
-    if (!token) {
-      throw new ORPCError("UNAUTHORIZED", {
-        message: "Docketwise not connected",
+    if (!contact) {
+      throw new ORPCError("NOT_FOUND", {
+        message: `Contact not found: ${input.id}`,
       });
     }
 
-    try {
-      const response = await fetch(
-        `${DOCKETWISE_API_URL}/contacts/${input.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-
-      if (!response.ok) {
-        throw new ORPCError("NOT_FOUND", {
-          message: `Contact not found: ${response.status}`,
-        });
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error("Docketwise API Error:", error);
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          error instanceof Error ? error.message : "Failed to fetch contact",
-      });
-    }
+    return {
+      id: contact.docketwiseId,
+      first_name: contact.firstName,
+      last_name: contact.lastName,
+      middle_name: contact.middleName,
+      company_name: contact.companyName,
+      email: contact.email,
+      phone: contact.phone,
+      type: contact.type,
+      lead: contact.isLead,
+      street_address: contact.streetAddress,
+      apartment_number: contact.apartmentNumber,
+      city: contact.city,
+      state: contact.state,
+      province: contact.province,
+      zip_code: contact.zipCode,
+      country: contact.country,
+      created_at: contact.createdAt.toISOString(),
+      updated_at: contact.updatedAt.toISOString(),
+    };
   });
 
 // Create Contact

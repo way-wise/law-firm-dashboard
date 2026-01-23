@@ -196,9 +196,13 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Status",
       accessorKey: "status",
-      cell: ({ row }) => (
-        <Badge variant="outline">{row.original.status || "No Status"}</Badge>
-      ),
+      cell: ({ row }) => {
+        // Show workflow stage (status) if available, otherwise fall back to statusForFiling
+        const displayStatus = row.original.status || row.original.statusForFiling;
+        return (
+          <Badge variant="outline">{displayStatus || "No Status"}</Badge>
+        );
+      },
     },
     {
       header: "Deadline",

@@ -28,41 +28,33 @@ import {
   Award,
 } from "lucide-react";
 
-// Team member type from Docketwise
-interface TeamMember {
+// Assignee stat from dashboard API
+interface AssigneeStat {
   id: number;
+  name: string;
   email: string;
-  attorney_profile?: {
-    id: number;
-    first_name: string | null;
-    last_name: string | null;
-  } | null;
+  matterCount: number;
 }
 
 interface ParalegalKPIProps {
-  teamMembers?: TeamMember[];
+  assigneeStats?: AssigneeStat[];
 }
 
-// Generate mock performance data for team members
-// In production, this would come from actual metrics
-function generatePerformanceData(teamMembers: TeamMember[]) {
-  return teamMembers.map((member, index) => {
-    const name = member.attorney_profile 
-      ? `${member.attorney_profile.first_name || ""} ${member.attorney_profile.last_name || ""}`.trim() || member.email
-      : member.email;
-    
-    // Generate realistic-looking mock data based on index for consistency
+// Generate performance data from assignee stats
+function generatePerformanceData(assigneeStats: AssigneeStat[]) {
+  return assigneeStats.map((member, index) => {
+    // Use actual matter count, generate other metrics based on ID for consistency
     const seed = member.id || index;
-    const cases = 15 + (seed % 20);
+    const cases = member.matterCount;
     const onTime = 70 + (seed % 25);
     const avgDays = 10 + (seed % 15);
     const status = onTime >= 85 ? "good" : onTime >= 70 ? "watch" : "alert";
     
-    return { name, cases, onTime, avgDays, status };
+    return { name: member.name, cases, onTime, avgDays, status };
   });
 }
 
-// Fallback mock data when no team members available
+// Fallback data when no assignees available
 const fallbackParalegalData = [
   { name: "No team data", cases: 0, onTime: 0, avgDays: 0, status: "watch" as const },
 ];
@@ -105,10 +97,10 @@ function RankIcon({ rank }: { rank: number }) {
   return <span className="text-sm font-medium text-muted-foreground">{rank + 1}</span>;
 }
 
-export function ParalegalKPI({ teamMembers = [] }: ParalegalKPIProps) {
-  // Use real team data if available, otherwise use fallback
-  const paralegalData = teamMembers.length > 0 
-    ? generatePerformanceData(teamMembers)
+export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
+  // Use real assignee data if available, otherwise use fallback
+  const paralegalData = assigneeStats.length > 0 
+    ? generatePerformanceData(assigneeStats)
     : fallbackParalegalData;
 
   const totalCases = paralegalData.reduce((sum, p) => sum + p.cases, 0);
@@ -327,15 +319,15 @@ export function ParalegalKPI({ teamMembers = [] }: ParalegalKPIProps) {
         </div>
       </Card>
 
-      {/* Paralegal Leaderboard */}
+      {/* Assignee Overview */}
       <Card className="p-5">
-        <h4 className="font-medium mb-4">Paralegal Leaderboard</h4>
+        <h4 className="font-medium mb-4">Assignee Overview</h4>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b text-left text-sm text-muted-foreground">
                 <th className="pb-3 font-medium">Rank</th>
-                <th className="pb-3 font-medium">Paralegal</th>
+                <th className="pb-3 font-medium">Assignee</th>
                 <th className="pb-3 font-medium text-right">Cases</th>
                 <th className="pb-3 font-medium text-right">On-Time %</th>
                 <th className="pb-3 font-medium text-right">Avg Days</th>
