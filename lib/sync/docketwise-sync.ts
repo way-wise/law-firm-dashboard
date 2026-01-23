@@ -212,6 +212,37 @@ export async function syncMatters(userId: string) {
           : u.email
       ]));
       console.log(`[SYNC] Loaded ${userMap.size} total users for assignee resolution`);
+      
+      // Save users to docketwiseUsers table for Assignee Overview
+      for (const user of allUsers) {
+        const firstName = user.attorney_profile?.first_name || null;
+        const lastName = user.attorney_profile?.last_name || null;
+        const fullName = firstName || lastName 
+          ? `${firstName || ""} ${lastName || ""}`.trim() 
+          : null;
+        
+        await prisma.docketwiseUsers.upsert({
+          where: { docketwiseId: user.id },
+          update: {
+            email: user.email,
+            firstName,
+            lastName,
+            fullName: fullName || user.email,
+            isActive: true,
+            lastSyncedAt: new Date(),
+          },
+          create: {
+            docketwiseId: user.id,
+            email: user.email,
+            firstName,
+            lastName,
+            fullName: fullName || user.email,
+            isActive: true,
+            lastSyncedAt: new Date(),
+          },
+        });
+      }
+      console.log(`[SYNC] Saved ${allUsers.length} users to docketwiseUsers table`);
     } catch (err) {
       console.warn("[SYNC] Failed to fetch users:", err);
     }

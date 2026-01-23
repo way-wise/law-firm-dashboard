@@ -106,8 +106,8 @@ export const getContactById = authorized
 
     return {
       id: contact.docketwiseId,
-      first_name: contact.firstName,
-      last_name: contact.lastName,
+      first_name: contact.firstName || "",
+      last_name: contact.lastName || "",
       middle_name: contact.middleName,
       company_name: contact.companyName,
       email: contact.email,
