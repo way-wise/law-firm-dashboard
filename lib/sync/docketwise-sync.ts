@@ -386,6 +386,7 @@ export async function syncMatters(userId: string) {
         );
         console.log("[SYNC] Detail keys:", Object.keys(firstDetail || {}));
         console.log("[SYNC] attorney_id:", firstDetail?.attorney_id);
+        console.log("[SYNC] user_ids:", firstDetail?.user_ids);
         console.log("[SYNC] userMap size:", userMap.size);
         console.log("[SYNC] userMap sample entries:", Array.from(userMap.entries()).slice(0, 5));
         console.log("[SYNC] workflow_stage:", firstDetail?.workflow_stage);

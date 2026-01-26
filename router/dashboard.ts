@@ -197,29 +197,70 @@ export const getRecentMatters = authorized
     const cacheKey = `${CACHE_KEYS.DASHBOARD_MATTERS}:${context.user.id}:${input.limit}`;
     
     return getOrSetCache(cacheKey, async () => {
-      const matters = await prisma.matters.findMany({
-        where: {
-          userId: context.user.id,
-        },
-        orderBy: {
-          updatedAt: "desc",
-        },
-        take: input.limit,
-        select: {
-          id: true,
-          docketwiseId: true,
-          title: true,
-          clientName: true,
-          matterType: true,
-          status: true,
-          statusForFiling: true,
-          assignees: true,
-          billingStatus: true,
-          estimatedDeadline: true,
-          updatedAt: true,
-        },
+      // Fetch matters and docketwiseUsers in parallel
+      const [matters, docketwiseUsers] = await Promise.all([
+        prisma.matters.findMany({
+          where: {
+            userId: context.user.id,
+          },
+          orderBy: {
+            updatedAt: "desc",
+          },
+          take: input.limit,
+          select: {
+            id: true,
+            docketwiseId: true,
+            title: true,
+            clientName: true,
+            matterType: true,
+            status: true,
+            statusForFiling: true,
+            assignees: true,
+            docketwiseUserIds: true,
+            billingStatus: true,
+            estimatedDeadline: true,
+            updatedAt: true,
+          },
+        }),
+        prisma.docketwiseUsers.findMany({
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+          },
+        }),
+      ]);
+
+      // Build a map of docketwiseId -> fullName for quick lookup
+      const userMap = new Map<number, string>();
+      for (const user of docketwiseUsers) {
+        userMap.set(user.docketwiseId, user.fullName || user.email);
+      }
+
+      // Resolve assignees for each matter
+      const mattersWithAssignees = matters.map((matter) => {
+        let resolvedAssignees: string | null = matter.assignees;
+        
+        if (!resolvedAssignees && matter.docketwiseUserIds) {
+          try {
+            const userIds = JSON.parse(matter.docketwiseUserIds) as number[];
+            const names = userIds
+              .map((id) => userMap.get(id))
+              .filter((name): name is string => !!name);
+            resolvedAssignees = names.length > 0 ? names.join(", ") : null;
+          } catch {
+            // If parsing fails, leave as null
+          }
+        }
+        
+        // Return without docketwiseUserIds (not in schema output)
+        const { docketwiseUserIds, ...rest } = matter;
+        return {
+          ...rest,
+          assignees: resolvedAssignees,
+        };
       });
 
-      return matters;
+      return mattersWithAssignees;
     }, DEFAULT_CACHE_TTL);
   });

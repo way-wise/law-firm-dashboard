@@ -72,7 +72,8 @@ export const getCustomMatters = authorized
         }
       }
 
-      const [matters, total] = await Promise.all([
+      // Fetch matters and docketwiseUsers in parallel
+      const [matters, total, docketwiseUsers] = await Promise.all([
         prisma.matters.findMany({
           where,
           skip,
@@ -88,10 +89,46 @@ export const getCustomMatters = authorized
           },
         }),
         prisma.matters.count({ where }),
+        prisma.docketwiseUsers.findMany({
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+          },
+        }),
       ]);
 
+      // Build a map of docketwiseId -> fullName for quick lookup
+      const userMap = new Map<number, string>();
+      for (const user of docketwiseUsers) {
+        userMap.set(user.docketwiseId, user.fullName || user.email);
+      }
+
+      // Resolve assignees for each matter using docketwiseUserIds
+      const mattersWithAssignees = matters.map((matter) => {
+        let resolvedAssignees: string | null = matter.assignees;
+        
+        // If assignees is already set and not empty, keep it
+        if (!resolvedAssignees && matter.docketwiseUserIds) {
+          try {
+            const userIds = JSON.parse(matter.docketwiseUserIds) as number[];
+            const names = userIds
+              .map((id) => userMap.get(id))
+              .filter((name): name is string => !!name);
+            resolvedAssignees = names.length > 0 ? names.join(", ") : null;
+          } catch {
+            // If parsing fails, leave as null
+          }
+        }
+        
+        return {
+          ...matter,
+          assignees: resolvedAssignees,
+        };
+      });
+
       return {
-        data: matters,
+        data: mattersWithAssignees,
         pagination: {
           total,
           page,
