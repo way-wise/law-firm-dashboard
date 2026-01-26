@@ -138,6 +138,7 @@ model matters {
   estimatedDeadline DateTime?
   actualDeadline    DateTime?
   billingStatus     BillingStatus?
+  totalHours        Float?
   customNotes       String?
 
   lastSyncedAt DateTime @default(now())

@@ -52,6 +52,7 @@ export function EditMatterDrawer({
   const [billingStatus, setBillingStatus] = useState<string>("");
   const [assignees, setAssignees] = useState("");
   const [description, setDescription] = useState("");
+  const [totalHours, setTotalHours] = useState<number | null>(null);
   const [customNotes, setCustomNotes] = useState("");
 
   // Get active paralegals for dropdown
@@ -75,6 +76,7 @@ export function EditMatterDrawer({
       setBillingStatus(matter.billingStatus || "");
       setAssignees(matter.assignees || "");
       setDescription(matter.description || "");
+      setTotalHours(matter.totalHours ?? null);
       setCustomNotes(matter.customNotes || "");
     }
   }, [matter]);
@@ -96,6 +98,7 @@ export function EditMatterDrawer({
         actualDeadline: actualDeadline || null,
         billingStatus: billingStatus ? (billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE") : null,
         assignees: assignees || null,
+        totalHours: totalHours,
         customNotes: customNotes || null,
       });
 
@@ -234,6 +237,20 @@ export function EditMatterDrawer({
                     <SelectItem value="DUE">Due</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Total Hours */}
+              <div className="space-y-2">
+                <Label htmlFor="totalHours">Total Hours</Label>
+                <Input
+                  id="totalHours"
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  placeholder="e.g., 10.5"
+                  value={totalHours ?? ""}
+                  onChange={(e) => setTotalHours(e.target.value ? parseFloat(e.target.value) : null)}
+                />
               </div>
 
               {/* Assignees - Advanced Select */}

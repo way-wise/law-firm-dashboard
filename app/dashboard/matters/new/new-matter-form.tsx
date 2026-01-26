@@ -59,6 +59,7 @@ const step2Schema = z.object({
 const step3Schema = z.object({
   billing_status: z.string().optional(),
   retainer_amount: z.string().optional(),
+  total_hours: z.string().optional(),
   case_notes: z.string().optional(),
   tags: z.string().optional(),
 });
@@ -546,6 +547,26 @@ const NewMatterForm = () => {
                       )}
                     />
                   </FieldGroup>
+
+                  {/* Total Hours */}
+                  <Controller
+                    name="total_hours"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field>
+                        <FieldLabel htmlFor="total_hours">Total Hours</FieldLabel>
+                        <Input
+                          {...field}
+                          id="total_hours"
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          placeholder="e.g., 10.5"
+                        />
+                        <FieldError errors={[fieldState.error]} />
+                      </Field>
+                    )}
+                  />
 
                   {/* Case Notes */}
                   <Controller

@@ -229,6 +229,15 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       },
     },
     {
+      header: "Total Hours",
+      accessorKey: "totalHours",
+      cell: ({ row }) => (
+        <p className="text-sm text-muted-foreground">
+          {row.original.totalHours != null ? `${row.original.totalHours}h` : "-"}
+        </p>
+      ),
+    },
+    {
       header: "Updated",
       accessorKey: "updatedAt",
       cell: ({ row }) => (
@@ -525,6 +534,16 @@ const MattersTable = ({ matters }: MattersTableProps) => {
                         </div>
                       </div>
                     )}
+
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                        <FileText className="size-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total Hours</p>
+                        <p className="text-sm font-medium">{viewMatter.totalHours != null ? `${viewMatter.totalHours} hours` : "Not recorded"}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
