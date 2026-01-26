@@ -491,8 +491,9 @@ export async function syncMatters(userId: string) {
             for (const listMatter of batch) {
               try {
                 // Use detailed data if available, fallback to list data
-                const docketwiseMatter =
-                  matterDetails.get(listMatter.id) || listMatter;
+                const detailedMatter = matterDetails.get(listMatter.id);
+                const docketwiseMatter = detailedMatter || listMatter;
+                const hasDetailData = !!detailedMatter;
 
                 const existingMatter = existingMattersMap.get(
                   docketwiseMatter.id,
@@ -562,11 +563,10 @@ export async function syncMatters(userId: string) {
                   .filter((name): name is string => !!name);
                 const assigneesStr = assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
                 
-                // Debug log for ALL matters to understand assignee issues
-                const hadDetailData = matterDetails.has(listMatter.id);
-                if (allAssigneeIds.length > 0 || !hadDetailData) {
+                // Debug log for matters with assignee issues
+                if (allAssigneeIds.length > 0 || !hasDetailData) {
                   console.log(`[SYNC DEBUG] Matter ${docketwiseMatter.id} "${docketwiseMatter.title}":`);
-                  console.log(`  - hadDetailData: ${hadDetailData}`);
+                  console.log(`  - hasDetailData: ${hasDetailData}`);
                   console.log(`  - user_ids from API:`, docketwiseMatter.user_ids);
                   console.log(`  - attorney_id from API:`, docketwiseMatter.attorney_id);
                   console.log(`  - allAssigneeIds:`, allAssigneeIds);
@@ -576,7 +576,7 @@ export async function syncMatters(userId: string) {
                     console.log(`  - userMap has these IDs:`, allAssigneeIds.map(id => ({ id, inMap: userMap.has(id) })));
                   }
                 }
-
+                
                 // Resolve workflow stage name (this is the "Status" column in Docketwise)
                 let workflowStageName =
                   docketwiseMatter.workflow_stage?.name || null;
@@ -618,6 +618,21 @@ export async function syncMatters(userId: string) {
                   resolvedClientName = clientMap.get(docketwiseMatter.client_id) || null;
                 }
 
+                // IMPORTANT: When we don't have detail data, preserve existing values for fields that require details
+                // This prevents overwriting good data with null when detail fetch fails due to rate limiting
+                const shouldPreserveExisting = !hasDetailData && existingMatter;
+                
+                // Determine final values - preserve existing if no detail data available
+                const finalAssignees = shouldPreserveExisting && existingMatter.assignees 
+                  ? existingMatter.assignees 
+                  : assigneesStr;
+                const finalStatus = shouldPreserveExisting && existingMatter.status
+                  ? existingMatter.status
+                  : workflowStageName;
+                const finalMatterType = shouldPreserveExisting && existingMatter.matterType
+                  ? existingMatter.matterType
+                  : (docketwiseMatter.matter_type?.name || docketwiseMatter.type || null);
+
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
                   update: {
@@ -629,16 +644,13 @@ export async function syncMatters(userId: string) {
                       : null,
                     title: docketwiseMatter.title || "Untitled",
                     description: docketwiseMatter.description || null,
-                    matterType:
-                      docketwiseMatter.matter_type?.name ||
-                      docketwiseMatter.type ||
-                      null,
+                    matterType: finalMatterType,
                     matterTypeId:
                       docketwiseMatter.matter_type?.id ||
                       docketwiseMatter.matter_type_id ||
                       null,
                     // status = workflow_stage (Docketwise "Status" column)
-                    status: workflowStageName,
+                    status: finalStatus,
                     statusId:
                       docketwiseMatter.workflow_stage?.id ||
                       docketwiseMatter.workflow_stage_id ||
@@ -666,8 +678,9 @@ export async function syncMatters(userId: string) {
                     closedAt: docketwiseMatter.closed_at
                       ? new Date(docketwiseMatter.closed_at)
                       : null,
-                    docketwiseUserIds: userIdsStr,
-                    assignees: assigneesStr,
+                    // Only update userIds if we have detail data
+                    ...(hasDetailData ? { docketwiseUserIds: userIdsStr } : {}),
+                    assignees: finalAssignees,
                     lastSyncedAt: new Date(),
                     isStale: false,
                   },

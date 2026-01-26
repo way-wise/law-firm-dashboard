@@ -143,12 +143,15 @@ export const getCustomMatters = authorized
         let isPastEstimatedDeadline = false;
         
         if (matter.docketwiseCreatedAt && matter.matterTypeId) {
-          const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
-          if (estDays) {
-            const createdAt = new Date(matter.docketwiseCreatedAt);
-            calculatedDeadline = new Date(createdAt);
-            calculatedDeadline.setDate(calculatedDeadline.getDate() + estDays);
-            isPastEstimatedDeadline = new Date() > calculatedDeadline;
+          const createdAt = new Date(matter.docketwiseCreatedAt);
+          // Validate the date is valid and not epoch (1970)
+          if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
+            const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
+            if (estDays && estDays > 0) {
+              calculatedDeadline = new Date(createdAt);
+              calculatedDeadline.setDate(calculatedDeadline.getDate() + estDays);
+              isPastEstimatedDeadline = new Date() > calculatedDeadline;
+            }
           }
         }
         

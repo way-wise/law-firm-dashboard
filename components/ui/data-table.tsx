@@ -62,7 +62,7 @@ export const DataTable = <TData, TValue>({
                   <th
                     className={cn(
                       "h-12 px-6 text-left font-medium whitespace-nowrap",
-                      canSort && "cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                      canSort && "cursor-pointer select-none"
                     )}
                     key={header.id}
                     onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
