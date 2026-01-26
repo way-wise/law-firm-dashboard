@@ -166,6 +166,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Title",
       accessorKey: "title",
+      enableSorting: true,
       cell: ({ row }) => (
         <div className="max-w-[250px]">
           <p className="font-medium truncate">{row.original.title}</p>
@@ -175,6 +176,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Client",
       accessorKey: "clientName",
+      enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm">{row.original.clientName || "-"}</p>
       ),
@@ -182,6 +184,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Assignees",
       accessorKey: "assignees",
+      enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm">{row.original.assignees || "-"}</p>
       ),
@@ -189,6 +192,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Type",
       accessorKey: "matterType",
+      enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm">{row.original.matterType || "-"}</p>
       ),
@@ -196,6 +200,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Status",
       accessorKey: "status",
+      enableSorting: true,
       cell: ({ row }) => {
         // Show workflow stage (status) if available, otherwise fall back to statusForFiling
         const displayStatus = row.original.status || row.original.statusForFiling;
@@ -207,17 +212,28 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Deadline",
       accessorKey: "estimatedDeadline",
-      cell: ({ row }) => (
-        <p className="text-sm text-muted-foreground">
-          {row.original.estimatedDeadline
-            ? new Date(row.original.estimatedDeadline).toLocaleDateString()
-            : "-"}
-        </p>
-      ),
+      enableSorting: true,
+      cell: ({ row }) => {
+        const deadline = row.original.estimatedDeadline;
+        // Check for valid deadline - ignore epoch dates (1970) which indicate null
+        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
+        const date = new Date(deadline);
+        const year = date.getFullYear();
+        // If year is 1970 or invalid, treat as null
+        if (year <= 1970 || isNaN(year)) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+        return (
+          <p className="text-sm text-muted-foreground">
+            {date.toLocaleDateString()}
+          </p>
+        );
+      },
     },
     {
       header: "Billing Status",
       accessorKey: "billingStatus",
+      enableSorting: true,
       cell: ({ row }) => {
         const status = row.original.billingStatus;
         if (!status) return <span className="text-sm text-muted-foreground">-</span>;
@@ -231,6 +247,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Total Hours",
       accessorKey: "totalHours",
+      enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
           {row.original.totalHours != null ? `${row.original.totalHours}h` : "-"}
@@ -240,6 +257,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     {
       header: "Updated",
       accessorKey: "updatedAt",
+      enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
           {row.original.updatedAt ? formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true }) : "-"}
@@ -248,6 +266,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     },
     {
       id: "actions",
+      enableSorting: false,
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Button
@@ -371,6 +390,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
             data={matters.data}
             columns={columns}
             emptyMessage="No matters found"
+            defaultSorting={[{ id: "updatedAt", desc: true }]}
           />
 
           {/* Pagination */}

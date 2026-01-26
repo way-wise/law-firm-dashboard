@@ -93,13 +93,21 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
     {
       header: "Deadline",
       accessorKey: "estimatedDeadline",
-      cell: ({ row }) => (
-        <p className="text-sm text-muted-foreground">
-          {row.original.estimatedDeadline
-            ? new Date(row.original.estimatedDeadline).toLocaleDateString()
-            : "-"}
-        </p>
-      ),
+      cell: ({ row }) => {
+        const deadline = row.original.estimatedDeadline;
+        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
+        const date = new Date(deadline);
+        const year = date.getFullYear();
+        // Ignore epoch dates (1970) which indicate null values
+        if (year <= 1970 || isNaN(year)) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+        return (
+          <p className="text-sm text-muted-foreground">
+            {date.toLocaleDateString()}
+          </p>
+        );
+      },
     },
     {
       header: "Billing",

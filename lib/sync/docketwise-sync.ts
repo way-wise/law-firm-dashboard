@@ -77,7 +77,8 @@ interface DocketwiseMatter {
   number?: string | null;
   description?: string | null;
   client_id: number | null;
-  attorney_id: number | null; // This IS the assignee (attorneys are users in Docketwise)
+  attorney_id: number | null; // Primary attorney (can be null)
+  user_ids?: number[] | null; // Array of assigned user IDs (from detailed response)
   updated_at: string | null;
   created_at: string | null;
   opened_at?: string | null;
@@ -498,23 +499,32 @@ export async function syncMatters(userId: string) {
                   }
                 }
 
-                // Assignee resolution: attorney_id IS the assignee in Docketwise
-                // (Docketwise support confirmed: attorneys are users, attorney_id = assignee)
+                // Assignee resolution: use user_ids array (from detailed response) or fall back to attorney_id
+                // user_ids contains all assigned users, attorney_id is the primary attorney
+                const userIds = docketwiseMatter.user_ids || [];
                 const attorneyId = docketwiseMatter.attorney_id;
-                const userIdsStr = attorneyId ? JSON.stringify([attorneyId]) : null;
                 
-                // Resolve assignee name from attorney_id using userMap
-                let assigneesStr: string | null = null;
-                if (attorneyId && userMap.has(attorneyId)) {
-                  assigneesStr = userMap.get(attorneyId) || null;
-                }
+                // Combine user_ids and attorney_id, removing duplicates
+                const allAssigneeIds = [...new Set([
+                  ...userIds,
+                  ...(attorneyId ? [attorneyId] : [])
+                ])];
+                
+                const userIdsStr = allAssigneeIds.length > 0 ? JSON.stringify(allAssigneeIds) : null;
+                
+                // Resolve assignee names from all IDs using userMap
+                const assigneeNames = allAssigneeIds
+                  .map(id => userMap.get(id))
+                  .filter((name): name is string => !!name);
+                const assigneesStr = assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
                 
                 // Debug log for first 5 matters
                 if (page === 1 && i === 0 && batch.indexOf(listMatter) < 5) {
                   console.log(`[SYNC DEBUG] Matter ${docketwiseMatter.id} "${docketwiseMatter.title}":`);
+                  console.log(`  - user_ids:`, userIds);
                   console.log(`  - attorney_id:`, attorneyId);
-                  console.log(`  - attorney_id in userMap:`, attorneyId ? userMap.has(attorneyId) : false);
-                  console.log(`  - resolved name:`, assigneesStr);
+                  console.log(`  - allAssigneeIds:`, allAssigneeIds);
+                  console.log(`  - resolved names:`, assigneesStr);
                   console.log(`  - userMap size:`, userMap.size);
                 }
 
