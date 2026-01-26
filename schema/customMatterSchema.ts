@@ -24,6 +24,7 @@ export const customMatterFieldsSchema = z.object({
 export const matterSchema = z.object({
   id: z.string(),
   docketwiseId: z.number(),
+  docketwiseCreatedAt: coercedDateNullable,
   docketwiseUpdatedAt: coercedDateNullable,
   title: z.string(),
   description: z.string().nullable(),
@@ -57,6 +58,9 @@ export const matterSchema = z.object({
   userId: z.string(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
+  // Dynamic deadline calculation fields
+  calculatedDeadline: coercedDateNullable.optional(),
+  isPastEstimatedDeadline: z.boolean().optional(),
 });
 
 export const updateCustomMatterFieldsSchema = z.object({

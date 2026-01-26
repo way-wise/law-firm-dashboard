@@ -10,11 +10,37 @@ import "server-only";
 
 const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
 
-// Rate limiting helper - Docketwise allows 120 requests/minute
-// With detail fetching, we need to be more careful
-const RATE_LIMIT_DELAY_MS = 50; // 50ms between API calls (allows ~20 req/sec, well under 120/min)
-const DETAIL_BATCH_SIZE = 10; // Fetch details in parallel batches
+// Rate limiting helper - Docketwise allows 120 requests/minute = 2 req/sec
+// We need to be conservative to avoid 419 errors
+const RATE_LIMIT_DELAY_MS = 600; // 600ms between API calls (safe for 120/min limit)
+const DETAIL_BATCH_SIZE = 5; // Smaller batches to avoid bursts
+const MAX_RETRIES = 3; // Retry on 419 errors
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Fetch with retry and exponential backoff for 419 errors
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = MAX_RETRIES,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(url, options);
+    
+    if (response.status === 419 || response.status === 429) {
+      if (attempt < retries) {
+        // Exponential backoff: 2s, 4s, 8s
+        const backoffMs = Math.pow(2, attempt + 1) * 1000;
+        console.warn(`[SYNC] Rate limited (${response.status}), waiting ${backoffMs}ms before retry ${attempt + 1}/${retries}`);
+        await delay(backoffMs);
+        continue;
+      }
+    }
+    
+    return response;
+  }
+  
+  throw new Error('Max retries exceeded');
+}
 
 // Fetch individual matter details (contains user_ids, description, workflow_stage)
 async function fetchMatterDetails(
@@ -22,7 +48,7 @@ async function fetchMatterDetails(
   matterId: number,
 ): Promise<DocketwiseMatter | null> {
   try {
-    const response = await fetch(`${DOCKETWISE_API_URL}/matters/${matterId}`, {
+    const response = await fetchWithRetry(`${DOCKETWISE_API_URL}/matters/${matterId}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -61,9 +87,10 @@ async function fetchMatterDetailsBatch(
       }
     });
 
-    // Rate limit between batches
+    // Rate limit between batches - wait longer to avoid 419
     if (i + DETAIL_BATCH_SIZE < matterIds.length) {
-      await delay(RATE_LIMIT_DELAY_MS * 2);
+      await delay(RATE_LIMIT_DELAY_MS * DETAIL_BATCH_SIZE); // Wait proportional to batch size
+      console.log(`[SYNC] Details progress: ${Math.min(i + DETAIL_BATCH_SIZE, matterIds.length)}/${matterIds.length}`);
     }
   }
 
@@ -205,15 +232,26 @@ export async function syncMatters(userId: string) {
       const allUsers: DocketwiseUser[] = [];
 
       while (userPage <= MAX_USER_PAGES) {
-        const usersResponse = await fetch(
-          `${DOCKETWISE_API_URL}/users?page=${userPage}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
+        // Add delay between user pages
+        if (userPage > 1) {
+          await delay(RATE_LIMIT_DELAY_MS);
+        }
+
+        let usersResponse: Response;
+        try {
+          usersResponse = await fetchWithRetry(
+            `${DOCKETWISE_API_URL}/users?page=${userPage}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
             },
-          },
-        );
+          );
+        } catch {
+          console.warn(`[SYNC] Failed to fetch users page ${userPage}, stopping user sync`);
+          break;
+        }
 
         if (!usersResponse.ok) break;
 
@@ -239,7 +277,6 @@ export async function syncMatters(userId: string) {
         }
 
         userPage++;
-        await delay(RATE_LIMIT_DELAY_MS);
       }
 
       userMap = new Map(
@@ -327,7 +364,12 @@ export async function syncMatters(userId: string) {
     while (page <= MAX_PAGES) {
       console.log(`[SYNC] Fetching page ${page}...`);
 
-      const response = await fetch(
+      // Add delay between pages to respect rate limits
+      if (page > 1) {
+        await delay(RATE_LIMIT_DELAY_MS);
+      }
+
+      const response = await fetchWithRetry(
         `${DOCKETWISE_API_URL}/matters?page=${page}`,
         {
           headers: {
@@ -502,13 +544,14 @@ export async function syncMatters(userId: string) {
 
                 // Assignee resolution: use user_ids array (from detailed response) or fall back to attorney_id
                 // user_ids contains all assigned users, attorney_id is the primary attorney
-                const userIds = docketwiseMatter.user_ids || [];
-                const attorneyId = docketwiseMatter.attorney_id;
+                // Ensure IDs are numbers for proper Map lookup
+                const userIds = (docketwiseMatter.user_ids || []).map(id => Number(id)).filter(id => !isNaN(id));
+                const attorneyId = docketwiseMatter.attorney_id ? Number(docketwiseMatter.attorney_id) : null;
                 
                 // Combine user_ids and attorney_id, removing duplicates
                 const allAssigneeIds = [...new Set([
                   ...userIds,
-                  ...(attorneyId ? [attorneyId] : [])
+                  ...(attorneyId && !isNaN(attorneyId) ? [attorneyId] : [])
                 ])];
                 
                 const userIdsStr = allAssigneeIds.length > 0 ? JSON.stringify(allAssigneeIds) : null;
@@ -519,14 +562,19 @@ export async function syncMatters(userId: string) {
                   .filter((name): name is string => !!name);
                 const assigneesStr = assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
                 
-                // Debug log for first 5 matters
-                if (page === 1 && i === 0 && batch.indexOf(listMatter) < 5) {
+                // Debug log for ALL matters to understand assignee issues
+                const hadDetailData = matterDetails.has(listMatter.id);
+                if (allAssigneeIds.length > 0 || !hadDetailData) {
                   console.log(`[SYNC DEBUG] Matter ${docketwiseMatter.id} "${docketwiseMatter.title}":`);
-                  console.log(`  - user_ids:`, userIds);
-                  console.log(`  - attorney_id:`, attorneyId);
+                  console.log(`  - hadDetailData: ${hadDetailData}`);
+                  console.log(`  - user_ids from API:`, docketwiseMatter.user_ids);
+                  console.log(`  - attorney_id from API:`, docketwiseMatter.attorney_id);
                   console.log(`  - allAssigneeIds:`, allAssigneeIds);
                   console.log(`  - resolved names:`, assigneesStr);
-                  console.log(`  - userMap size:`, userMap.size);
+                  if (allAssigneeIds.length > 0 && !assigneesStr) {
+                    console.log(`  - WARNING: IDs found but no names resolved!`);
+                    console.log(`  - userMap has these IDs:`, allAssigneeIds.map(id => ({ id, inMap: userMap.has(id) })));
+                  }
                 }
 
                 // Resolve workflow stage name (this is the "Status" column in Docketwise)
@@ -573,6 +621,9 @@ export async function syncMatters(userId: string) {
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
                   update: {
+                    docketwiseCreatedAt: docketwiseMatter.created_at
+                      ? new Date(docketwiseMatter.created_at)
+                      : null,
                     docketwiseUpdatedAt: docketwiseMatter.updated_at
                       ? new Date(docketwiseMatter.updated_at)
                       : null,
@@ -622,6 +673,9 @@ export async function syncMatters(userId: string) {
                   },
                   create: {
                     docketwiseId: docketwiseMatter.id,
+                    docketwiseCreatedAt: docketwiseMatter.created_at
+                      ? new Date(docketwiseMatter.created_at)
+                      : null,
                     docketwiseUpdatedAt: docketwiseMatter.updated_at
                       ? new Date(docketwiseMatter.updated_at)
                       : null,
@@ -701,15 +755,26 @@ export async function syncMatters(userId: string) {
             const MAX_CONTACT_PAGES = 10;
 
             while (contactPage <= MAX_CONTACT_PAGES) {
-              const clientsResponse = await fetch(
-                `${DOCKETWISE_API_URL}/contacts?page=${contactPage}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
+              // Add delay between contact pages
+              if (contactPage > 1) {
+                await delay(RATE_LIMIT_DELAY_MS);
+              }
+
+              let clientsResponse: Response;
+              try {
+                clientsResponse = await fetchWithRetry(
+                  `${DOCKETWISE_API_URL}/contacts?page=${contactPage}`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      "Content-Type": "application/json",
+                    },
                   },
-                },
-              );
+                );
+              } catch {
+                console.warn(`[SYNC] Failed to fetch contacts page ${contactPage}, stopping contact sync`);
+                break;
+              }
 
               if (!clientsResponse.ok) break;
 
@@ -739,7 +804,6 @@ export async function syncMatters(userId: string) {
                 break;
               }
 
-              await delay(RATE_LIMIT_DELAY_MS);
               contactPage++;
             }
 

@@ -214,19 +214,44 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       accessorKey: "estimatedDeadline",
       enableSorting: true,
       cell: ({ row }) => {
-        const deadline = row.original.estimatedDeadline;
-        // Check for valid deadline - ignore epoch dates (1970) which indicate null
-        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
-        const date = new Date(deadline);
-        const year = date.getFullYear();
-        // If year is 1970 or invalid, treat as null
-        if (year <= 1970 || isNaN(year)) {
-          return <p className="text-sm text-muted-foreground">-</p>;
+        const customDeadline = row.original.estimatedDeadline;
+        const calculatedDeadline = row.original.calculatedDeadline;
+        const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
+        
+        // Prefer custom deadline if set, otherwise use calculated deadline
+        let deadline = customDeadline;
+        let isCalculated = false;
+        
+        // Check if custom deadline is valid (not epoch date)
+        if (deadline) {
+          const date = new Date(deadline);
+          const year = date.getFullYear();
+          if (year <= 1970 || isNaN(year)) {
+            deadline = null;
+          }
         }
+        
+        // Fall back to calculated deadline if no custom deadline
+        if (!deadline && calculatedDeadline) {
+          deadline = calculatedDeadline;
+          isCalculated = true;
+        }
+        
+        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
+        
+        const date = new Date(deadline);
+        const isOverdue = isCalculated ? isPastEstimatedDeadline : new Date() > date;
+        
         return (
-          <p className="text-sm text-muted-foreground">
-            {date.toLocaleDateString()}
-          </p>
+          <div className="flex flex-col">
+            <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+              {date.toLocaleDateString()}
+              {isOverdue && " (Overdue)"}
+            </p>
+            {isCalculated && (
+              <p className="text-xs text-muted-foreground/70">Est. from type</p>
+            )}
+          </div>
         );
       },
     },

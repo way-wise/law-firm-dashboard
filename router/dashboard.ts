@@ -30,11 +30,13 @@ const recentMatterSchema = z.object({
   title: z.string(),
   clientName: z.string().nullable(),
   matterType: z.string().nullable(),
+  matterTypeId: z.number().nullable(),
   status: z.string().nullable(),
   statusForFiling: z.string().nullable(),
   assignees: z.string().nullable(),
   billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).nullable(),
   estimatedDeadline: z.date().nullable(),
+  docketwiseCreatedAt: z.date().nullable(),
   updatedAt: z.date(),
 });
 
@@ -213,12 +215,14 @@ export const getRecentMatters = authorized
             title: true,
             clientName: true,
             matterType: true,
+            matterTypeId: true,
             status: true,
             statusForFiling: true,
             assignees: true,
             docketwiseUserIds: true,
             billingStatus: true,
             estimatedDeadline: true,
+            docketwiseCreatedAt: true,
             updatedAt: true,
           },
         }),
@@ -241,11 +245,16 @@ export const getRecentMatters = authorized
       const mattersWithAssignees = matters.map((matter) => {
         let resolvedAssignees: string | null = matter.assignees;
         
+        // Always try to resolve from docketwiseUserIds if assignees is empty
         if (!resolvedAssignees && matter.docketwiseUserIds) {
           try {
-            const userIds = JSON.parse(matter.docketwiseUserIds) as number[];
+            const rawIds = JSON.parse(matter.docketwiseUserIds);
+            // Ensure IDs are numbers for proper Map lookup
+            const userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
+              .map((id: unknown) => Number(id))
+              .filter((id: number) => !isNaN(id));
             const names = userIds
-              .map((id) => userMap.get(id))
+              .map((id: number) => userMap.get(id))
               .filter((name): name is string => !!name);
             resolvedAssignees = names.length > 0 ? names.join(", ") : null;
           } catch {
@@ -254,7 +263,8 @@ export const getRecentMatters = authorized
         }
         
         // Return without docketwiseUserIds (not in schema output)
-        const { docketwiseUserIds, ...rest } = matter;
+        const { docketwiseUserIds: _unused, ...rest } = matter;
+        void _unused; // Suppress unused variable warning
         return {
           ...rest,
           assignees: resolvedAssignees,

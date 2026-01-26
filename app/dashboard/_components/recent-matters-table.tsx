@@ -14,11 +14,13 @@ interface RecentMatter {
   title: string;
   clientName: string | null;
   matterType: string | null;
+  matterTypeId: number | null;
   status: string | null;
   statusForFiling: string | null;
   assignees: string | null;
   billingStatus: string | null;
   estimatedDeadline: Date | null;
+  docketwiseCreatedAt: Date | null;
   updatedAt: Date;
 }
 

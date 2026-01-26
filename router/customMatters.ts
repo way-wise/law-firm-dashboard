@@ -72,8 +72,8 @@ export const getCustomMatters = authorized
         }
       }
 
-      // Fetch matters and docketwiseUsers in parallel
-      const [matters, total, docketwiseUsers] = await Promise.all([
+      // Fetch matters, docketwiseUsers, and matterTypes in parallel
+      const [matters, total, docketwiseUsers, matterTypes] = await Promise.all([
         prisma.matters.findMany({
           where,
           skip,
@@ -96,6 +96,12 @@ export const getCustomMatters = authorized
             email: true,
           },
         }),
+        prisma.matterTypes.findMany({
+          select: {
+            docketwiseId: true,
+            estimatedDays: true,
+          },
+        }),
       ]);
 
       // Build a map of docketwiseId -> fullName for quick lookup
@@ -104,26 +110,53 @@ export const getCustomMatters = authorized
         userMap.set(user.docketwiseId, user.fullName || user.email);
       }
 
-      // Resolve assignees for each matter using docketwiseUserIds
+      // Build a map of matterTypeId -> estimatedDays for deadline calculation
+      const matterTypeEstDaysMap = new Map<number, number>();
+      for (const mt of matterTypes) {
+        if (mt.estimatedDays) {
+          matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+        }
+      }
+
+      // Resolve assignees and calculate dynamic deadline for each matter
       const mattersWithAssignees = matters.map((matter) => {
         let resolvedAssignees: string | null = matter.assignees;
         
-        // If assignees is already set and not empty, keep it
+        // Always try to resolve from docketwiseUserIds if assignees is empty
         if (!resolvedAssignees && matter.docketwiseUserIds) {
           try {
-            const userIds = JSON.parse(matter.docketwiseUserIds) as number[];
+            const rawIds = JSON.parse(matter.docketwiseUserIds);
+            const userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
+              .map((id: unknown) => Number(id))
+              .filter((id: number) => !isNaN(id));
             const names = userIds
-              .map((id) => userMap.get(id))
+              .map((id: number) => userMap.get(id))
               .filter((name): name is string => !!name);
             resolvedAssignees = names.length > 0 ? names.join(", ") : null;
           } catch {
             // If parsing fails, leave as null
           }
         }
+
+        // Calculate dynamic estimated deadline based on matterType's estimatedDays
+        let calculatedDeadline: Date | null = null;
+        let isPastEstimatedDeadline = false;
+        
+        if (matter.docketwiseCreatedAt && matter.matterTypeId) {
+          const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
+          if (estDays) {
+            const createdAt = new Date(matter.docketwiseCreatedAt);
+            calculatedDeadline = new Date(createdAt);
+            calculatedDeadline.setDate(calculatedDeadline.getDate() + estDays);
+            isPastEstimatedDeadline = new Date() > calculatedDeadline;
+          }
+        }
         
         return {
           ...matter,
           assignees: resolvedAssignees,
+          calculatedDeadline,
+          isPastEstimatedDeadline,
         };
       });
 

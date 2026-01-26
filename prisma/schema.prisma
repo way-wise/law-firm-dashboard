@@ -118,6 +118,7 @@ enum BillingStatus {
 model matters {
   id                  String    @id @default(ulid())
   docketwiseId        Int       @unique
+  docketwiseCreatedAt DateTime?
   docketwiseUpdatedAt DateTime?
   title               String
   description         String?
