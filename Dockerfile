@@ -22,6 +22,7 @@ RUN \
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY . .
 
 # Next.js collects completely anonymous telemetry data about general usage.
@@ -33,7 +34,7 @@ COPY . .
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && corepack prepare pnpm@10.28.2 --activate && npx prisma generate && npx prisma db push && npx prisma db seed && pnpm run build; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && npx prisma generate && npx prisma db push && npx prisma db seed && pnpm run build; \
   else echo "Lockfile not found." && exit 1; \
   fi
 
