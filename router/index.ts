@@ -68,6 +68,7 @@ import {
   getAssigneeStats,
   getRecentMatters,
 } from "./dashboard";
+import { generateReport } from "./reports";
 
 export const router = {
   todos: {
@@ -147,5 +148,8 @@ export const router = {
     getStats: getDashboardStats,
     getAssigneeStats: getAssigneeStats,
     getRecentMatters: getRecentMatters,
+  },
+  reports: {
+    generate: generateReport,
   },
 };

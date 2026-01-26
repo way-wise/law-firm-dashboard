@@ -7,6 +7,7 @@ import {
   UserRound,
   Shield,
   Tags,
+  FileBarChart,
 } from "lucide-react";
 
 export interface SubMenuItem {
@@ -69,6 +70,12 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 8,
+    title: "Reports",
+    icon: <FileBarChart className="icon" />,
+    url: "/dashboard/reports",
+  },
+  {
+    id: 9,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",
