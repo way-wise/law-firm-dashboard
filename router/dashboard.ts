@@ -1,6 +1,7 @@
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
-import { getOrSetCache, CACHE_KEYS, DEFAULT_CACHE_TTL } from "@/lib/redis";
+import { getOrSetCache, DEFAULT_CACHE_TTL, CACHE_KEYS } from "@/lib/redis";
+import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import * as z from "zod";
 
 // Dashboard stats schema - matches original StatsCards interface
@@ -331,15 +332,14 @@ export const getRecentMatters = authorized
     const cacheKey = `${CACHE_KEYS.DASHBOARD_MATTERS}:${context.user.id}:${input.limit}`;
     
     return getOrSetCache(cacheKey, async () => {
-      // Fetch lookup data first to reduce DB contention
-      const docketwiseUsers = await prisma.docketwiseUsers.findMany({
-        select: {
-          docketwiseId: true,
-          fullName: true,
-          email: true,
-        },
+      // Fetch matters directly from Docketwise API with real-time data (first page only for dashboard)
+      const result = await fetchMattersRealtime({
+        page: 1,
+        perPage: input.limit,
+        userId: context.user.id,
       });
 
+      // Load matter types for deadline calculation
       const matterTypes = await prisma.matterTypes.findMany({
         select: {
           docketwiseId: true,
@@ -347,40 +347,6 @@ export const getRecentMatters = authorized
         },
       });
 
-      // Fetch matters
-      const matters = await prisma.matters.findMany({
-          where: {
-            userId: context.user.id,
-          },
-          orderBy: {
-            updatedAt: "desc",
-          },
-          take: input.limit,
-          select: {
-            id: true,
-            docketwiseId: true,
-            title: true,
-            clientName: true,
-            matterType: true,
-            matterTypeId: true,
-            status: true,
-            statusForFiling: true,
-            assignees: true,
-            docketwiseUserIds: true,
-            billingStatus: true,
-            estimatedDeadline: true,
-            docketwiseCreatedAt: true,
-            updatedAt: true,
-          },
-        });
-
-      // Build a map of docketwiseId -> fullName for quick lookup
-      const userMap = new Map<number, string>();
-      for (const user of docketwiseUsers) {
-        userMap.set(user.docketwiseId, user.fullName || user.email);
-      }
-
-      // Build a map of matterTypeId -> estimatedDays for deadline calculation
       const matterTypeEstDaysMap = new Map<number, number>();
       for (const mt of matterTypes) {
         if (mt.estimatedDays) {
@@ -388,41 +354,19 @@ export const getRecentMatters = authorized
         }
       }
 
-      // Resolve assignees for each matter
-      const mattersWithAssignees = matters.map((matter) => {
-        let resolvedAssignees: string | null = matter.assignees;
-        
-        // Always try to resolve from docketwiseUserIds if assignees is empty
-        if (!resolvedAssignees && matter.docketwiseUserIds) {
-          try {
-            const rawIds = JSON.parse(matter.docketwiseUserIds);
-            // Ensure IDs are numbers for proper Map lookup
-            const userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
-              .map((id: unknown) => Number(id))
-              .filter((id: number) => !isNaN(id));
-            const names = userIds
-              .map((id: number) => userMap.get(id))
-              .filter((name): name is string => !!name);
-            resolvedAssignees = names.length > 0 ? names.join(", ") : null;
-          } catch {
-            // If parsing fails, leave as null
-          }
-        }
-
-        // Calculate dynamic estimated deadline based on matterType's estimatedDays
+      // Calculate deadlines for dashboard matters
+      const mattersWithDeadlines = result.data.map((matter) => {
         let calculatedDeadline: Date | null = null;
         let isPastEstimatedDeadline = false;
         
         if (matter.docketwiseCreatedAt && matter.matterTypeId) {
           const createdAt = new Date(matter.docketwiseCreatedAt);
-          // Validate the date is valid and not epoch (1970)
           if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
             const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
             if (estDays && estDays > 0) {
               const targetDate = new Date(createdAt);
               targetDate.setDate(targetDate.getDate() + estDays);
               
-              // Ensure the calculated date is also valid and not 1970
               if (targetDate.getFullYear() > 1970) {
                 calculatedDeadline = targetDate;
                 isPastEstimatedDeadline = new Date() > calculatedDeadline;
@@ -431,7 +375,7 @@ export const getRecentMatters = authorized
           }
         }
 
-        // Sanitize estimatedDeadline from DB - if it's 1970, treat as null
+        // Sanitize estimatedDeadline - if it's 1970, treat as null
         let estimatedDeadline = matter.estimatedDeadline;
         if (estimatedDeadline) {
           const date = new Date(estimatedDeadline);
@@ -440,18 +384,25 @@ export const getRecentMatters = authorized
           }
         }
         
-        // Return without docketwiseUserIds (not in schema output)
-        const { docketwiseUserIds: _unused, ...rest } = matter;
-        void _unused; // Suppress unused variable warning
         return {
-          ...rest,
+          id: matter.id as string,
+          docketwiseId: matter.docketwiseId,
+          title: matter.title,
+          clientName: matter.clientName,
+          matterType: matter.matterType,
+          matterTypeId: matter.matterTypeId,
+          status: matter.status,
+          statusForFiling: matter.statusForFiling,
+          assignees: matter.assignees,
+          billingStatus: matter.billingStatus,
           estimatedDeadline,
-          assignees: resolvedAssignees,
+          docketwiseCreatedAt: matter.docketwiseCreatedAt,
+          updatedAt: matter.updatedAt,
           calculatedDeadline,
           isPastEstimatedDeadline,
         };
       });
 
-      return mattersWithAssignees;
+      return mattersWithDeadlines;
     }, DEFAULT_CACHE_TTL);
   });

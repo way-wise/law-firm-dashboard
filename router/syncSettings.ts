@@ -1,4 +1,4 @@
-import { syncMatters } from "@/lib/sync/docketwise-sync";
+import { syncReferenceData } from "@/lib/sync/reference-data-sync";
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
 import {
@@ -26,7 +26,7 @@ export const getSyncSettings = authorized
       settings = await prisma.syncSettings.create({
         data: {
           userId: context.user.id,
-          pollingInterval: 30,
+          pollingInterval: 720, // Default to 12 hours
           isEnabled: true,
         },
       });
@@ -72,7 +72,7 @@ export const triggerManualSync = authorized
   .output(syncResultSchema)
   .handler(async ({ context }) => {
     try {
-      const result = await syncMatters(context.user.id);
+      const result = await syncReferenceData(context.user.id);
 
       await prisma.syncSettings.update({
         where: { userId: context.user.id },

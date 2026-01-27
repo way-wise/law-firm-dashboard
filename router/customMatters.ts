@@ -1,5 +1,5 @@
 import { authorized } from "@/lib/orpc";
-import prisma, { Prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { getOrSetCache, invalidateCache, CACHE_KEYS } from "@/lib/redis";
 import {
   matterFilterSchema,
@@ -8,6 +8,7 @@ import {
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
+import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -27,7 +28,6 @@ export const getCustomMatters = authorized
   .handler(async ({ input, context }) => {
     const page = input.page || 1;
     const perPage = 50;
-    const skip = (page - 1) * perPage;
     
     // Build cache key from all filter parameters
     const filterKey = JSON.stringify({
@@ -41,46 +41,14 @@ export const getCustomMatters = authorized
     const cacheKey = `${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:${filterKey}`;
 
     return getOrSetCache(cacheKey, async () => {
-      const where: Prisma.mattersWhereInput = {
+      // Fetch matters directly from Docketwise API with real-time data
+      const result = await fetchMattersRealtime({
+        page,
+        perPage,
         userId: context.user.id,
-      };
-
-      if (input.search) {
-        where.OR = [
-          { title: { contains: input.search, mode: "insensitive" } },
-          { clientName: { contains: input.search, mode: "insensitive" } },
-        ];
-      }
-
-      if (input.billingStatus) {
-        where.billingStatus = input.billingStatus;
-      }
-
-      if (input.assignees) {
-        where.assignees = { contains: input.assignees, mode: "insensitive" };
-      }
-
-      if (input.isStale !== undefined) {
-        where.isStale = input.isStale;
-      }
-
-      if (input.hasDeadline !== undefined) {
-        if (input.hasDeadline) {
-          where.estimatedDeadline = { not: null };
-        } else {
-          where.estimatedDeadline = null;
-        }
-      }
-
-      // Fetch lookup data first to reduce DB contention (avoiding Promise.all timeout issues)
-      const docketwiseUsers = await prisma.docketwiseUsers.findMany({
-        select: {
-          docketwiseId: true,
-          fullName: true,
-          email: true,
-        },
       });
 
+      // Load matter types for deadline calculation
       const matterTypes = await prisma.matterTypes.findMany({
         select: {
           docketwiseId: true,
@@ -88,32 +56,6 @@ export const getCustomMatters = authorized
         },
       });
 
-      // Fetch matters and count
-      const [matters, total] = await Promise.all([
-        prisma.matters.findMany({
-          where,
-          skip,
-          take: perPage,
-          orderBy: { updatedAt: "desc" },
-          include: {
-            editedByUser: {
-              select: {
-                name: true,
-                email: true,
-              },
-            },
-          },
-        }),
-        prisma.matters.count({ where }),
-      ]);
-
-      // Build a map of docketwiseId -> fullName for quick lookup
-      const userMap = new Map<number, string>();
-      for (const user of docketwiseUsers) {
-        userMap.set(user.docketwiseId, user.fullName || user.email);
-      }
-
-      // Build a map of matterTypeId -> estimatedDays for deadline calculation
       const matterTypeEstDaysMap = new Map<number, number>();
       for (const mt of matterTypes) {
         if (mt.estimatedDays) {
@@ -121,40 +63,51 @@ export const getCustomMatters = authorized
         }
       }
 
-      // Resolve assignees and calculate dynamic deadline for each matter
-      const mattersWithAssignees = matters.map((matter) => {
-        let resolvedAssignees: string | null = matter.assignees;
-        
-        // Always try to resolve from docketwiseUserIds if assignees is empty
-        if (!resolvedAssignees && matter.docketwiseUserIds) {
-          try {
-            const rawIds = JSON.parse(matter.docketwiseUserIds);
-            const userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
-              .map((id: unknown) => Number(id))
-              .filter((id: number) => !isNaN(id));
-            const names = userIds
-              .map((id: number) => userMap.get(id))
-              .filter((name): name is string => !!name);
-            resolvedAssignees = names.length > 0 ? names.join(", ") : null;
-          } catch {
-            // If parsing fails, leave as null
-          }
+      // Apply client-side filters and calculate deadlines
+      const filteredMatters = result.data.filter((matter) => {
+        // Search filter
+        if (input.search) {
+          const searchLower = input.search.toLowerCase();
+          const matchTitle = matter.title?.toLowerCase().includes(searchLower);
+          const matchClient = matter.clientName?.toLowerCase().includes(searchLower);
+          if (!matchTitle && !matchClient) return false;
         }
 
-        // Calculate dynamic estimated deadline based on matterType's estimatedDays
+        // Billing status filter
+        if (input.billingStatus && matter.isEdited) {
+          // Only apply billing filter to edited matters (stored in DB)
+          const editedMatter = result.data.find(m => m.docketwiseId === matter.docketwiseId && m.isEdited);
+          if (!editedMatter) return false;
+        }
+
+        // Assignees filter
+        if (input.assignees) {
+          const assigneesLower = input.assignees.toLowerCase();
+          if (!matter.assignees?.toLowerCase().includes(assigneesLower)) return false;
+        }
+
+        // Has deadline filter
+        if (input.hasDeadline !== undefined) {
+          if (input.hasDeadline && !matter.estimatedDeadline) return false;
+          if (!input.hasDeadline && matter.estimatedDeadline) return false;
+        }
+
+        return true;
+      });
+
+      // Calculate dynamic deadline for each matter
+      const mattersWithDeadlines = filteredMatters.map((matter) => {
         let calculatedDeadline: Date | null = null;
         let isPastEstimatedDeadline = false;
         
         if (matter.docketwiseCreatedAt && matter.matterTypeId) {
           const createdAt = new Date(matter.docketwiseCreatedAt);
-          // Validate the date is valid and not epoch (1970)
           if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
             const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
             if (estDays && estDays > 0) {
               const targetDate = new Date(createdAt);
               targetDate.setDate(targetDate.getDate() + estDays);
               
-              // Ensure the calculated date is also valid and not 1970
               if (targetDate.getFullYear() > 1970) {
                 calculatedDeadline = targetDate;
                 isPastEstimatedDeadline = new Date() > calculatedDeadline;
@@ -163,7 +116,7 @@ export const getCustomMatters = authorized
           }
         }
 
-        // Sanitize estimatedDeadline from DB - if it's 1970, treat as null
+        // Sanitize estimatedDeadline - if it's 1970, treat as null
         let estimatedDeadline = matter.estimatedDeadline;
         if (estimatedDeadline) {
           const date = new Date(estimatedDeadline);
@@ -175,19 +128,18 @@ export const getCustomMatters = authorized
         return {
           ...matter,
           estimatedDeadline,
-          assignees: resolvedAssignees,
           calculatedDeadline,
           isPastEstimatedDeadline,
         };
       });
 
       return {
-        data: mattersWithAssignees,
+        data: mattersWithDeadlines,
         pagination: {
-          total,
-          page,
-          perPage,
-          totalPages: Math.ceil(total / perPage),
+          total: result.total,
+          page: result.page,
+          perPage: result.perPage,
+          totalPages: Math.ceil(result.total / result.perPage),
         },
       };
     }, MATTERS_CACHE_TTL);

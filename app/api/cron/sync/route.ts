@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { syncMatters } from "@/lib/sync/docketwise-sync";
+import { syncReferenceData } from "@/lib/sync/reference-data-sync";
 
 // This endpoint handles auto-syncing based on user configurations
 // It should be called periodically (e.g., every 15-30 minutes) by an external cron service
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log("[CRON] Starting auto-sync check...");
+    console.log("[CRON] Starting reference data sync check...");
 
     // Find all users with sync enabled
     const settings = await prisma.syncSettings.findMany({
@@ -45,10 +45,10 @@ export async function GET(request: NextRequest) {
       }
 
       if (shouldSync) {
-        console.log(`[CRON] Syncing for user ${setting.userId} (Interval: ${intervalMinutes}m)...`);
+        console.log(`[CRON] Syncing reference data for user ${setting.userId} (Interval: ${intervalMinutes}m)...`);
         try {
-          // Perform the sync
-          const result = await syncMatters(setting.userId);
+          // Perform the reference data sync (users, contacts, types - no matters)
+          const result = await syncReferenceData(setting.userId);
 
           // Update lastSyncAt
           await prisma.syncSettings.update({
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
             recordsProcessed: result.recordsProcessed,
           });
         } catch (error) {
-          console.error(`[CRON] Sync failed for user ${setting.userId}:`, error);
+          console.error(`[CRON] Reference data sync failed for user ${setting.userId}:`, error);
           results.push({
             userId: setting.userId,
             status: "error",

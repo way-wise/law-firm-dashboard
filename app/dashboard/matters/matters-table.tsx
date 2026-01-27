@@ -216,40 +216,61 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       cell: ({ row }) => {
         const customDeadline = row.original.estimatedDeadline;
         const calculatedDeadline = row.original.calculatedDeadline;
-        const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
         
         // Prefer custom deadline if set, otherwise use calculated deadline
         let deadline = customDeadline;
         let isCalculated = false;
         
-        // Check if custom deadline is valid (not epoch date)
+        // Validate custom deadline (not epoch/1970 date)
         if (deadline) {
           const date = new Date(deadline);
           const year = date.getFullYear();
-          if (year <= 1970 || isNaN(year)) {
+          if (year <= 1970 || isNaN(year) || !isFinite(date.getTime())) {
             deadline = null;
           }
         }
         
         // Fall back to calculated deadline if no custom deadline
         if (!deadline && calculatedDeadline) {
-          deadline = calculatedDeadline;
-          isCalculated = true;
+          const calcDate = new Date(calculatedDeadline);
+          const calcYear = calcDate.getFullYear();
+          // Only use if valid (not 1970)
+          if (calcYear > 1970 && !isNaN(calcYear) && isFinite(calcDate.getTime())) {
+            deadline = calculatedDeadline;
+            isCalculated = true;
+          }
         }
         
+        // No valid deadline found
         if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
         
         const date = new Date(deadline);
-        const isOverdue = isCalculated ? isPastEstimatedDeadline : new Date() > date;
+        const now = new Date();
+        const isOverdue = date < now;
+        const daysUntilDue = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const isUpcoming = !isOverdue && daysUntilDue <= 7;
+        
+        // Color coding: red=overdue, yellow=within 7 days, normal=more than 7 days
+        let colorClass = "text-muted-foreground";
+        if (isOverdue) {
+          colorClass = "text-red-500 font-semibold";
+        } else if (isUpcoming) {
+          colorClass = "text-yellow-600 font-medium";
+        }
         
         return (
           <div className="flex flex-col">
-            <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-              {date.toLocaleDateString()}
-              {isOverdue && " (Overdue)"}
+            <p className={`text-sm ${colorClass}`}>
+              {format(date, "MMM dd, yyyy")}
             </p>
             {isCalculated && (
               <p className="text-xs text-muted-foreground/70">Est. from type</p>
+            )}
+            {isOverdue && (
+              <p className="text-xs text-red-500">Overdue</p>
+            )}
+            {isUpcoming && (
+              <p className="text-xs text-yellow-600">{daysUntilDue} days left</p>
             )}
           </div>
         );

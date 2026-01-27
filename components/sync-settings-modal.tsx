@@ -33,7 +33,7 @@ const POLLING_OPTIONS = [
 ];
 
 export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps) {
-  const [pollingInterval, setPollingInterval] = useState<string>("30");
+  const [pollingInterval, setPollingInterval] = useState<string>("720");
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -115,7 +115,7 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
         <DialogHeader>
           <DialogTitle>Sync Configuration</DialogTitle>
           <DialogDescription>
-            Configure how often data is synced from Docketwise
+            Configure how often reference data (users, contacts, matter types) is synced from Docketwise. Matter data is fetched in real-time.
           </DialogDescription>
         </DialogHeader>
 
@@ -140,13 +140,13 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                How often to automatically sync data from Docketwise
+                How often to sync reference data (users, contacts, types) from Docketwise
               </p>
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Note:</span> More frequent polling intervals may impact server resources and API rate limits.
+                <span className="font-medium">Note:</span> Only reference data is synced. Matters are fetched in real-time with pagination, eliminating the need for full data sync.
               </p>
             </div>
 
@@ -165,7 +165,7 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
               <div>
                 <p className="text-sm font-medium">Manual Sync</p>
                 <p className="text-xs text-muted-foreground">
-                  Trigger an immediate sync
+                  Sync reference data now (2-5 min)
                 </p>
               </div>
               <Button
