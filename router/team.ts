@@ -1,6 +1,5 @@
 import { authorized } from "@/lib/orpc";
 import prisma, { Prisma } from "@/lib/prisma";
-import { getOrSetCache, CACHE_KEYS, DEFAULT_CACHE_TTL } from "@/lib/redis";
 import {
   paginatedTeamSchema,
   teamFilterSchema,
@@ -13,7 +12,7 @@ import * as z from "zod";
 
 export type { TeamFilterSchemaType, TeamMemberSchemaType };
 
-// Get Team Members from synced docketwiseUsers table (NOT direct API)
+// Get Team Members from synced teams table (NOT direct API)
 export const getTeamMembers = authorized
   .route({
     method: "GET",
@@ -26,23 +25,24 @@ export const getTeamMembers = authorized
   .handler(async ({ input }) => {
     const page = input.page || 1;
     const perPage = 50;
-    const cacheKey = `${CACHE_KEYS.TEAM_LIST}:${page}:${input.active ?? 'all'}`;
 
-    return getOrSetCache(cacheKey, async () => {
-      const where: Prisma.docketwiseUsersWhereInput = {};
+
+    // Temporarily bypass cache to get fresh data
+    // return getOrSetCache(cacheKey, async () => {
+      const where: Prisma.teamsWhereInput = {};
       
       if (input.active !== undefined) {
         where.isActive = input.active;
       }
 
       const [users, total] = await Promise.all([
-        prisma.docketwiseUsers.findMany({
+        prisma.teams.findMany({
           where,
           skip: (page - 1) * perPage,
           take: perPage,
           orderBy: { fullName: 'asc' },
         }),
-        prisma.docketwiseUsers.count({ where }),
+        prisma.teams.count({ where }),
       ]);
 
       // Transform to match expected schema
@@ -51,6 +51,11 @@ export const getTeamMembers = authorized
         email: user.email,
         created_at: user.createdAt.toISOString(),
         updated_at: user.updatedAt.toISOString(),
+        first_name: user.firstName,
+        last_name: user.lastName,
+        role: user.title,
+        active: user.isActive,
+        phone: null, // Teams table doesn't have phone field
         attorney_profile: user.firstName || user.lastName ? {
           id: user.docketwiseId,
           first_name: user.firstName,
@@ -58,7 +63,8 @@ export const getTeamMembers = authorized
         } : null,
       }));
 
-      return {
+
+      const result = {
         data,
         pagination: total > perPage ? {
           total,
@@ -67,7 +73,40 @@ export const getTeamMembers = authorized
           total_pages: Math.ceil(total / perPage),
         } : undefined,
       };
-    }, DEFAULT_CACHE_TTL);
+
+      return result;
+    // }, DEFAULT_CACHE_TTL);
+  });
+
+// Get Team Members List (simple list for assignee filter)
+export const getTeamMembersList = authorized
+  .route({
+    method: "GET",
+    path: "/team/list",
+    summary: "Get simple list of team members for assignee filter",
+    tags: ["Team"],
+  })
+  .output(z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+  })))
+  .handler(async () => {
+    const teamMembers = await prisma.teams.findMany({
+      where: { isActive: true },
+      select: {
+        docketwiseId: true,
+        fullName: true,
+        email: true,
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    return teamMembers.map(member => ({
+      id: member.docketwiseId,
+      name: member.fullName || member.email,
+      email: member.email,
+    }));
   });
 
 // Get Team Member by ID from database
@@ -81,7 +120,7 @@ export const getTeamMemberById = authorized
   .input(z.object({ id: z.number() }))
   .output(teamMemberSchema)
   .handler(async ({ input }) => {
-    const user = await prisma.docketwiseUsers.findUnique({
+    const user = await prisma.teams.findUnique({
       where: { docketwiseId: input.id },
     });
 
@@ -96,6 +135,11 @@ export const getTeamMemberById = authorized
       email: user.email,
       created_at: user.createdAt.toISOString(),
       updated_at: user.updatedAt.toISOString(),
+      first_name: user.firstName,
+      last_name: user.lastName,
+      role: user.title,
+      active: user.isActive,
+      phone: null, // Teams table doesn't have phone field
       attorney_profile: user.firstName || user.lastName ? {
         id: user.docketwiseId,
         first_name: user.firstName,

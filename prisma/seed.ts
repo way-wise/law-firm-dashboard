@@ -19,6 +19,7 @@ async function main() {
           name: "Admin User",
           email: "admin@example.com",
           emailVerified: true,
+          role: "super"
         },
       });
     }

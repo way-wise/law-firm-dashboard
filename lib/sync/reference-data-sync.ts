@@ -313,13 +313,21 @@ export async function syncReferenceData(userId: string) {
             ? `${firstName || ""} ${lastName || ""}`.trim()
             : null;
 
-        await prisma.docketwiseUsers.upsert({
+        // Determine team type based on email patterns
+        let teamType = "inHouse";
+        if (user.email.includes("@contractor") || user.email.includes("@external")) {
+          teamType = "contractor";
+        }
+
+        await prisma.teams.upsert({
           where: { docketwiseId: user.id },
           update: {
             email: user.email,
             firstName,
             lastName,
             fullName: fullName || user.email,
+            teamType,
+            title: null,
             isActive: true,
             lastSyncedAt: new Date(),
           },
@@ -329,6 +337,8 @@ export async function syncReferenceData(userId: string) {
             firstName,
             lastName,
             fullName: fullName || user.email,
+            teamType,
+            title: null,
             isActive: true,
             lastSyncedAt: new Date(),
           },
@@ -353,9 +363,9 @@ export async function syncReferenceData(userId: string) {
       );
 
       totalRecordsProcessed += allUsers.length;
-      console.log(`[REFERENCE-SYNC] Saved ${allUsers.length} users`);
+      console.log(`[REFERENCE-SYNC] Saved ${allUsers.length} team members`);
     } catch (err) {
-      console.warn("[REFERENCE-SYNC] Failed to sync users:", err);
+      console.warn("[REFERENCE-SYNC] Failed to sync team members:", err);
     }
 
     // 4. SYNC CONTACTS (ALL PAGES)

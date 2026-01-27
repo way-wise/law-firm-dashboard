@@ -1,6 +1,5 @@
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
-import { getOrSetCache, DEFAULT_CACHE_TTL, CACHE_KEYS } from "@/lib/redis";
 import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import * as z from "zod";
 
@@ -69,11 +68,8 @@ export const getDashboardStats = authorized
   })
   .output(dashboardStatsSchema)
   .handler(async ({ context }) => {
-    const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:${context.user.id}`;
-    
-    return getOrSetCache(cacheKey, async () => {
-      // Count all synced contacts
-      const totalContacts = await prisma.contacts.count();
+    // Count all synced contacts
+    const totalContacts = await prisma.contacts.count();
       
       // Count all synced matters
       const totalMatters = await prisma.matters.count({
@@ -96,10 +92,10 @@ export const getDashboardStats = authorized
       });
 
       // Count all team members
-      const teamMembers = await prisma.docketwiseUsers.count();
+      const teamMembers = await prisma.teams.count();
       
       // Count active team members
-      const activeTeamMembers = await prisma.docketwiseUsers.count({
+      const activeTeamMembers = await prisma.teams.count({
         where: { isActive: true },
       });
 
@@ -121,7 +117,6 @@ export const getDashboardStats = authorized
         matterTypesWithWorkflow,
         editedMatters,
       };
-    }, DEFAULT_CACHE_TTL);
   });
 
 // Get Assignee Stats (matters per assignee)
@@ -134,11 +129,8 @@ export const getAssigneeStats = authorized
   })
   .output(z.array(assigneeStatsSchema))
   .handler(async ({ context }) => {
-    const cacheKey = `${CACHE_KEYS.DASHBOARD_ASSIGNEES}:${context.user.id}`;
-    
-    return getOrSetCache(cacheKey, async () => {
-      // Get all active team members
-      const teamMembers = await prisma.docketwiseUsers.findMany({
+    // Get all active team members
+    const teamMembers = await prisma.teams.findMany({
         where: {
           isActive: true,
         },
@@ -312,7 +304,6 @@ export const getAssigneeStats = authorized
           avgDaysOpen,
         };
       }).sort((a, b) => b.matterCount - a.matterCount); // Sort by workload
-    }, DEFAULT_CACHE_TTL);
   });
 
 // Get Recent Matters for Dashboard
@@ -328,9 +319,6 @@ export const getRecentMatters = authorized
   }))
   .output(z.array(recentMatterSchema))
   .handler(async ({ input, context }) => {
-    const cacheKey = `${CACHE_KEYS.DASHBOARD_MATTERS}:${context.user.id}:${input.limit}`;
-    
-    return getOrSetCache(cacheKey, async () => {
       // Fetch matters directly from Docketwise API with real-time data (first page only for dashboard)
       const result = await fetchMattersRealtime({
         page: 1,
@@ -403,7 +391,6 @@ export const getRecentMatters = authorized
       });
 
       return mattersWithDeadlines;
-    }, DEFAULT_CACHE_TTL);
   });
 
 // Get Matter Status Distribution
@@ -416,9 +403,6 @@ export const getMatterStatusDistribution = authorized
   })
   .output(z.array(statusDistributionSchema))
   .handler(async ({ context }) => {
-    const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:status:${context.user.id}`;
-    
-    return getOrSetCache(cacheKey, async () => {
       // Group matters by status
       const statusGroups = await prisma.matters.groupBy({
         by: ['status'],
@@ -433,7 +417,6 @@ export const getMatterStatusDistribution = authorized
         status: group.status || "Unknown",
         count: group._count,
       }));
-    }, DEFAULT_CACHE_TTL);
   });
 
 // Get Matter Type Distribution
@@ -446,9 +429,6 @@ export const getMatterTypeDistribution = authorized
   })
   .output(z.array(typeDistributionSchema))
   .handler(async ({ context }) => {
-    const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:types:${context.user.id}`;
-    
-    return getOrSetCache(cacheKey, async () => {
       // Group matters by type
       const typeGroups = await prisma.matters.groupBy({
         by: ['matterType'],
@@ -463,5 +443,4 @@ export const getMatterTypeDistribution = authorized
         type: group.matterType || "Unknown",
         count: group._count,
       }));
-    }, DEFAULT_CACHE_TTL);
   });

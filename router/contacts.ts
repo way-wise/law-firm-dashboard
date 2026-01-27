@@ -1,7 +1,6 @@
 import { getDocketwiseToken } from "@/lib/docketwise";
 import { authorized } from "@/lib/orpc";
 import prisma, { Prisma } from "@/lib/prisma";
-import { getOrSetCache, CACHE_KEYS, DEFAULT_CACHE_TTL } from "@/lib/redis";
 import {
   contactFilterSchema,
   contactInputSchema,
@@ -30,57 +29,68 @@ export const getContacts = authorized
   .handler(async ({ input }) => {
     const page = input.page || 1;
     const perPage = 50;
-    const cacheKey = `${CACHE_KEYS.CONTACTS_LIST}:${page}:${input.type ?? 'all'}`;
 
-    return getOrSetCache(cacheKey, async () => {
-      const where: Prisma.contactsWhereInput = {};
-      
-      if (input.type) {
-        where.type = input.type;
-      }
+    
+    // Build where clause
+    const where: Prisma.contactsWhereInput = {};
+    
+    // Type filter
+    if (input.type && input.type !== 'all') {
+      where.type = input.type;
+    }
 
-      const [contacts, total] = await Promise.all([
-        prisma.contacts.findMany({
-          where,
-          skip: (page - 1) * perPage,
-          take: perPage,
-          orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-        }),
-        prisma.contacts.count({ where }),
-      ]);
+    // Search filter - search by name and email
+    if (input.search) {
+      const searchLower = input.search.toLowerCase();
+      where.OR = [
+        { firstName: { contains: searchLower, mode: 'insensitive' } },
+        { lastName: { contains: searchLower, mode: 'insensitive' } },
+        { companyName: { contains: searchLower, mode: 'insensitive' } },
+        { email: { contains: searchLower, mode: 'insensitive' } },
+      ];
+    }
 
-      // Transform to match expected schema
-      const data = contacts.map(contact => ({
-        id: contact.docketwiseId,
-        first_name: contact.firstName,
-        last_name: contact.lastName,
-        middle_name: contact.middleName,
-        company_name: contact.companyName,
-        email: contact.email,
-        phone: contact.phone,
-        type: contact.type,
-        lead: contact.isLead,
-        street_address: contact.streetAddress,
-        apartment_number: contact.apartmentNumber,
-        city: contact.city,
-        state: contact.state,
-        province: contact.province,
-        zip_code: contact.zipCode,
-        country: contact.country,
-        created_at: contact.createdAt.toISOString(),
-        updated_at: contact.updatedAt.toISOString(),
-      }));
+    const [contacts, total] = await Promise.all([
+      prisma.contacts.findMany({
+        where,
+        skip: (page - 1) * perPage,
+        take: perPage,
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      }),
+      prisma.contacts.count({ where }),
+    ]);
 
-      return {
-        data,
-        pagination: total > perPage ? {
-          total,
-          next_page: page * perPage < total ? page + 1 : null,
-          previous_page: page > 1 ? page - 1 : null,
-          total_pages: Math.ceil(total / perPage),
-        } : undefined,
-      };
-    }, DEFAULT_CACHE_TTL);
+    // Transform to match expected schema
+    const data = contacts.map(contact => ({
+      id: contact.docketwiseId,
+      first_name: contact.firstName,
+      last_name: contact.lastName,
+      middle_name: contact.middleName,
+      company_name: contact.companyName,
+      email: contact.email,
+      phone: contact.phone,
+      type: contact.type,
+      lead: contact.isLead,
+      street_address: contact.streetAddress,
+      apartment_number: contact.apartmentNumber,
+      city: contact.city,
+      state: contact.state,
+      province: contact.province,
+      zip_code: contact.zipCode,
+      country: contact.country,
+      created_at: contact.createdAt.toISOString(),
+      updated_at: contact.updatedAt.toISOString(),
+    }));
+
+    return {
+      data,
+      pagination: total > perPage ? {
+        total,
+        next_page: page * perPage < total ? page + 1 : null,
+        previous_page: page > 1 ? page - 1 : null,
+        total_pages: Math.ceil(total / perPage),
+      } : undefined,
+    };
   });
 
 // Get Contact by ID from database

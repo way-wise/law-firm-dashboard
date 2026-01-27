@@ -200,11 +200,25 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
     },
     {
       header: "Assignees",
-      accessorKey: "assignees",
+      accessorKey: "assignee",
       enableSorting: true,
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.assignees || "-"}</p>
-      ),
+      cell: ({ row }) => {
+        // Use real assignee data from relation, fall back to legacy assignees field
+        const assignee = row.original.assignee;
+        const legacyAssignees = row.original.assignees;
+        
+        if (assignee && assignee.isActive) {
+          return (
+            <div className="flex flex-col">
+              <p className="text-sm font-medium">{assignee.name}</p>
+              <p className="text-xs text-muted-foreground">{assignee.email}</p>
+            </div>
+          );
+        }
+        
+        // Fall back to legacy assignees field for backward compatibility
+        return <p className="text-sm">{legacyAssignees || "-"}</p>;
+      },
     },
     {
       header: "Type",
@@ -428,7 +442,7 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
           <div className="flex flex-wrap items-center justify-between gap-3 p-6">
             <div className="flex flex-wrap items-center gap-3 flex-1">
               {/* Search Input */}
-              <InputGroup className="w-[280px]">
+              <InputGroup className="max-w-sm">
                 <InputGroupAddon>
                   <LuSearch />
                 </InputGroupAddon>

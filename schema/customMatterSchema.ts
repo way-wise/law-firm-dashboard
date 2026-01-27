@@ -36,6 +36,18 @@ export const matterSchema = z.object({
   statusForFilingId: z.number().nullable(),
   clientName: z.string().nullable(),
   clientId: z.number().nullable(),
+  teamId: z.number().nullable(),
+  assignee: z.object({
+    id: z.number(),
+    name: z.string(),
+    email: z.string(),
+    firstName: z.string().nullable(),
+    lastName: z.string().nullable(),
+    fullName: z.string(),
+    teamType: z.string(),
+    title: z.string().nullable(),
+    isActive: z.boolean(),
+  }).nullable(),
   assignees: z.string().nullable(),        // Comma-separated assignee names (renamed from paralegalAssigned)
   docketwiseUserIds: z.string().nullable(),
   openedAt: coercedDateNullable,
@@ -96,6 +108,10 @@ export const matterFilterSchema = z.object({
   assignees: z.string().optional(),
   isStale: z.boolean().optional(),
   hasDeadline: z.boolean().optional(),
+  deadlineRange: z.object({
+    from: z.date().optional(),
+    to: z.date().optional(),
+  }).optional(),
 });
 
 export const paginatedMattersSchema = z.object({

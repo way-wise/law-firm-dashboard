@@ -346,7 +346,7 @@ export function EditMatterDrawer({
             </div>
 
             {/* Action Buttons - Fixed at bottom */}
-            <div className="shrink-0 flex justify-end gap-3 p-6 border-t bg-background">
+            <div className="shrink-0 flex justify-end gap-3 py-3 px-4 border-t">
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>

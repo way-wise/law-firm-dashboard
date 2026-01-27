@@ -1,6 +1,5 @@
 import { authorized } from "@/lib/orpc";
 import prisma, { Prisma } from "@/lib/prisma";
-import { getOrSetCache, invalidateCache, CACHE_KEYS } from "@/lib/redis";
 import {
   matterFilterSchema,
   matterSchema,
@@ -8,12 +7,10 @@ import {
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
-import { fetchMatterDetail } from "@/lib/services/docketwise-matters";
+import { fetchMattersRealtime, fetchMatterDetail } from "@/lib/services/docketwise-matters";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
-// Shorter cache TTL for matters list (5 minutes) since data changes more frequently
-const MATTERS_CACHE_TTL = 5 * 60;
 
 // Get Custom Matters
 export const getCustomMatters = authorized
@@ -29,165 +26,180 @@ export const getCustomMatters = authorized
     const page = input.page || 1;
     const perPage = 50;
     
-    // Build cache key from all filter parameters
-    const filterKey = JSON.stringify({
+    const result = await fetchMattersRealtime({
       page,
-      search: input.search || '',
-      billingStatus: input.billingStatus || '',
-      assignees: input.assignees || '',
-      isStale: input.isStale,
-      hasDeadline: input.hasDeadline,
+      perPage,
+      userId: context.user.id,
     });
-    const cacheKey = `${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:${filterKey}`;
 
-    return getOrSetCache(cacheKey, async () => {
-      // Fetch matters from LOCAL DATABASE (synced data)
-      const where: Prisma.mattersWhereInput = {
-        userId: context.user.id,
-      };
+    // Load matter types for deadline calculation
+    const matterTypes = await prisma.matterTypes.findMany({
+      select: {
+        docketwiseId: true,
+        estimatedDays: true,
+      },
+    });
 
-      // Search filter
+    const matterTypeEstDaysMap = new Map<number, number>();
+    for (const mt of matterTypes) {
+      if (mt.estimatedDays) {
+        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+      }
+    }
+
+    // Apply client-side filters and calculate deadlines
+    const filteredMatters = result.data.filter((matter) => {
+      // Enhanced search filter - search by title, client, description, status, matter type, or assignee
       if (input.search) {
-        where.OR = [
-          { title: { contains: input.search, mode: "insensitive" } },
-          { clientName: { contains: input.search, mode: "insensitive" } },
-        ];
+        const searchLower = input.search.toLowerCase();
+        const matchTitle = matter.title?.toLowerCase().includes(searchLower);
+        const matchClient = matter.clientName?.toLowerCase().includes(searchLower);
+        const matchDescription = matter.description?.toLowerCase().includes(searchLower);
+        const matchStatus = matter.status?.toLowerCase().includes(searchLower);
+        const matchMatterType = matter.matterType?.toLowerCase().includes(searchLower);
+        const matchAssignee = matter.assignee?.name?.toLowerCase().includes(searchLower);
+        const matchAssignees = matter.assignees?.toLowerCase().includes(searchLower);
+        
+        if (!matchTitle && !matchClient && !matchDescription && !matchStatus && !matchMatterType && !matchAssignee && !matchAssignees) {
+          return false;
+        }
       }
 
       // Billing status filter
       if (input.billingStatus) {
-        where.billingStatus = input.billingStatus;
+        if (matter.billingStatus !== input.billingStatus) return false;
       }
 
-      // Assignees filter
+      // Assignee filter - check both assignee relation and legacy assignees field
       if (input.assignees) {
-        where.assignees = { contains: input.assignees, mode: "insensitive" };
+        const assigneesLower = input.assignees.toLowerCase();
+        const matchAssigneeName = matter.assignee?.name?.toLowerCase().includes(assigneesLower);
+        const matchAssigneeEmail = matter.assignee?.email?.toLowerCase().includes(assigneesLower);
+        const matchLegacyAssignees = matter.assignees?.toLowerCase().includes(assigneesLower);
+        
+        if (!matchAssigneeName && !matchAssigneeEmail && !matchLegacyAssignees) return false;
       }
 
       // Has deadline filter
       if (input.hasDeadline !== undefined) {
-        if (input.hasDeadline) {
-          where.estimatedDeadline = { not: null };
-        } else {
-          where.estimatedDeadline = null;
-        }
+        if (input.hasDeadline && !matter.estimatedDeadline) return false;
+        if (!input.hasDeadline && matter.estimatedDeadline) return false;
       }
 
-      // Stale filter
-      if (input.isStale !== undefined) {
-        where.isStale = input.isStale;
-      }
-
-      // Count total matching records
-      const total = await prisma.matters.count({ where });
-
-      // Fetch paginated results
-      const matters = await prisma.matters.findMany({
-        where,
-        orderBy: { docketwiseUpdatedAt: "desc" },
-        skip: (page - 1) * perPage,
-        take: perPage,
-        include: {
-          editedByUser: {
-            select: { name: true, email: true },
-          },
-        },
-      });
-
-      // Load matter types for deadline calculation
-      const matterTypes = await prisma.matterTypes.findMany({
-        select: {
-          docketwiseId: true,
-          estimatedDays: true,
-        },
-      });
-
-      const matterTypeEstDaysMap = new Map<number, number>();
-      for (const mt of matterTypes) {
-        if (mt.estimatedDays) {
-          matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
-        }
-      }
-
-      // Calculate dynamic deadline for each matter
-      const mattersWithDeadlines = matters.map((matter) => {
-        let calculatedDeadline: Date | null = null;
-        let isPastEstimatedDeadline = false;
+      // Deadline range filter
+      if (input.deadlineRange) {
+        const deadline = matter.estimatedDeadline || matter.calculatedDeadline;
+        if (!deadline) return false;
         
-        if (matter.docketwiseCreatedAt && matter.matterTypeId) {
-          const createdAt = new Date(matter.docketwiseCreatedAt);
-          if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
-            const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
-            if (estDays && estDays > 0) {
-              const targetDate = new Date(createdAt);
-              targetDate.setDate(targetDate.getDate() + estDays);
-              
-              if (targetDate.getFullYear() > 1970) {
-                calculatedDeadline = targetDate;
-                isPastEstimatedDeadline = new Date() > calculatedDeadline;
-              }
+        const deadlineDate = new Date(deadline);
+        if (isNaN(deadlineDate.getTime())) return false;
+        
+        if (input.deadlineRange.from && deadlineDate < input.deadlineRange.from) return false;
+        if (input.deadlineRange.to && deadlineDate > input.deadlineRange.to) return false;
+      }
+
+      return true;
+    });
+
+    // Calculate dynamic deadline for each matter
+    const mattersWithDeadlines = filteredMatters.map((matter) => {
+      let calculatedDeadline: Date | null = null;
+      let isPastEstimatedDeadline = false;
+      
+      if (matter.docketwiseCreatedAt && matter.matterTypeId) {
+        const createdAt = new Date(matter.docketwiseCreatedAt);
+        if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
+          const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
+          if (estDays && estDays > 0) {
+            const targetDate = new Date(createdAt);
+            targetDate.setDate(targetDate.getDate() + estDays);
+            
+            if (targetDate.getFullYear() > 1970) {
+              calculatedDeadline = targetDate;
+              isPastEstimatedDeadline = new Date() > calculatedDeadline;
             }
           }
         }
+      }
 
-        // Sanitize estimatedDeadline - if it's 1970, treat as null
-        let estimatedDeadline = matter.estimatedDeadline;
-        if (estimatedDeadline) {
-          const date = new Date(estimatedDeadline);
-          if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
-            estimatedDeadline = null;
-          }
+      // Sanitize estimatedDeadline - if it's 1970, treat as null
+      let estimatedDeadline = matter.estimatedDeadline;
+      if (estimatedDeadline) {
+        const date = new Date(estimatedDeadline);
+        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+          estimatedDeadline = null;
         }
-        
-        return {
-          id: matter.id,
-          docketwiseId: matter.docketwiseId,
-          title: matter.title,
-          description: matter.description,
-          clientName: matter.clientName,
-          clientId: matter.clientId,
-          assignees: matter.assignees,
-          docketwiseUserIds: matter.docketwiseUserIds,
-          matterType: matter.matterType,
-          matterTypeId: matter.matterTypeId,
-          status: matter.status,
-          statusId: matter.statusId,
-          statusForFiling: matter.statusForFiling,
-          statusForFilingId: matter.statusForFilingId,
-          billingStatus: matter.billingStatus,
-          estimatedDeadline,
-          calculatedDeadline,
-          isPastEstimatedDeadline,
-          assignedDate: matter.assignedDate,
-          actualDeadline: matter.actualDeadline,
-          totalHours: matter.totalHours,
-          customNotes: matter.customNotes,
-          isEdited: matter.isEdited,
-          editedBy: matter.editedBy,
-          editedByUser: matter.editedByUser,
-          editedAt: matter.editedAt,
-          docketwiseCreatedAt: matter.docketwiseCreatedAt,
-          docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
-          openedAt: matter.openedAt,
-          closedAt: matter.closedAt,
-          lastSyncedAt: matter.lastSyncedAt,
-          isStale: matter.isStale,
-          createdAt: matter.createdAt,
-          updatedAt: matter.updatedAt,
-          userId: matter.userId,
-        };
-      });
-
+      }
+      
       return {
-        data: mattersWithDeadlines,
-        pagination: {
-          total,
-          page,
-          perPage,
-          totalPages: Math.ceil(total / perPage),
-        },
+        id: matter.id,
+        docketwiseId: matter.docketwiseId,
+        docketwiseCreatedAt: matter.docketwiseCreatedAt,
+        docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+        title: matter.title,
+        description: matter.description,
+        matterType: matter.matterType,
+        matterTypeId: matter.matterTypeId,
+        status: matter.status,
+        statusId: matter.statusId,
+        statusForFiling: matter.statusForFiling,
+        statusForFilingId: matter.statusForFilingId,
+        clientName: matter.clientName,
+        clientId: matter.clientId,
+        teamId: matter.teamId,
+        assignee: matter.assignee ? {
+          id: matter.assignee.docketwiseId,
+          name: matter.assignee.fullName || matter.assignee.email,
+          email: matter.assignee.email,
+          firstName: matter.assignee.firstName,
+          lastName: matter.assignee.lastName,
+          fullName: matter.assignee.fullName || matter.assignee.email,
+          teamType: matter.assignee.teamType,
+          title: matter.assignee.title,
+          isActive: matter.assignee.isActive,
+        } : null,
+        assignees: matter.assignees,
+        docketwiseUserIds: matter.docketwiseUserIds,
+        openedAt: matter.openedAt,
+        closedAt: matter.closedAt,
+        assignedDate: matter.assignedDate,
+        estimatedDeadline,
+        actualDeadline: matter.actualDeadline,
+        billingStatus: matter.billingStatus,
+        totalHours: matter.totalHours,
+        customNotes: matter.customNotes,
+        lastSyncedAt: matter.lastSyncedAt,
+        isStale: matter.isStale,
+        archived: matter.archived,
+        priorityDate: matter.priorityDate,
+        isEdited: matter.isEdited,
+        editedBy: matter.editedBy,
+        editedAt: matter.editedAt,
+        editedByUser: matter.editedByUser ? {
+          name: matter.editedByUser.name,
+          email: matter.editedByUser.email,
+        } : null,
+        userId: matter.userId,
+        createdAt: matter.createdAt,
+        updatedAt: matter.updatedAt,
+        calculatedDeadline,
+        isPastEstimatedDeadline,
+        notes: matter.notes,
       };
-    }, MATTERS_CACHE_TTL);
+    });
+
+    const finalResult = {
+      data: mattersWithDeadlines,
+      pagination: {
+        total: result.total,
+        page,
+        perPage,
+        totalPages: Math.ceil(result.total / perPage),
+      },
+    };
+    
+        
+    return finalResult;
   });
 
 // Get Custom Matter by ID (from local DB)
@@ -208,6 +220,18 @@ export const getCustomMatterById = authorized
           select: {
             name: true,
             email: true,
+          },
+        },
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
           },
         },
       },
@@ -290,11 +314,21 @@ export const updateCustomMatter = authorized
             email: true,
           },
         },
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
+          },
+        },
       },
     });
 
-    // Invalidate matters cache for this user
-    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
 
     // Check for field changes and send notifications
     checkMatterChangesAndNotify({
@@ -380,11 +414,21 @@ export const createCustomMatter = authorized
             email: true,
           },
         },
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
+          },
+        },
       },
     });
 
-    // Invalidate matters cache for this user
-    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
 
     // Check if new matter has a deadline and send notifications
     if (input.estimatedDeadline) {
@@ -428,8 +472,6 @@ export const deleteCustomMatter = authorized
       where: { id: input.id },
     });
 
-    // Invalidate matters cache for this user
-    await invalidateCache(`${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:*`);
 
     return { success: true };
   });

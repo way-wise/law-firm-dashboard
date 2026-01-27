@@ -81,7 +81,8 @@ export type PaginatedContactsSchemaType = {
 // Filter schema for contacts
 export const contactFilterSchema = z.object({
   page: z.number().optional(),
-  type: z.enum(["Person", "Institution"]).optional(),
+  search: z.string().optional(),
+  type: z.enum(["Person", "Institution", "all"]).optional(),
   filter: z.enum(["all"]).optional(),
 });
 export type ContactFilterSchemaType = z.infer<typeof contactFilterSchema>;

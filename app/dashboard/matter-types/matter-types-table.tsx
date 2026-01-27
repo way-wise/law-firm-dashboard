@@ -24,6 +24,7 @@ import {
 import { ColumnDef } from "@tanstack/react-table";
 import { Eye, Pencil, RefreshCw, Search, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { useDebounceCallback } from "usehooks-ts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/orpc/client";
 
@@ -71,6 +72,11 @@ const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) =>
   const [selectedMatterType, setSelectedMatterType] = useState<MatterType | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+
+  // Debounced search
+  const debouncedSearch = useDebounceCallback((value: string) => {
+    setSearchTerm(value);
+  }, 300);
 
   const [formData, setFormData] = useState({
     estimatedDays: "",
@@ -231,7 +237,7 @@ const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) =>
                 type="search"
                 placeholder="Search matter types..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => debouncedSearch(e.target.value)}
               />
             </InputGroup>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>

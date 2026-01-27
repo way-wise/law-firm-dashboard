@@ -130,8 +130,10 @@ model matters {
   statusForFilingId   Int?
   clientName          String?
   clientId            Int?
-  assignees           String?
-  docketwiseUserIds   String?
+  teamId              Int? // Foreign key to teams
+  assignee            teams?    @relation("MatterAssignee", fields: [teamId], references: [docketwiseId], onDelete: SetNull)
+  assignees           String? // @deprecated - Use assignee relation instead
+  docketwiseUserIds   String? // @deprecated - Use assignee relation instead
   openedAt            DateTime?
   closedAt            DateTime?
 
@@ -159,9 +161,18 @@ model matters {
 
   @@index([docketwiseId])
   @@index([userId])
+  @@index([teamId])
   @@index([assignedDate])
   @@index([estimatedDeadline])
   @@index([isStale])
+  @@index([status])
+  @@index([matterType])
+  @@index([clientId])
+  @@index([userId, status])
+  @@index([userId, teamId])
+  @@index([teamId, status])
+  @@index([isStale, userId])
+  @@index([docketwiseId, userId])
 }
 
 model matterTypeDeadlines {
@@ -220,7 +231,7 @@ model paralegalMetrics {
   @@index([userId])
 }
 
-model docketwiseUsers {
+model teams {
   id           String   @id @default(ulid())
   docketwiseId Int      @unique
   email        String
@@ -228,12 +239,22 @@ model docketwiseUsers {
   lastName     String?
   fullName     String?
   isActive     Boolean  @default(true)
+  teamType     String   @default("inHouse") // "inHouse" | "contractor"
+  title        String? // e.g., "Senior Paralegal", "Attorney"
   lastSyncedAt DateTime @default(now())
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Relations
+  assignedMatters matters[] @relation("MatterAssignee")
+
   @@index([docketwiseId])
   @@index([isActive])
+  @@index([teamType])
+  @@index([email])
+  @@index([fullName])
+  @@index([isActive, teamType])
+  @@index([isActive, email])
 }
 
 model contacts {

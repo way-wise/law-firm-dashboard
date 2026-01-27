@@ -30,8 +30,9 @@ import {
 } from "./syncSettings";
 import { syncMattersRoute } from "./mattersSync";
 import {
-  getTeamMemberById,
   getTeamMembers,
+  getTeamMembersList,
+  getTeamMemberById,
 } from "./team";
 import {
   createTodo,
@@ -106,10 +107,6 @@ export const router = {
     update: updateCustomMatter,
     delete: deleteCustomMatter,
   },
-  team: {
-    get: getTeamMembers,
-    getById: getTeamMemberById,
-  },
   docketwise: {
     getStatus: getConnectionStatus,
   },
@@ -159,5 +156,10 @@ export const router = {
   },
   reports: {
     generate: generateReport,
+  },
+  team: {
+    get: getTeamMembers,
+    getList: getTeamMembersList,
+    getById: getTeamMemberById,
   },
 };

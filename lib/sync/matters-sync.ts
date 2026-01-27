@@ -146,97 +146,142 @@ export async function syncMatters(userId: string) {
 
     console.log(`[MATTERS-SYNC] Loaded ${allMatters.length} total matters from Docketwise`);
 
-    // Save to database in batches
-    const MATTER_BATCH_SIZE = 50;
-    let syncedCount = 0;
-    let updatedCount = 0;
-    let createdCount = 0;
-
-    for (let i = 0; i < allMatters.length; i += MATTER_BATCH_SIZE) {
-      const batch = allMatters.slice(i, i + MATTER_BATCH_SIZE);
-      
-      await prisma.$transaction(
-        async (tx) => {
-          for (const matter of batch) {
-            // Resolve client name
-            const clientName = resolveClientName(matter, clientMap);
-            
-            // Resolve matter type
-            const matterTypeId = matter.matter_type_id ?? matter.matter_type?.id ?? null;
-            const matterType = matterTypeId ? typeMap.get(matterTypeId) : matter.type;
-            
-            // Resolve status
-            let statusId: number | null = null;
-            let statusName: string | null = null;
-            
-            if (matter.matter_status_id) {
-              statusId = matter.matter_status_id;
-              statusName = statusMap.get(statusId) ?? null;
-            } else if (matter.workflow_stage_id) {
-              statusId = matter.workflow_stage_id;
-              statusName = statusMap.get(statusId) ?? matter.workflow_stage?.name ?? null;
-            } else if (typeof matter.status === "object" && matter.status) {
-              statusId = matter.status.id;
-              statusName = matter.status.name;
-            } else if (typeof matter.status === "string") {
-              statusName = matter.status;
-            }
-            
-            // Resolve assignees
-            const assigneesStr = resolveAssignees(matter, userMap);
-            const userIds = matter.user_ids?.join(",") ?? "";
-
-            // Check if matter already exists
-            const existing = await tx.matters.findUnique({
-              where: { docketwiseId: matter.id },
-            });
-
-            const matterData = {
-              docketwiseId: matter.id,
-              docketwiseCreatedAt: matter.created_at ? new Date(matter.created_at) : null,
-              docketwiseUpdatedAt: matter.updated_at ? new Date(matter.updated_at) : null,
-              title: matter.title || "Untitled Matter",
-              description: matter.description,
-              matterType: matterType,
-              matterTypeId: matterTypeId,
-              status: statusName,
-              statusId: statusId,
-              clientName: clientName,
-              clientId: matter.client_id,
-              assignees: assigneesStr,
-              docketwiseUserIds: userIds,
-              openedAt: matter.opened_at ? new Date(matter.opened_at) : null,
-              closedAt: matter.closed_at ? new Date(matter.closed_at) : null,
-              lastSyncedAt: new Date(),
-              userId: userId,
-            };
-
-            if (existing) {
-              // Only update if not manually edited
-              if (!existing.isEdited) {
-                await tx.matters.update({
-                  where: { docketwiseId: matter.id },
-                  data: matterData,
-                });
-                updatedCount++;
-              }
-            } else {
-              await tx.matters.create({
-                data: matterData,
-              });
-              createdCount++;
-            }
-            
-            syncedCount++;
-          }
-        },
-        { timeout: 60000 }, // 60 second timeout for large batches
-      );
-
-      console.log(
-        `[MATTERS-SYNC] Processed batch ${Math.floor(i / MATTER_BATCH_SIZE) + 1}: ${syncedCount}/${allMatters.length} matters`,
-      );
+    
+    // Fetch all existing matters once for comparison
+    const existingMattersMap = new Map<number, { id: string; isEdited: boolean }>();
+    const existingMatters = await prisma.matters.findMany({
+      where: { userId },
+      select: { docketwiseId: true, id: true, isEdited: true },
+    });
+    
+    for (const m of existingMatters) {
+      existingMattersMap.set(m.docketwiseId, { id: m.id, isEdited: m.isEdited });
     }
+
+    console.log(`[MATTERS-SYNC] Found ${existingMattersMap.size} existing matters in DB`);
+
+    // Prepare all matter data
+    const mattersToCreate: Array<{
+      docketwiseId: number;
+      docketwiseCreatedAt: Date | null;
+      docketwiseUpdatedAt: Date | null;
+      title: string;
+      description: string | null;
+      matterType: string | null;
+      matterTypeId: number | null;
+      status: string | null;
+      statusId: number | null;
+      clientName: string | null;
+      clientId: number | null;
+      assignees: string | null;
+      docketwiseUserIds: string;
+      openedAt: Date | null;
+      closedAt: Date | null;
+      lastSyncedAt: Date;
+      userId: string;
+    }> = [];
+    
+    const mattersToUpdate: Array<{ id: string; data: typeof mattersToCreate[0] }> = [];
+
+    for (const matter of allMatters) {
+      // Resolve client name
+      const clientName = resolveClientName(matter, clientMap);
+      
+      // Resolve matter type
+      const matterTypeId = matter.matter_type_id ?? matter.matter_type?.id ?? null;
+      const matterType = matterTypeId ? typeMap.get(matterTypeId) : matter.type;
+      
+      // Resolve status
+      let statusId: number | null = null;
+      let statusName: string | null = null;
+      
+      if (matter.matter_status_id) {
+        statusId = matter.matter_status_id;
+        statusName = statusMap.get(statusId) ?? null;
+      } else if (matter.workflow_stage_id) {
+        statusId = matter.workflow_stage_id;
+        statusName = statusMap.get(statusId) ?? matter.workflow_stage?.name ?? null;
+      } else if (typeof matter.status === "object" && matter.status) {
+        statusId = matter.status.id;
+        statusName = matter.status.name;
+      } else if (typeof matter.status === "string") {
+        statusName = matter.status;
+      }
+      
+      // Resolve assignees from attorney_id (available in list endpoint)
+      const assigneesStr = resolveAssignees(matter, userMap);
+      const attorneyIdStr = matter.attorney_id ? String(matter.attorney_id) : "";
+
+      const dbMatterData = {
+        docketwiseId: matter.id,
+        docketwiseCreatedAt: matter.created_at ? new Date(matter.created_at) : null,
+        docketwiseUpdatedAt: matter.updated_at ? new Date(matter.updated_at) : null,
+        title: matter.title || "Untitled Matter",
+        description: matter.description ?? null,
+        matterType: matterType ?? null,
+        matterTypeId: matterTypeId,
+        status: statusName,
+        statusId: statusId,
+        clientName: clientName,
+        clientId: matter.client_id,
+        teamId: matter.attorney_id, // Save attorney_id as teamId foreign key
+        assignees: assigneesStr, // Legacy - keep for backward compatibility
+        docketwiseUserIds: attorneyIdStr, // Legacy - keep for backward compatibility
+        openedAt: matter.opened_at ? new Date(matter.opened_at) : null,
+        closedAt: matter.closed_at ? new Date(matter.closed_at) : null,
+        lastSyncedAt: new Date(),
+        userId: userId,
+      };
+
+      const existing = existingMattersMap.get(matter.id);
+      if (existing) {
+        // Only update if not manually edited
+        if (!existing.isEdited) {
+          mattersToUpdate.push({ id: existing.id, data: dbMatterData });
+        }
+      } else {
+        mattersToCreate.push(dbMatterData);
+      }
+    }
+
+    console.log(`[MATTERS-SYNC] Prepared ${mattersToCreate.length} new matters, ${mattersToUpdate.length} updates`);
+
+    // Bulk insert new matters
+    let createdCount = 0;
+    if (mattersToCreate.length > 0) {
+      const BULK_INSERT_SIZE = 500;
+      for (let i = 0; i < mattersToCreate.length; i += BULK_INSERT_SIZE) {
+        const chunk = mattersToCreate.slice(i, i + BULK_INSERT_SIZE);
+        await prisma.matters.createMany({
+          data: chunk,
+          skipDuplicates: true,
+        });
+        createdCount += chunk.length;
+        console.log(`[MATTERS-SYNC] Created batch: ${createdCount}/${mattersToCreate.length}`);
+      }
+    }
+
+    // Bulk update existing matters
+    let updatedCount = 0;
+    if (mattersToUpdate.length > 0) {
+      const UPDATE_BATCH_SIZE = 10; // Further reduced - even 25 was timing out
+      for (let i = 0; i < mattersToUpdate.length; i += UPDATE_BATCH_SIZE) {
+        const chunk = mattersToUpdate.slice(i, i + UPDATE_BATCH_SIZE);
+        
+        // Sequential updates for remote database (no transaction to avoid timeout)
+        for (const item of chunk) {
+          await prisma.matters.update({
+            where: { id: item.id },
+            data: item.data,
+          });
+        }
+        
+        updatedCount += chunk.length;
+        console.log(`[MATTERS-SYNC] Updated batch: ${updatedCount}/${mattersToUpdate.length}`);
+      }
+    }
+
+    const syncedCount = createdCount + updatedCount;
 
     console.log(
       `[MATTERS-SYNC] ✅ Sync complete: ${syncedCount} total, ${createdCount} created, ${updatedCount} updated`,
@@ -256,14 +301,14 @@ export async function syncMatters(userId: string) {
 
 // Helper: Load user map
 async function loadUserMap(): Promise<Map<number, string>> {
-  const users = await prisma.docketwiseUsers.findMany({
+  const teams = await prisma.teams.findMany({
     select: { docketwiseId: true, fullName: true, firstName: true, lastName: true, email: true },
   });
 
   const userMap = new Map<number, string>();
-  for (const u of users) {
-    const name = u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email;
-    userMap.set(u.docketwiseId, name);
+  for (const t of teams) {
+    const name = t.fullName || `${t.firstName || ""} ${t.lastName || ""}`.trim() || t.email;
+    userMap.set(t.docketwiseId, name);
   }
   return userMap;
 }
@@ -309,20 +354,18 @@ async function loadStatusMap(): Promise<Map<number, string>> {
   return statusMap;
 }
 
-// Helper: Resolve assignees
+// Helper: Resolve assignees from attorney_id
 function resolveAssignees(
   matter: DocketwiseMatter,
   userMap: Map<number, string>,
 ): string | null {
-  if (!matter.user_ids || matter.user_ids.length === 0) {
-    return null;
+  // Use attorney_id from list endpoint (primary attorney)
+  if (matter.attorney_id) {
+    const name = userMap.get(matter.attorney_id);
+    if (name) return name;
   }
-
-  const names = matter.user_ids
-    .map((uid) => userMap.get(uid))
-    .filter((name): name is string => !!name);
-
-  return names.length > 0 ? names.join(", ") : null;
+  
+  return null;
 }
 
 // Helper: Resolve client name

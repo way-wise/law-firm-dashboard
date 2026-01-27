@@ -89,18 +89,34 @@ interface FetchMattersOptions {
 interface MappedMatter {
   id: string;
   docketwiseId: number;
+  docketwiseCreatedAt: Date | null;
+  docketwiseUpdatedAt: Date | null;
   title: string;
   description: string | null;
-  clientName: string | null;
-  clientId: number | null;
-  assignees: string | null;
-  docketwiseUserIds: string;
   matterType: string | null;
   matterTypeId: number | null;
   status: string | null;
   statusId: number | null;
   statusForFiling: string | null;
   statusForFilingId: number | null;
+  clientName: string | null;
+  clientId: number | null;
+  teamId: number | null;
+  assignee: {
+    id: number;
+    name: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    fullName: string;
+    teamType: string;
+    title: string | null;
+    isActive: boolean;
+  } | null;
+  assignees: string | null;
+  docketwiseUserIds: string;
+  openedAt: Date | null;
+  closedAt: Date | null;
   assignedDate: Date | null;
   estimatedDeadline: Date | null;
   actualDeadline: Date | null;
@@ -109,12 +125,6 @@ interface MappedMatter {
   customNotes: string | null;
   lastSyncedAt: Date;
   isStale: boolean;
-  docketwiseCreatedAt: Date | null;
-  docketwiseUpdatedAt: Date | null;
-  openedAt: Date | null;
-  closedAt: Date | null;
-  archived: boolean;
-  priorityDate: Date | null;
   isEdited: boolean;
   editedBy: string | null;
   editedAt: Date | null;
@@ -122,6 +132,10 @@ interface MappedMatter {
   userId: string;
   createdAt: Date;
   updatedAt: Date;
+  archived: boolean;
+  priorityDate: Date | null;
+  calculatedDeadline: Date | null;
+  isPastEstimatedDeadline: boolean;
   notes?: Array<{
     id: number;
     title: string | null;
@@ -132,10 +146,7 @@ interface MappedMatter {
   }> | null;
 }
 
-/**
- * Load cached reference maps from Redis
- * These are populated by syncReferenceData() every 12-24 hours
- */
+// Load reference maps for data resolution
 async function loadReferenceMaps() {
   const redis = getRedis();
 
@@ -188,7 +199,7 @@ async function loadReferenceMaps() {
  */
 async function loadReferenceMapsFromDB() {
   const [users, contacts, types, statuses] = await Promise.all([
-    prisma.docketwiseUsers.findMany({
+    prisma.teams.findMany({
       select: { docketwiseId: true, fullName: true },
     }),
     prisma.contacts.findMany({
@@ -320,16 +331,12 @@ function resolveStatus(
   return null;
 }
 
-/**
- * Fetch matters from Docketwise API with real-time pagination
- * Maps IDs to names using cached reference data
- */
+// Fetch matters with real-time data and assignee resolution
 export async function fetchMattersRealtime(
   options: FetchMattersOptions
 ): Promise<{ data: MappedMatter[]; total: number; page: number; perPage: number }> {
   const { page = 1, perPage = 100, userId } = options;
 
-  console.log(`[MATTERS-FETCH] Fetching page ${page} for user ${userId}`);
 
   try {
     // 1. Get Docketwise token
@@ -340,11 +347,8 @@ export async function fetchMattersRealtime(
 
     // 2. Load reference maps (from Redis or DB fallback)
     const { userMap, clientMap, typeMap, statusMap } = await loadReferenceMaps();
-    console.log(
-      `[MATTERS-FETCH] Loaded maps: ${userMap.size} users, ${clientMap.size} clients, ${typeMap.size} types, ${statusMap.size} statuses`
-    );
 
-    // 3. Fetch matters from Docketwise API
+    // Fetch matters from API
     const response = await fetchWithRetry(
       `${DOCKETWISE_API_URL}/matters?page=${page}&per_page=${Math.min(perPage, 200)}`,
       {
@@ -361,6 +365,31 @@ export async function fetchMattersRealtime(
 
     const matters = (await response.json()) as DocketwiseMatter[];
 
+    // Fetch detailed data for attorney_id
+    const mattersWithDetails = await Promise.all(
+      matters.map(async (matter) => {
+        try {
+          const detailResponse = await fetchWithRetry(
+            `${DOCKETWISE_API_URL}/matters/${matter.id}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+          
+          if (detailResponse.ok) {
+            const detail = await detailResponse.json();
+            // Merge the detail data with the list data
+            return { ...matter, ...detail };
+          }
+        } catch {
+            return matter;
+        }
+      })
+    );
+
     // Parse pagination
     let total = matters.length;
     const paginationHeader = response.headers.get("X-Pagination");
@@ -369,11 +398,11 @@ export async function fetchMattersRealtime(
         const pagination = JSON.parse(paginationHeader) as DocketwisePagination;
         total = pagination.total;
       } catch {
-        console.warn("[MATTERS-FETCH] Failed to parse pagination header");
+        // Failed to parse pagination header, use default total
       }
     }
 
-    // 4. Get edited matters from local DB with editedByUser relation
+    // Get edited matters from DB
     const matterIds = matters.map((m) => m.id);
     const editedMatters = await prisma.matters.findMany({
       where: {
@@ -387,18 +416,30 @@ export async function fetchMattersRealtime(
             email: true,
           },
         },
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
+          },
+        },
       },
     });
     const editedMap = new Map(editedMatters.map((m) => [m.docketwiseId, m]));
 
-    // 5. Sort matters by updated_at DESC (most recent first)
-    const sortedMatters = matters.sort((a, b) => {
+    // Sort matters by date
+    const sortedMatters = mattersWithDetails.sort((a, b) => {
       const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
       const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
       return dateB - dateA;
     });
 
-    // 6. Map matters with reference data resolution
+    // Map matters with reference data
     const mappedMatters: MappedMatter[] = sortedMatters.map((matter) => {
       const edited = editedMap.get(matter.id);
 
@@ -423,23 +464,39 @@ export async function fetchMattersRealtime(
       const closedAt = matter.closed_at ? new Date(matter.closed_at) : null;
       const priorityDate = matter.priority_date ? new Date(matter.priority_date) : null;
 
-      // Use edited data if available, otherwise use mapped data
+      // Use edited data if available
       const now = new Date();
       return {
         id: edited?.id || `dw-${matter.id}`,
         docketwiseId: matter.id,
+        docketwiseCreatedAt,
+        docketwiseUpdatedAt,
         title: edited?.title || matter.title,
         description: edited?.description || matter.description || null,
-        clientName: edited?.clientName || clientName,
-        clientId: edited?.clientId || matter.client_id || null,
-        assignees: edited?.assignees || assigneesStr,
-        docketwiseUserIds: JSON.stringify(userIds),
         matterType: edited?.matterType || matterTypeName,
         matterTypeId: matterTypeId,
         status: edited?.status || statusName,
         statusId: edited?.statusId || matter.workflow_stage_id || matter.matter_status_id || null,
         statusForFiling: edited?.statusForFiling || statusForFiling,
         statusForFilingId: edited?.statusForFilingId || (typeof matter.status === "object" && matter.status ? matter.status.id : null),
+        clientName: edited?.clientName || clientName,
+        clientId: edited?.clientId || matter.client_id || null,
+        teamId: edited?.teamId || matter.attorney_id || null,
+        assignee: edited?.assignee ? {
+          id: edited.assignee.docketwiseId,
+          name: edited.assignee.fullName || edited.assignee.email,
+          email: edited.assignee.email,
+          firstName: edited.assignee.firstName,
+          lastName: edited.assignee.lastName,
+          fullName: edited.assignee.fullName || edited.assignee.email,
+          teamType: edited.assignee.teamType,
+          title: edited.assignee.title,
+          isActive: edited.assignee.isActive,
+        } : null,
+        assignees: edited?.assignees || assigneesStr,
+        docketwiseUserIds: JSON.stringify(userIds),
+        openedAt,
+        closedAt,
         assignedDate: edited?.assignedDate || null,
         estimatedDeadline: edited?.estimatedDeadline || null,
         actualDeadline: edited?.actualDeadline || null,
@@ -448,10 +505,6 @@ export async function fetchMattersRealtime(
         customNotes: edited?.customNotes || null,
         lastSyncedAt: edited?.lastSyncedAt || now,
         isStale: edited?.isStale || false,
-        docketwiseCreatedAt,
-        docketwiseUpdatedAt,
-        openedAt,
-        closedAt,
         archived: matter.archived,
         priorityDate,
         isEdited: !!edited,
@@ -464,10 +517,11 @@ export async function fetchMattersRealtime(
         userId,
         createdAt: edited?.createdAt || now,
         updatedAt: edited?.updatedAt || now,
+        calculatedDeadline: null, // Will be calculated in the UI
+        isPastEstimatedDeadline: false, // Will be calculated in the UI
+        notes: null, // Will be fetched separately if needed
       };
     });
-
-    console.log(`[MATTERS-FETCH] Mapped ${mappedMatters.length} matters for page ${page}`);
 
     return {
       data: mappedMatters,
@@ -476,7 +530,6 @@ export async function fetchMattersRealtime(
       perPage,
     };
   } catch (error) {
-    console.error("[MATTERS-FETCH] Error fetching matters:", error);
     throw error;
   }
 }
@@ -485,7 +538,6 @@ export async function fetchMattersRealtime(
  * Fetch a single matter detail (for editing or viewing)
  */
 export async function fetchMatterDetail(docketwiseId: number, userId: string) {
-  console.log(`[MATTERS-FETCH] Fetching detail for matter ${docketwiseId}`);
 
   try {
     const token = await getDocketwiseToken();
@@ -513,7 +565,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
 
     const matter = (await response.json()) as DocketwiseMatter;
 
-    // Check if edited locally with editedByUser relation
+    // Check if edited locally
     const edited = await prisma.matters.findFirst({
       where: {
         docketwiseId: matter.id,
@@ -526,6 +578,18 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
             email: true,
           },
         },
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
+          },
+        },
       },
     });
 
@@ -535,7 +599,12 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
     const { name: matterTypeName, id: matterTypeId } = resolveMatterType(matter, typeMap);
     const statusName = resolveStatus(matter, statusMap);
 
-    const now = new Date();
+    const docketwiseCreatedAt = matter.created_at ? new Date(matter.created_at) : null;
+    const docketwiseUpdatedAt = matter.updated_at ? new Date(matter.updated_at) : null;
+    const openedAt = matter.opened_at ? new Date(matter.opened_at) : null;
+    const closedAt = matter.closed_at ? new Date(matter.closed_at) : null;
+    const priorityDate = matter.priority_date ? new Date(matter.priority_date) : null;
+
     const mapped: MappedMatter = {
       id: edited?.id || `dw-${matter.id}`,
       docketwiseId: matter.id,
@@ -543,6 +612,18 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       description: edited?.description || matter.description || null,
       clientName: edited?.clientName || clientName,
       clientId: edited?.clientId || matter.client_id || null,
+      teamId: edited?.teamId || matter.attorney_id || null,
+      assignee: edited?.assignee ? {
+        id: edited.assignee.docketwiseId,
+        name: edited.assignee.fullName || edited.assignee.email,
+        email: edited.assignee.email,
+        firstName: edited.assignee.firstName,
+        lastName: edited.assignee.lastName,
+        fullName: edited.assignee.fullName || edited.assignee.email,
+        teamType: edited.assignee.teamType,
+        title: edited.assignee.title,
+        isActive: edited.assignee.isActive,
+      } : null,
       assignees: edited?.assignees || assigneesStr,
       docketwiseUserIds: JSON.stringify(userIds),
       matterType: edited?.matterType || matterTypeName,
@@ -557,14 +638,14 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       billingStatus: edited?.billingStatus || null,
       totalHours: edited?.totalHours || null,
       customNotes: edited?.customNotes || null,
-      lastSyncedAt: edited?.lastSyncedAt || now,
+      lastSyncedAt: edited?.lastSyncedAt || new Date(),
       isStale: edited?.isStale || false,
-      docketwiseCreatedAt: matter.created_at ? new Date(matter.created_at) : null,
-      docketwiseUpdatedAt: matter.updated_at ? new Date(matter.updated_at) : null,
-      openedAt: matter.opened_at ? new Date(matter.opened_at) : null,
-      closedAt: matter.closed_at ? new Date(matter.closed_at) : null,
+      docketwiseCreatedAt,
+      docketwiseUpdatedAt,
+      openedAt,
+      closedAt,
       archived: matter.archived,
-      priorityDate: matter.priority_date ? new Date(matter.priority_date) : null,
+      priorityDate,
       isEdited: !!edited,
       editedBy: edited?.editedBy || null,
       editedAt: edited?.editedAt || null,
@@ -573,14 +654,15 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
         email: edited.editedByUser.email,
       } : null,
       userId,
-      createdAt: edited?.createdAt || now,
-      updatedAt: edited?.updatedAt || now,
+      createdAt: edited?.createdAt || new Date(),
+      updatedAt: edited?.updatedAt || new Date(),
+      calculatedDeadline: null, // Will be calculated in the UI
+      isPastEstimatedDeadline: false, // Will be calculated in the UI
       notes: matter.notes || null,
     };
 
     return mapped;
-} catch (error) {
-  console.error("[MATTER-DETAIL] Error fetching matter:", error);
-  throw error;
-}
+  } catch (error) {
+    throw error;
+  }
 }

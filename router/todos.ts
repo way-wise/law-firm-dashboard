@@ -1,6 +1,6 @@
 import { authorized } from "@/lib/orpc";
 import { getPaginationQuery } from "@/lib/pagination";
-import prisma from "@/lib/prisma";
+import prisma, { Prisma } from "@/lib/prisma";
 import { paginated } from "@/schema/paginationSchema";
 import {
   todoFilterSchema,
@@ -23,11 +23,27 @@ export const getTodos = authorized
   .handler(async ({ input, context }) => {
     const { skip, take, page, limit } = getPaginationQuery(input);
 
+    // Build where clause
+    const where: Prisma.todosWhereInput = {
+      userId: context.user.id,
+    };
+
+    // Add search filter
+    if (input.search) {
+      where.OR = [
+        { title: { contains: input.search, mode: 'insensitive' } },
+        { description: { contains: input.search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Add status filter
+    if (input.status) {
+      where.status = input.status;
+    }
+
     const [todos, total] = await prisma.$transaction([
       prisma.todos.findMany({
-        where: {
-          userId: context.user.id,
-        },
+        where,
         skip,
         take,
         orderBy: {
@@ -35,9 +51,7 @@ export const getTodos = authorized
         },
       }),
       prisma.todos.count({
-        where: {
-          userId: context.user.id,
-        },
+        where,
       }),
     ]);
 

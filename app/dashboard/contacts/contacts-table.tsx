@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import type { ContactSchemaType, AddressSchemaType, DocketwisePaginationSchemaType } from "@/schema/contactSchema";
 import { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
@@ -22,11 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Building2, Eye, Pencil, Plus, Trash, User } from "lucide-react";
+import { ArrowLeft, Building2, Eye, Pencil, Plus, Search, Trash, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "@bprogress/next";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useDebounceCallback } from "usehooks-ts";
 import { DocketwiseConnectionCard } from "@/components/docketwise-connection-card";
 
 const getContactName = (contact: ContactSchemaType) => {
@@ -66,13 +68,14 @@ const ContactsTable = ({ contacts }: ContactsTableProps) => {
   const searchParams = useSearchParams();
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ContactSchemaType | null>(null);
+  const [searchValue, setSearchValue] = useState(searchParams.get("search") || "");
 
   const handleView = (contact: ContactSchemaType) => {
     setSelectedContact(contact);
     setOpenViewDialog(true);
   };
 
-  const handleFilterChange = (key: string, value: string) => {
+  const handleFilterChange = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== "all") {
       params.set(key, value);
@@ -81,8 +84,17 @@ const ContactsTable = ({ contacts }: ContactsTableProps) => {
     }
     params.delete("page");
     router.push(`?${params.toString()}`);
-  };
+  }, [searchParams, router]);
 
+  // Debounced search callback
+  const debouncedSearch = useDebounceCallback(
+    (value: string) => {
+      handleFilterChange("search", value);
+    },
+    300
+  );
+
+  
   const columns: ColumnDef<ContactSchemaType>[] = [
     {
       header: "Contact",
@@ -238,6 +250,20 @@ const ContactsTable = ({ contacts }: ContactsTableProps) => {
         <div className="rounded-xl border bg-card pb-6">
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-4 p-6">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground size-4" />
+              <Input
+                type="search"
+                placeholder="Search contacts..."
+                value={searchValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchValue(value);
+                  debouncedSearch(value);
+                }}
+                className="pl-9"
+              />
+            </div>
             <Select
               value={searchParams.get("type") || "all"}
               onValueChange={(value) => handleFilterChange("type", value)}

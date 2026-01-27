@@ -130,7 +130,6 @@ const TeamTable = ({ team }: TeamTableProps) => {
             variant="ghost"
             size="icon"
             onClick={() => {
-              console.log("Edit team member:", row.original.id);
             }}
             title="Edit"
           >
@@ -140,7 +139,6 @@ const TeamTable = ({ team }: TeamTableProps) => {
             variant="ghost"
             size="icon"
             onClick={() => {
-              console.log("Delete team member:", row.original.id);
             }}
             title="Delete"
             className="text-destructive hover:text-destructive"

@@ -54,6 +54,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { useDebounceCallback } from "usehooks-ts";
 import { Controller, useForm } from "react-hook-form";
 import {
   LuEllipsisVertical,
@@ -71,9 +72,21 @@ const TodosTable = ({ todos }: { todos: PaginatedData<TodoSchemaType> }) => {
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [selectedTodo, setSelectedTodo] = useState<TodoSchemaType | null>(null);
+  const [searchValue, setSearchValue] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = new URLSearchParams(searchParams);
+
+  // Debounced search
+  const debouncedSearch = useDebounceCallback((value: string) => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    if (value) {
+      newParams.set("search", value);
+    } else {
+      newParams.delete("search");
+    }
+    router.push(`?${newParams.toString()}`);
+  }, 300);
 
   // Todo creation form
   const createForm = useForm({
@@ -288,7 +301,15 @@ const TodosTable = ({ todos }: { todos: PaginatedData<TodoSchemaType> }) => {
             <InputGroupAddon>
               <LuSearch />
             </InputGroupAddon>
-            <InputGroupInput type="search" placeholder="Search..." />
+            <InputGroupInput 
+                type="search" 
+                placeholder="Search todos..."
+                value={searchValue}
+                onChange={(e) => {
+                  setSearchValue(e.target.value);
+                  debouncedSearch(e.target.value);
+                }}
+              />
           </InputGroup>
         </div>
         <DataTable
