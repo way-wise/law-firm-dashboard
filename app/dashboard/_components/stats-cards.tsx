@@ -2,7 +2,6 @@
 
 import { Card } from "@/components/ui/card";
 import {
-  Calendar,
   CheckCircle2,
   FileText,
   TrendingUp,
@@ -10,15 +9,15 @@ import {
   Activity,
 } from "lucide-react";
 
-interface DashboardStats {
+export interface DashboardStats {
   totalContacts: number;
-  activeContacts: number;
+  totalMatters: number;
   totalMatterTypes: number;
   teamMembers: number;
-  avgDaysOpen: number;
-  contactsThisMonth: number;
+  categories: number;
   activeTeamMembers: number;
   matterTypesWithWorkflow: number;
+  editedMatters: number;
 }
 
 interface StatsCardsProps {
@@ -36,37 +35,19 @@ const statsConfig = [
     iconColor: "text-blue-500",
   },
   {
-    key: "activeContacts" as const,
-    label: "Active Clients",
-    icon: CheckCircle2,
-    chartType: "dots" as const,
-    chartColor: "#10b981",
-    iconBg: "bg-emerald-500/10",
-    iconColor: "text-emerald-500",
-  },
-  {
-    key: "contactsThisMonth" as const,
-    label: "New This Month",
-    icon: TrendingUp,
-    chartType: "area" as const,
-    chartColor: "#10b981",
-    iconBg: "bg-emerald-500/10",
-    iconColor: "text-emerald-500",
+    key: "totalMatters" as const,
+    label: "Synced Matters",
+    icon: FileText,
+    chartType: "bar" as const,
+    chartColor: "#8b5cf6",
+    iconBg: "bg-purple-500/10",
+    iconColor: "text-purple-500",
   },
   {
     key: "totalMatterTypes" as const,
     label: "Matter Types",
     icon: FileText,
     chartType: "dots" as const,
-    chartColor: "#8b5cf6",
-    iconBg: "bg-purple-500/10",
-    iconColor: "text-purple-500",
-  },
-  {
-    key: "matterTypesWithWorkflow" as const,
-    label: "With Workflow",
-    icon: Activity,
-    chartType: "indicator" as const,
     chartColor: "#8b5cf6",
     iconBg: "bg-purple-500/10",
     iconColor: "text-purple-500",
@@ -81,8 +62,17 @@ const statsConfig = [
     iconColor: "text-blue-500",
   },
   {
+    key: "categories" as const,
+    label: "Categories",
+    icon: Activity,
+    chartType: "dots" as const,
+    chartColor: "#10b981",
+    iconBg: "bg-emerald-500/10",
+    iconColor: "text-emerald-500",
+  },
+  {
     key: "activeTeamMembers" as const,
-    label: "Active Members",
+    label: "Active Team",
     icon: CheckCircle2,
     chartType: "dots" as const,
     chartColor: "#10b981",
@@ -90,15 +80,22 @@ const statsConfig = [
     iconColor: "text-emerald-500",
   },
   {
-    key: "avgDaysOpen" as const,
-    label: "Avg Days Open",
-    icon: Calendar,
-    chartType: "gauge" as const,
-    chartColor: "#6b7280",
-    iconBg: "bg-gray-500/10",
-    iconColor: "text-gray-500",
-    isDays: true,
-    targetValue: 90,
+    key: "matterTypesWithWorkflow" as const,
+    label: "With Workflow",
+    icon: Activity,
+    chartType: "indicator" as const,
+    chartColor: "#8b5cf6",
+    iconBg: "bg-purple-500/10",
+    iconColor: "text-purple-500",
+  },
+  {
+    key: "editedMatters" as const,
+    label: "Custom Edits",
+    icon: TrendingUp,
+    chartType: "area" as const,
+    chartColor: "#f59e0b",
+    iconBg: "bg-amber-500/10",
+    iconColor: "text-amber-500",
   },
 ];
 
@@ -176,45 +173,6 @@ function IndicatorChart({ value, color }: { value: number; color: string }) {
   );
 }
 
-function GaugeChart({ value, target, color }: { value: number; target: number; color: string }) {
-  const percentage = Math.min((value / target) * 100, 100);
-  const isGood = value <= target;
-  
-  return (
-    <div className="flex items-center gap-3">
-      <div className="relative w-10 h-10">
-        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="4"
-            className="text-muted"
-          />
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            fill="none"
-            stroke={isGood ? "#10b981" : color}
-            strokeWidth="4"
-            strokeDasharray={`${percentage * 0.88} 88`}
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-      <div className="text-xs text-muted-foreground">
-        <p>Target: {target}d</p>
-        <p className={isGood ? "text-emerald-500" : "text-amber-500"}>
-          {isGood ? "On track" : "Attention"}
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export function StatsCards({ stats }: StatsCardsProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -234,21 +192,11 @@ export function StatsCards({ stats }: StatsCardsProps) {
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold">
-                  {config.isDays ? (
-                    <>{value} days</>
-                  ) : (
-                    value.toLocaleString()
-                  )}
-                </p>
+                <p className="text-2xl font-bold">{value.toLocaleString()}</p>
               </div>
               
               {/* Chart based on type */}
               <div className="mt-auto">
-                {config.chartType === "gauge" && config.targetValue && (
-                  <GaugeChart value={value} target={config.targetValue} color={config.chartColor} />
-                )}
-                
                 {config.chartType === "dots" && (
                   <DotsChart value={value} color={config.chartColor} />
                 )}

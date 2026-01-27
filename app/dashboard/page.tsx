@@ -3,22 +3,26 @@ import { client } from "@/lib/orpc/client";
 import { StatsCards } from "./_components/stats-cards";
 import { ParalegalKPI } from "./_components/paralegal-kpi";
 import { RecentMattersTable } from "./_components/recent-matters-table";
+import { MatterStatusChart } from "./_components/matter-status-chart";
+import { MatterTypeChart } from "./_components/matter-type-chart";
 
 const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC
-  const [stats, assigneeStats, recentMatters] = await Promise.all([
+  const [stats, assigneeStats, recentMatters, statusDistribution, typeDistribution] = await Promise.all([
     client.dashboard.getStats({}).catch(() => ({
       totalContacts: 0,
-      activeContacts: 0,
+      totalMatters: 0,
       totalMatterTypes: 0,
       teamMembers: 0,
-      avgDaysOpen: 0,
-      contactsThisMonth: 0,
+      categories: 0,
       activeTeamMembers: 0,
       matterTypesWithWorkflow: 0,
+      editedMatters: 0,
     })),
     client.dashboard.getAssigneeStats({}).catch(() => []),
     client.dashboard.getRecentMatters({ limit: 15 }).catch(() => []),
+    client.dashboard.getStatusDistribution({}).catch(() => []),
+    client.dashboard.getTypeDistribution({}).catch(() => []),
   ]);
 
   return (
@@ -31,6 +35,12 @@ const DashboardOverviewPage = async () => {
 
       {/* Stats Cards */}
       <StatsCards stats={stats} />
+
+      {/* Matter Distribution Charts */}
+      <MatterStatusChart statusData={statusDistribution} />
+      
+      {/* Matter Type Chart */}
+      <MatterTypeChart typeData={typeDistribution} />
 
       {/* Paralegal KPI Section with charts and leaderboard */}
       <ParalegalKPI assigneeStats={assigneeStats} />

@@ -1,5 +1,5 @@
 import { authorized } from "@/lib/orpc";
-import prisma from "@/lib/prisma";
+import prisma, { Prisma } from "@/lib/prisma";
 import { getOrSetCache, invalidateCache, CACHE_KEYS } from "@/lib/redis";
 import {
   matterFilterSchema,
@@ -8,7 +8,7 @@ import {
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
-import { fetchMattersRealtime, fetchMatterDetail } from "@/lib/services/docketwise-matters";
+import { fetchMatterDetail } from "@/lib/services/docketwise-matters";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -41,11 +41,57 @@ export const getCustomMatters = authorized
     const cacheKey = `${CACHE_KEYS.MATTERS_LIST}:${context.user.id}:${filterKey}`;
 
     return getOrSetCache(cacheKey, async () => {
-      // Fetch matters directly from Docketwise API with real-time data
-      const result = await fetchMattersRealtime({
-        page,
-        perPage,
+      // Fetch matters from LOCAL DATABASE (synced data)
+      const where: Prisma.mattersWhereInput = {
         userId: context.user.id,
+      };
+
+      // Search filter
+      if (input.search) {
+        where.OR = [
+          { title: { contains: input.search, mode: "insensitive" } },
+          { clientName: { contains: input.search, mode: "insensitive" } },
+        ];
+      }
+
+      // Billing status filter
+      if (input.billingStatus) {
+        where.billingStatus = input.billingStatus;
+      }
+
+      // Assignees filter
+      if (input.assignees) {
+        where.assignees = { contains: input.assignees, mode: "insensitive" };
+      }
+
+      // Has deadline filter
+      if (input.hasDeadline !== undefined) {
+        if (input.hasDeadline) {
+          where.estimatedDeadline = { not: null };
+        } else {
+          where.estimatedDeadline = null;
+        }
+      }
+
+      // Stale filter
+      if (input.isStale !== undefined) {
+        where.isStale = input.isStale;
+      }
+
+      // Count total matching records
+      const total = await prisma.matters.count({ where });
+
+      // Fetch paginated results
+      const matters = await prisma.matters.findMany({
+        where,
+        orderBy: { docketwiseUpdatedAt: "desc" },
+        skip: (page - 1) * perPage,
+        take: perPage,
+        include: {
+          editedByUser: {
+            select: { name: true, email: true },
+          },
+        },
       });
 
       // Load matter types for deadline calculation
@@ -63,40 +109,8 @@ export const getCustomMatters = authorized
         }
       }
 
-      // Apply client-side filters and calculate deadlines
-      const filteredMatters = result.data.filter((matter) => {
-        // Search filter
-        if (input.search) {
-          const searchLower = input.search.toLowerCase();
-          const matchTitle = matter.title?.toLowerCase().includes(searchLower);
-          const matchClient = matter.clientName?.toLowerCase().includes(searchLower);
-          if (!matchTitle && !matchClient) return false;
-        }
-
-        // Billing status filter
-        if (input.billingStatus && matter.isEdited) {
-          // Only apply billing filter to edited matters (stored in DB)
-          const editedMatter = result.data.find(m => m.docketwiseId === matter.docketwiseId && m.isEdited);
-          if (!editedMatter) return false;
-        }
-
-        // Assignees filter
-        if (input.assignees) {
-          const assigneesLower = input.assignees.toLowerCase();
-          if (!matter.assignees?.toLowerCase().includes(assigneesLower)) return false;
-        }
-
-        // Has deadline filter
-        if (input.hasDeadline !== undefined) {
-          if (input.hasDeadline && !matter.estimatedDeadline) return false;
-          if (!input.hasDeadline && matter.estimatedDeadline) return false;
-        }
-
-        return true;
-      });
-
       // Calculate dynamic deadline for each matter
-      const mattersWithDeadlines = filteredMatters.map((matter) => {
+      const mattersWithDeadlines = matters.map((matter) => {
         let calculatedDeadline: Date | null = null;
         let isPastEstimatedDeadline = false;
         
@@ -126,20 +140,51 @@ export const getCustomMatters = authorized
         }
         
         return {
-          ...matter,
+          id: matter.id,
+          docketwiseId: matter.docketwiseId,
+          title: matter.title,
+          description: matter.description,
+          clientName: matter.clientName,
+          clientId: matter.clientId,
+          assignees: matter.assignees,
+          docketwiseUserIds: matter.docketwiseUserIds,
+          matterType: matter.matterType,
+          matterTypeId: matter.matterTypeId,
+          status: matter.status,
+          statusId: matter.statusId,
+          statusForFiling: matter.statusForFiling,
+          statusForFilingId: matter.statusForFilingId,
+          billingStatus: matter.billingStatus,
           estimatedDeadline,
           calculatedDeadline,
           isPastEstimatedDeadline,
+          assignedDate: matter.assignedDate,
+          actualDeadline: matter.actualDeadline,
+          totalHours: matter.totalHours,
+          customNotes: matter.customNotes,
+          isEdited: matter.isEdited,
+          editedBy: matter.editedBy,
+          editedByUser: matter.editedByUser,
+          editedAt: matter.editedAt,
+          docketwiseCreatedAt: matter.docketwiseCreatedAt,
+          docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+          openedAt: matter.openedAt,
+          closedAt: matter.closedAt,
+          lastSyncedAt: matter.lastSyncedAt,
+          isStale: matter.isStale,
+          createdAt: matter.createdAt,
+          updatedAt: matter.updatedAt,
+          userId: matter.userId,
         };
       });
 
       return {
         data: mattersWithDeadlines,
         pagination: {
-          total: result.total,
-          page: result.page,
-          perPage: result.perPage,
-          totalPages: Math.ceil(result.total / result.perPage),
+          total,
+          page,
+          perPage,
+          totalPages: Math.ceil(total / perPage),
         },
       };
     }, MATTERS_CACHE_TTL);

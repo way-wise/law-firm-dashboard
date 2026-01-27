@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, Pencil, Plus, Trash } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, RefreshCw, Trash } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
@@ -93,6 +93,7 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteMatter, setDeleteMatter] = useState<MatterType | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const paralegalOptions = workers
     .filter((w) => w.isActive && w.teamType === "inHouse")
@@ -115,6 +116,24 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
   const handleDeleteClick = (matter: MatterType) => {
     setDeleteMatter(matter);
     setDeleteDialogOpen(true);
+  };
+
+  const handleSyncMatters = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await client.sync.syncMatters({});
+      if (result.success) {
+        toast.success(result.message || "Matters synced successfully");
+        router.refresh();
+      } else {
+        toast.error(result.message || "Failed to sync matters");
+      }
+    } catch (error) {
+      toast.error("Failed to sync matters");
+      console.error(error);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -465,7 +484,18 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
                 </>
               )}
             </div>
-            <LastSyncIndicator />
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncMatters}
+                disabled={isSyncing}
+              >
+                <RefreshCw className={`${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing..." : "Sync Matters"}
+              </Button>
+              <LastSyncIndicator />
+            </div>
           </div>
 
           {/* Table */}

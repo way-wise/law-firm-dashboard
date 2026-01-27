@@ -28,6 +28,7 @@ import {
   triggerManualSync,
   updateSyncSettings,
 } from "./syncSettings";
+import { syncMattersRoute } from "./mattersSync";
 import {
   getTeamMemberById,
   getTeamMembers,
@@ -68,6 +69,8 @@ import {
   getDashboardStats,
   getAssigneeStats,
   getRecentMatters,
+  getMatterStatusDistribution,
+  getMatterTypeDistribution,
 } from "./dashboard";
 import { generateReport } from "./reports";
 
@@ -114,6 +117,7 @@ export const router = {
     getSettings: getSyncSettings,
     updateSettings: updateSyncSettings,
     trigger: triggerManualSync,
+    syncMatters: syncMattersRoute,
   },
   notifications: {
     list: getNotifications,
@@ -150,6 +154,8 @@ export const router = {
     getStats: getDashboardStats,
     getAssigneeStats: getAssigneeStats,
     getRecentMatters: getRecentMatters,
+    getStatusDistribution: getMatterStatusDistribution,
+    getTypeDistribution: getMatterTypeDistribution,
   },
   reports: {
     generate: generateReport,

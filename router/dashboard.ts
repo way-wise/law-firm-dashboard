@@ -4,16 +4,16 @@ import { getOrSetCache, DEFAULT_CACHE_TTL, CACHE_KEYS } from "@/lib/redis";
 import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import * as z from "zod";
 
-// Dashboard stats schema - focuses on contacts, team, and configuration data
+// Dashboard stats schema - focuses on real, countable local data
 const dashboardStatsSchema = z.object({
   totalContacts: z.number(),
-  activeContacts: z.number(),
+  totalMatters: z.number(),
   totalMatterTypes: z.number(),
   teamMembers: z.number(),
-  avgDaysOpen: z.number(),
-  contactsThisMonth: z.number(),
+  categories: z.number(),
   activeTeamMembers: z.number(),
   matterTypesWithWorkflow: z.number(),
+  editedMatters: z.number(),
 });
 
 // Assignee stats schema
@@ -47,6 +47,18 @@ const recentMatterSchema = z.object({
   updatedAt: z.date(),
 });
 
+// Matter status distribution schema
+const statusDistributionSchema = z.object({
+  status: z.string(),
+  count: z.number(),
+});
+
+// Matter type distribution schema
+const typeDistributionSchema = z.object({
+  type: z.string(),
+  count: z.number(),
+});
+
 // Get Dashboard Stats
 export const getDashboardStats = authorized
   .route({
@@ -60,23 +72,16 @@ export const getDashboardStats = authorized
     const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:${context.user.id}`;
     
     return getOrSetCache(cacheKey, async () => {
-      const now = new Date();
-      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-      // Count all contacts
+      // Count all synced contacts
       const totalContacts = await prisma.contacts.count();
       
-      // Count active contacts (those marked as not leads)
-      const activeContacts = await prisma.contacts.count({
-        where: { isLead: false },
+      // Count all synced matters
+      const totalMatters = await prisma.matters.count({
+        where: { userId: context.user.id },
       });
       
-      // Count contacts added this month
-      const contactsThisMonth = await prisma.contacts.count({
-        where: {
-          createdAt: { gte: thisMonthStart },
-        },
-      });
+      // Count categories
+      const categories = await prisma.categories.count();
 
       // Count matter types
       const totalMatterTypes = await prisma.matterTypes.count();
@@ -98,38 +103,23 @@ export const getDashboardStats = authorized
         where: { isActive: true },
       });
 
-      // Calculate average days matters are open (from local DB only)
-      const openMatters = await prisma.matters.findMany({
+      // Count matters with custom edits
+      const editedMatters = await prisma.matters.count({
         where: {
           userId: context.user.id,
-          closedAt: null,
-        },
-        select: {
-          docketwiseCreatedAt: true,
+          isEdited: true,
         },
       });
-      
-      let avgDaysOpen = 0;
-      if (openMatters.length > 0) {
-        const totalDays = openMatters.reduce((sum, m) => {
-          if (m.docketwiseCreatedAt) {
-            const days = Math.floor((now.getTime() - m.docketwiseCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
-            return sum + days;
-          }
-          return sum;
-        }, 0);
-        avgDaysOpen = Math.round(totalDays / openMatters.length);
-      }
 
       return {
         totalContacts,
-        activeContacts,
-        contactsThisMonth,
+        totalMatters,
         totalMatterTypes,
-        matterTypesWithWorkflow,
         teamMembers,
+        categories,
         activeTeamMembers,
-        avgDaysOpen,
+        matterTypesWithWorkflow,
+        editedMatters,
       };
     }, DEFAULT_CACHE_TTL);
   });
@@ -413,5 +403,65 @@ export const getRecentMatters = authorized
       });
 
       return mattersWithDeadlines;
+    }, DEFAULT_CACHE_TTL);
+  });
+
+// Get Matter Status Distribution
+export const getMatterStatusDistribution = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/status-distribution",
+    summary: "Get matter status distribution for charts",
+    tags: ["Dashboard"],
+  })
+  .output(z.array(statusDistributionSchema))
+  .handler(async ({ context }) => {
+    const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:status:${context.user.id}`;
+    
+    return getOrSetCache(cacheKey, async () => {
+      // Group matters by status
+      const statusGroups = await prisma.matters.groupBy({
+        by: ['status'],
+        where: {
+          userId: context.user.id,
+          status: { not: null },
+        },
+        _count: true,
+      });
+
+      return statusGroups.map(group => ({
+        status: group.status || "Unknown",
+        count: group._count,
+      }));
+    }, DEFAULT_CACHE_TTL);
+  });
+
+// Get Matter Type Distribution
+export const getMatterTypeDistribution = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/type-distribution",
+    summary: "Get matter type distribution for charts",
+    tags: ["Dashboard"],
+  })
+  .output(z.array(typeDistributionSchema))
+  .handler(async ({ context }) => {
+    const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:types:${context.user.id}`;
+    
+    return getOrSetCache(cacheKey, async () => {
+      // Group matters by type
+      const typeGroups = await prisma.matters.groupBy({
+        by: ['matterType'],
+        where: {
+          userId: context.user.id,
+          matterType: { not: null },
+        },
+        _count: true,
+      });
+
+      return typeGroups.map(group => ({
+        type: group.matterType || "Unknown",
+        count: group._count,
+      }));
     }, DEFAULT_CACHE_TTL);
   });
