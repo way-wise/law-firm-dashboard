@@ -33,6 +33,10 @@ interface AssigneeStat {
   name: string;
   email: string;
   matterCount: number;
+  completedCount: number;
+  overdueCount: number;
+  onTimeRate: number;
+  avgDaysOpen: number;
 }
 
 interface RecentMatter {

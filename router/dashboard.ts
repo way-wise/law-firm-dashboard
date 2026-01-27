@@ -21,6 +21,10 @@ const assigneeStatsSchema = z.object({
   name: z.string(),
   email: z.string(),
   matterCount: z.number(),
+  completedCount: z.number(),
+  overdueCount: z.number(),
+  onTimeRate: z.number(),
+  avgDaysOpen: z.number(),
 });
 
 // Recent matters schema for dashboard
@@ -36,6 +40,8 @@ const recentMatterSchema = z.object({
   assignees: z.string().nullable(),
   billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).nullable(),
   estimatedDeadline: z.date().nullable(),
+  calculatedDeadline: z.date().nullable().optional(),
+  isPastEstimatedDeadline: z.boolean().optional(),
   docketwiseCreatedAt: z.date().nullable(),
   updatedAt: z.date(),
 });
@@ -123,7 +129,7 @@ export const getAssigneeStats = authorized
   .route({
     method: "GET",
     path: "/dashboard/assignee-stats",
-    summary: "Get matter counts per assignee",
+    summary: "Get matter counts and KPIs per assignee",
     tags: ["Dashboard"],
   })
   .output(z.array(assigneeStatsSchema))
@@ -145,6 +151,20 @@ export const getAssigneeStats = authorized
         },
       });
 
+      // Get matter types for estimated days
+      const matterTypes = await prisma.matterTypes.findMany({
+        select: {
+          docketwiseId: true,
+          estimatedDays: true,
+        },
+      });
+      const matterTypeEstDaysMap = new Map<number, number>();
+      for (const mt of matterTypes) {
+        if (mt.estimatedDays) {
+          matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+        }
+      }
+
       // Get all matters with assignees for this user
       const matters = await prisma.matters.findMany({
         where: {
@@ -153,33 +173,145 @@ export const getAssigneeStats = authorized
         },
         select: {
           docketwiseUserIds: true,
-          assignees: true,
+          status: true,
+          closedAt: true,
+          createdAt: true,
+          docketwiseCreatedAt: true,
+          estimatedDeadline: true,
+          actualDeadline: true,
+          matterTypeId: true,
         },
       });
 
-      // Count matters per assignee
-      const assigneeCounts = new Map<number, number>();
+      // Initialize stats per assignee
+      const assigneeStats = new Map<number, {
+        total: number;
+        completed: number;
+        overdue: number;
+        onTime: number;
+        totalDaysOpen: number;
+        openCount: number;
+      }>();
+
+      // Initialize all team members with 0 stats
+      for (const member of teamMembers) {
+        assigneeStats.set(member.docketwiseId, {
+          total: 0,
+          completed: 0,
+          overdue: 0,
+          onTime: 0,
+          totalDaysOpen: 0,
+          openCount: 0,
+        });
+      }
       
+      const now = new Date();
+
       for (const matter of matters) {
         if (matter.docketwiseUserIds) {
+          let userIds: number[] = [];
           try {
-            const userIds = JSON.parse(matter.docketwiseUserIds) as number[];
-            for (const userId of userIds) {
-              assigneeCounts.set(userId, (assigneeCounts.get(userId) || 0) + 1);
-            }
+            const rawIds = JSON.parse(matter.docketwiseUserIds);
+            userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
+              .map((id: unknown) => Number(id))
+              .filter((id: number) => !isNaN(id));
           } catch {
-            // Skip if parsing fails
+            continue;
+          }
+
+          // Determine matter status
+          const isClosed = !!matter.closedAt || (matter.status || "").toLowerCase().includes("closed") || (matter.status || "").toLowerCase().includes("approved");
+          
+          // Determine deadline
+          let deadline = matter.estimatedDeadline;
+          
+          // Sanitize deadline from DB - if it's 1970, treat as null
+          if (deadline) {
+            const date = new Date(deadline);
+            if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+              deadline = null;
+            }
+          }
+
+          // If no custom deadline, try calculated
+          if (!deadline && matter.docketwiseCreatedAt && matter.matterTypeId) {
+            const createdAt = new Date(matter.docketwiseCreatedAt);
+            if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
+              const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
+              if (estDays && estDays > 0) {
+                const calculated = new Date(createdAt);
+                calculated.setDate(calculated.getDate() + estDays);
+                // Ensure calculated date is valid
+                if (calculated.getFullYear() > 1970) {
+                  deadline = calculated;
+                }
+              }
+            }
+          }
+
+          const isOverdue = !isClosed && deadline && now > deadline;
+          
+          // Determine on-time (only for completed matters)
+          // If completed and (actualDeadline <= estimated OR closedAt <= estimated)
+          let isOnTime = false;
+          if (isClosed && deadline) {
+            const completionDate = matter.actualDeadline || matter.closedAt || now;
+            isOnTime = completionDate <= deadline;
+          } else if (isClosed && !deadline) {
+            isOnTime = true; // Assume on time if no deadline
+          }
+
+          // Calculate age
+          const created = matter.docketwiseCreatedAt ? new Date(matter.docketwiseCreatedAt) : matter.createdAt;
+          const ageDays = Math.max(0, (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+
+          for (const userId of userIds) {
+            const stats = assigneeStats.get(userId);
+            if (stats) {
+              stats.total++;
+              if (isClosed) {
+                stats.completed++;
+                if (isOnTime) stats.onTime++;
+              } else {
+                if (isOverdue) stats.overdue++;
+                stats.totalDaysOpen += ageDays;
+                stats.openCount++;
+              }
+            }
           }
         }
       }
 
-      // Map team members with their matter counts
-      return teamMembers.map((member) => ({
-        id: member.docketwiseId,
-        name: member.fullName || `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email,
-        email: member.email,
-        matterCount: assigneeCounts.get(member.docketwiseId) || 0,
-      }));
+      // Map team members with their detailed stats
+      return teamMembers.map((member) => {
+        const stats = assigneeStats.get(member.docketwiseId) || {
+          total: 0,
+          completed: 0,
+          overdue: 0,
+          onTime: 0,
+          totalDaysOpen: 0,
+          openCount: 0,
+        };
+
+        const onTimeRate = stats.completed > 0 
+          ? Math.round((stats.onTime / stats.completed) * 100) 
+          : 100; // Default to 100% if no completed cases
+          
+        const avgDaysOpen = stats.openCount > 0
+          ? Math.round(stats.totalDaysOpen / stats.openCount)
+          : 0;
+
+        return {
+          id: member.docketwiseId,
+          name: member.fullName || `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email,
+          email: member.email,
+          matterCount: stats.total,
+          completedCount: stats.completed,
+          overdueCount: stats.overdue,
+          onTimeRate,
+          avgDaysOpen,
+        };
+      }).sort((a, b) => b.matterCount - a.matterCount); // Sort by workload
     }, DEFAULT_CACHE_TTL);
   });
 
@@ -199,9 +331,24 @@ export const getRecentMatters = authorized
     const cacheKey = `${CACHE_KEYS.DASHBOARD_MATTERS}:${context.user.id}:${input.limit}`;
     
     return getOrSetCache(cacheKey, async () => {
-      // Fetch matters and docketwiseUsers in parallel
-      const [matters, docketwiseUsers] = await Promise.all([
-        prisma.matters.findMany({
+      // Fetch lookup data first to reduce DB contention
+      const docketwiseUsers = await prisma.docketwiseUsers.findMany({
+        select: {
+          docketwiseId: true,
+          fullName: true,
+          email: true,
+        },
+      });
+
+      const matterTypes = await prisma.matterTypes.findMany({
+        select: {
+          docketwiseId: true,
+          estimatedDays: true,
+        },
+      });
+
+      // Fetch matters
+      const matters = await prisma.matters.findMany({
           where: {
             userId: context.user.id,
           },
@@ -225,20 +372,20 @@ export const getRecentMatters = authorized
             docketwiseCreatedAt: true,
             updatedAt: true,
           },
-        }),
-        prisma.docketwiseUsers.findMany({
-          select: {
-            docketwiseId: true,
-            fullName: true,
-            email: true,
-          },
-        }),
-      ]);
+        });
 
       // Build a map of docketwiseId -> fullName for quick lookup
       const userMap = new Map<number, string>();
       for (const user of docketwiseUsers) {
         userMap.set(user.docketwiseId, user.fullName || user.email);
+      }
+
+      // Build a map of matterTypeId -> estimatedDays for deadline calculation
+      const matterTypeEstDaysMap = new Map<number, number>();
+      for (const mt of matterTypes) {
+        if (mt.estimatedDays) {
+          matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+        }
       }
 
       // Resolve assignees for each matter
@@ -261,13 +408,47 @@ export const getRecentMatters = authorized
             // If parsing fails, leave as null
           }
         }
+
+        // Calculate dynamic estimated deadline based on matterType's estimatedDays
+        let calculatedDeadline: Date | null = null;
+        let isPastEstimatedDeadline = false;
+        
+        if (matter.docketwiseCreatedAt && matter.matterTypeId) {
+          const createdAt = new Date(matter.docketwiseCreatedAt);
+          // Validate the date is valid and not epoch (1970)
+          if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
+            const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
+            if (estDays && estDays > 0) {
+              const targetDate = new Date(createdAt);
+              targetDate.setDate(targetDate.getDate() + estDays);
+              
+              // Ensure the calculated date is also valid and not 1970
+              if (targetDate.getFullYear() > 1970) {
+                calculatedDeadline = targetDate;
+                isPastEstimatedDeadline = new Date() > calculatedDeadline;
+              }
+            }
+          }
+        }
+
+        // Sanitize estimatedDeadline from DB - if it's 1970, treat as null
+        let estimatedDeadline = matter.estimatedDeadline;
+        if (estimatedDeadline) {
+          const date = new Date(estimatedDeadline);
+          if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+            estimatedDeadline = null;
+          }
+        }
         
         // Return without docketwiseUserIds (not in schema output)
         const { docketwiseUserIds: _unused, ...rest } = matter;
         void _unused; // Suppress unused variable warning
         return {
           ...rest,
+          estimatedDeadline,
           assignees: resolvedAssignees,
+          calculatedDeadline,
+          isPastEstimatedDeadline,
         };
       });
 

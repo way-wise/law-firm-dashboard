@@ -72,8 +72,24 @@ export const getCustomMatters = authorized
         }
       }
 
-      // Fetch matters, docketwiseUsers, and matterTypes in parallel
-      const [matters, total, docketwiseUsers, matterTypes] = await Promise.all([
+      // Fetch lookup data first to reduce DB contention (avoiding Promise.all timeout issues)
+      const docketwiseUsers = await prisma.docketwiseUsers.findMany({
+        select: {
+          docketwiseId: true,
+          fullName: true,
+          email: true,
+        },
+      });
+
+      const matterTypes = await prisma.matterTypes.findMany({
+        select: {
+          docketwiseId: true,
+          estimatedDays: true,
+        },
+      });
+
+      // Fetch matters and count
+      const [matters, total] = await Promise.all([
         prisma.matters.findMany({
           where,
           skip,
@@ -89,19 +105,6 @@ export const getCustomMatters = authorized
           },
         }),
         prisma.matters.count({ where }),
-        prisma.docketwiseUsers.findMany({
-          select: {
-            docketwiseId: true,
-            fullName: true,
-            email: true,
-          },
-        }),
-        prisma.matterTypes.findMany({
-          select: {
-            docketwiseId: true,
-            estimatedDays: true,
-          },
-        }),
       ]);
 
       // Build a map of docketwiseId -> fullName for quick lookup
@@ -148,15 +151,30 @@ export const getCustomMatters = authorized
           if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
             const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
             if (estDays && estDays > 0) {
-              calculatedDeadline = new Date(createdAt);
-              calculatedDeadline.setDate(calculatedDeadline.getDate() + estDays);
-              isPastEstimatedDeadline = new Date() > calculatedDeadline;
+              const targetDate = new Date(createdAt);
+              targetDate.setDate(targetDate.getDate() + estDays);
+              
+              // Ensure the calculated date is also valid and not 1970
+              if (targetDate.getFullYear() > 1970) {
+                calculatedDeadline = targetDate;
+                isPastEstimatedDeadline = new Date() > calculatedDeadline;
+              }
             }
+          }
+        }
+
+        // Sanitize estimatedDeadline from DB - if it's 1970, treat as null
+        let estimatedDeadline = matter.estimatedDeadline;
+        if (estimatedDeadline) {
+          const date = new Date(estimatedDeadline);
+          if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+            estimatedDeadline = null;
           }
         }
         
         return {
           ...matter,
+          estimatedDeadline,
           assignees: resolvedAssignees,
           calculatedDeadline,
           isPastEstimatedDeadline,

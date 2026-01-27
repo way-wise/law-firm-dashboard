@@ -13,7 +13,6 @@ const DOCKETWISE_API_URL = process.env.DOCKETWISE_API_URL!;
 // Rate limiting helper - Docketwise allows 120 requests/minute = 2 req/sec
 // We need to be conservative to avoid 419 errors
 const RATE_LIMIT_DELAY_MS = 600; // 600ms between API calls (safe for 120/min limit)
-const DETAIL_BATCH_SIZE = 5; // Smaller batches to avoid bursts
 const MAX_RETRIES = 3; // Retry on 419 errors
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -25,21 +24,23 @@ async function fetchWithRetry(
 ): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const response = await fetch(url, options);
-    
+
     if (response.status === 419 || response.status === 429) {
       if (attempt < retries) {
         // Exponential backoff: 2s, 4s, 8s
         const backoffMs = Math.pow(2, attempt + 1) * 1000;
-        console.warn(`[SYNC] Rate limited (${response.status}), waiting ${backoffMs}ms before retry ${attempt + 1}/${retries}`);
+        console.warn(
+          `[SYNC] Rate limited (${response.status}), waiting ${backoffMs}ms before retry ${attempt + 1}/${retries}`,
+        );
         await delay(backoffMs);
         continue;
       }
     }
-    
+
     return response;
   }
-  
-  throw new Error('Max retries exceeded');
+
+  throw new Error("Max retries exceeded");
 }
 
 // Fetch individual matter details (contains user_ids, description, workflow_stage)
@@ -48,12 +49,15 @@ async function fetchMatterDetails(
   matterId: number,
 ): Promise<DocketwiseMatter | null> {
   try {
-    const response = await fetchWithRetry(`${DOCKETWISE_API_URL}/matters/${matterId}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    const response = await fetchWithRetry(
+      `${DOCKETWISE_API_URL}/matters/${matterId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       console.warn(
@@ -69,29 +73,30 @@ async function fetchMatterDetails(
   }
 }
 
-// Fetch matter details in parallel batches
+// Fetch matter details sequentially to strictly respect rate limits
 async function fetchMatterDetailsBatch(
   token: string,
   matterIds: number[],
 ): Promise<Map<number, DocketwiseMatter>> {
   const results = new Map<number, DocketwiseMatter>();
+  let completed = 0;
 
-  for (let i = 0; i < matterIds.length; i += DETAIL_BATCH_SIZE) {
-    const batch = matterIds.slice(i, i + DETAIL_BATCH_SIZE);
-    const promises = batch.map((id) => fetchMatterDetails(token, id));
-    const batchResults = await Promise.all(promises);
-
-    batchResults.forEach((detail, index) => {
-      if (detail) {
-        results.set(batch[index], detail);
-      }
-    });
-
-    // Rate limit between batches - wait longer to avoid 419
-    if (i + DETAIL_BATCH_SIZE < matterIds.length) {
-      await delay(RATE_LIMIT_DELAY_MS * DETAIL_BATCH_SIZE); // Wait proportional to batch size
-      console.log(`[SYNC] Details progress: ${Math.min(i + DETAIL_BATCH_SIZE, matterIds.length)}/${matterIds.length}`);
+  for (const id of matterIds) {
+    const detail = await fetchMatterDetails(token, id);
+    if (detail) {
+      results.set(id, detail);
     }
+    completed++;
+    
+    // Log progress periodically
+    if (completed % 5 === 0) {
+       console.log(`[SYNC] Details progress: ${completed}/${matterIds.length}`);
+    }
+
+    // Strict rate limiting: wait after EACH request
+    // 120 req/min = 2 req/sec = 500ms min interval. 
+    // Using 600ms to be safe.
+    await delay(RATE_LIMIT_DELAY_MS);
   }
 
   return results;
@@ -180,6 +185,13 @@ interface DocketwisePagination {
   total_pages: number;
 }
 
+// Matter type from /matter_types endpoint
+interface DocketwiseMatterType {
+  id: number;
+  name: string;
+  category?: string;
+}
+
 // Sync matters from Docketwise
 export async function syncMatters(userId: string) {
   console.log("[SYNC] Starting sync for user:", userId);
@@ -224,6 +236,43 @@ export async function syncMatters(userId: string) {
       console.warn("[SYNC] Failed to fetch matter_statuses:", err);
     }
 
+    // Fetch matter_types
+    try {
+      const typesResponse = await fetchWithRetry(
+        `${DOCKETWISE_API_URL}/matter_types`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      
+      if (typesResponse.ok) {
+        const types = (await typesResponse.json()) as DocketwiseMatterType[];
+        console.log(`[SYNC] Loaded ${types.length} matter types`);
+        
+        // Sync matter types to database
+        for (const type of types) {
+          await prisma.matterTypes.upsert({
+            where: { docketwiseId: type.id },
+            update: {
+              name: type.name,
+              lastSyncedAt: new Date(),
+            },
+            create: {
+              docketwiseId: type.id,
+              name: type.name,
+              lastSyncedAt: new Date(),
+            },
+          });
+        }
+        console.log(`[SYNC] Saved matter types to database`);
+      }
+    } catch (err) {
+      console.warn("[SYNC] Failed to fetch matter_types:", err);
+    }
+
     // Fetch ALL pages of users for assignee resolution
     let userMap = new Map<number, string>();
     try {
@@ -249,7 +298,9 @@ export async function syncMatters(userId: string) {
             },
           );
         } catch {
-          console.warn(`[SYNC] Failed to fetch users page ${userPage}, stopping user sync`);
+          console.warn(
+            `[SYNC] Failed to fetch users page ${userPage}, stopping user sync`,
+          );
           break;
         }
 
@@ -329,6 +380,121 @@ export async function syncMatters(userId: string) {
       console.warn("[SYNC] Failed to fetch users:", err);
     }
 
+    // --- MOVE CONTACT SYNC HERE (BEFORE MATTERS) ---
+    console.log(`[SYNC] Fetching all contacts...`);
+    try {
+      const allClients: DocketwiseContact[] = [];
+      let contactPage = 1;
+      const MAX_CONTACT_PAGES = 50; // Increased to ensure we get all contacts
+
+      while (contactPage <= MAX_CONTACT_PAGES) {
+        // Add delay between contact pages
+        if (contactPage > 1) {
+          await delay(RATE_LIMIT_DELAY_MS);
+        }
+
+        let clientsResponse: Response;
+        try {
+          clientsResponse = await fetchWithRetry(
+            `${DOCKETWISE_API_URL}/contacts?page=${contactPage}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            },
+          );
+        } catch {
+          console.warn(
+            `[SYNC] Failed to fetch contacts page ${contactPage}, stopping contact sync`,
+          );
+          break;
+        }
+
+        if (!clientsResponse.ok) break;
+
+        const pageClients =
+          (await clientsResponse.json()) as DocketwiseContact[];
+        if (pageClients.length === 0) break;
+
+        allClients.push(...pageClients);
+        console.log(
+          `[SYNC] Fetched contacts page ${contactPage}: ${pageClients.length} contacts`,
+        );
+
+        // Check pagination header
+        const contactPagination = clientsResponse.headers.get("X-Pagination");
+        if (contactPagination) {
+          try {
+            const pag = JSON.parse(contactPagination) as DocketwisePagination;
+            if (!pag.next_page) break;
+          } catch {
+            // If no pagination header or parse fails, check if we got less than 200
+            if (pageClients.length < 200) break;
+          }
+        } else if (pageClients.length < 200) {
+          break;
+        }
+
+        contactPage++;
+      }
+
+      // Save contacts to database
+      console.log(`[SYNC] Saving ${allClients.length} contacts to database...`);
+      const CONTACT_BATCH_SIZE = 50;
+      for (let i = 0; i < allClients.length; i += CONTACT_BATCH_SIZE) {
+        const batch = allClients.slice(i, i + CONTACT_BATCH_SIZE);
+        await prisma.$transaction(
+          batch.map((contact) =>
+            prisma.contacts.upsert({
+              where: { docketwiseId: contact.id },
+              update: {
+                firstName: contact.first_name,
+                lastName: contact.last_name,
+                middleName: contact.middle_name,
+                companyName: contact.company_name,
+                email: contact.email,
+                phone: contact.phone,
+                type: contact.type,
+                isLead: contact.lead || false,
+                streetAddress: contact.street_address,
+                apartmentNumber: contact.apartment_number,
+                city: contact.city,
+                state: contact.state,
+                province: contact.province,
+                zipCode: contact.zip_code,
+                country: contact.country,
+                lastSyncedAt: new Date(),
+              },
+              create: {
+                docketwiseId: contact.id,
+                firstName: contact.first_name,
+                lastName: contact.last_name,
+                middleName: contact.middle_name,
+                companyName: contact.company_name,
+                email: contact.email,
+                phone: contact.phone,
+                type: contact.type,
+                isLead: contact.lead || false,
+                streetAddress: contact.street_address,
+                apartmentNumber: contact.apartment_number,
+                city: contact.city,
+                state: contact.state,
+                province: contact.province,
+                zipCode: contact.zip_code,
+                country: contact.country,
+                lastSyncedAt: new Date(),
+              },
+            }),
+          ),
+        );
+      }
+      console.log(`[SYNC] Contacts sync completed.`);
+    } catch (err) {
+      console.warn("[SYNC] Failed to sync contacts:", err);
+    }
+    // -----------------------------------------------
+
     // Build clientMap from local contacts table to resolve client names
     let clientMap = new Map<number, string>();
     try {
@@ -348,9 +514,14 @@ export async function syncMatters(userId: string) {
             "Unknown Client",
         ]),
       );
-      console.log(`[SYNC] Loaded ${clientMap.size} contacts for client name resolution`);
+      console.log(
+        `[SYNC] Loaded ${clientMap.size} contacts for client name resolution`,
+      );
     } catch (err) {
-      console.warn("[SYNC] Failed to load contacts for client resolution:", err);
+      console.warn(
+        "[SYNC] Failed to load contacts for client resolution:",
+        err,
+      );
     }
 
     console.log("[SYNC] Fetching matters...");
@@ -413,10 +584,63 @@ export async function syncMatters(userId: string) {
         );
       }
 
-      // Fetch detailed data for each matter (contains user_ids, description, workflow_stage)
-      console.log(`[SYNC] Fetching details for ${matters.length} matters...`);
-      const matterIds = matters.map((m) => m.id);
-      const matterDetails = await fetchMatterDetailsBatch(token, matterIds);
+      // Get all docketwise IDs from this page
+      const docketwiseIds = matters.map((m) => m.id);
+
+      // Batch fetch existing matters to check update status
+      const existingMatters = await prisma.matters.findMany({
+        where: { docketwiseId: { in: docketwiseIds } },
+        select: {
+          id: true,
+          docketwiseId: true,
+          docketwiseUpdatedAt: true,
+          isEdited: true,
+          status: true,
+          statusForFiling: true,
+          title: true,
+          clientName: true,
+          matterType: true,
+          assignees: true,
+          estimatedDeadline: true,
+        },
+      });
+      
+      const existingMattersMap = new Map(
+        existingMatters.map((m) => [m.docketwiseId, m]),
+      );
+
+      // Determine which matters need detailed fetching
+      // We need details if:
+      // 1. Matter is new (not in DB)
+      // 2. Matter has been updated remotely (API updated_at > DB docketwiseUpdatedAt)
+      // 3. Matter is missing critical fields that come from details (assignees, status)
+      const idsToFetchDetails = matters.filter(m => {
+        const existing = existingMattersMap.get(m.id);
+        if (!existing) return true; // New matter
+        
+        // Check for updates
+        if (m.updated_at && existing.docketwiseUpdatedAt) {
+          const apiUpdate = new Date(m.updated_at).getTime();
+          const dbUpdate = existing.docketwiseUpdatedAt.getTime();
+          if (apiUpdate > dbUpdate) return true;
+        }
+        
+        // Check for missing critical data (self-healing)
+        if (
+          !existing.assignees ||
+          !existing.status ||
+          !existing.matterType ||
+          !existing.clientName
+        )
+          return true;
+        
+        return false;
+      }).map(m => m.id);
+
+      console.log(`[SYNC] Fetching details for ${idsToFetchDetails.length}/${matters.length} matters (new/updated/incomplete)...`);
+      
+      // Fetch detailed data only for identified matters
+      const matterDetails = await fetchMatterDetailsBatch(token, idsToFetchDetails);
       console.log(`[SYNC] Got details for ${matterDetails.size} matters`);
 
       // Log first detail to see structure
@@ -426,43 +650,8 @@ export async function syncMatters(userId: string) {
           "[SYNC] Sample matter detail:",
           JSON.stringify(firstDetail, null, 2),
         );
-        console.log("[SYNC] Detail keys:", Object.keys(firstDetail || {}));
-        console.log("[SYNC] attorney_id:", firstDetail?.attorney_id);
-        console.log("[SYNC] user_ids:", firstDetail?.user_ids);
-        console.log("[SYNC] userMap size:", userMap.size);
-        console.log("[SYNC] userMap sample entries:", Array.from(userMap.entries()).slice(0, 5));
-        console.log("[SYNC] workflow_stage:", firstDetail?.workflow_stage);
-        console.log(
-          "[SYNC] workflow_stage_id:",
-          firstDetail?.workflow_stage_id,
-        );
-        console.log("[SYNC] matter_status_id:", firstDetail?.matter_status_id);
-        console.log("[SYNC] matter_type:", firstDetail?.matter_type);
-        console.log("[SYNC] status:", firstDetail?.status);
       }
 
-      // Get all docketwise IDs from this page
-      const docketwiseIds = matters.map((m) => m.id);
-
-      // Batch fetch existing matters to check isEdited status and current status for change detection
-      const existingMatters = await prisma.matters.findMany({
-        where: { docketwiseId: { in: docketwiseIds } },
-        select: {
-          id: true,
-          docketwiseId: true,
-          isEdited: true,
-          status: true, // Workflow stage (renamed)
-          statusForFiling: true, // Status for filing (renamed)
-          title: true,
-          clientName: true,
-          matterType: true,
-          assignees: true, // Assignees (renamed from paralegalAssigned)
-          estimatedDeadline: true,
-        },
-      });
-      const existingMattersMap = new Map(
-        existingMatters.map((m) => [m.docketwiseId, m]),
-      );
       const editedMatterIds = new Set(
         existingMatters.filter((m) => m.isEdited).map((m) => m.docketwiseId),
       );
@@ -490,8 +679,10 @@ export async function syncMatters(userId: string) {
           async (tx) => {
             for (const listMatter of batch) {
               try {
-                // Use detailed data if available, fallback to list data
+                // Use detailed data if available
                 const detailedMatter = matterDetails.get(listMatter.id);
+                // Use detailed matter if available, otherwise use list matter
+                // But merge list matter properties to ensure we have basics if detail is partial (unlikely)
                 const docketwiseMatter = detailedMatter || listMatter;
                 const hasDetailData = !!detailedMatter;
 
@@ -546,37 +737,63 @@ export async function syncMatters(userId: string) {
                 // Assignee resolution: use user_ids array (from detailed response) or fall back to attorney_id
                 // user_ids contains all assigned users, attorney_id is the primary attorney
                 // Ensure IDs are numbers for proper Map lookup
-                const userIds = (docketwiseMatter.user_ids || []).map(id => Number(id)).filter(id => !isNaN(id));
-                const attorneyId = docketwiseMatter.attorney_id ? Number(docketwiseMatter.attorney_id) : null;
-                
+                const userIds = (docketwiseMatter.user_ids || [])
+                  .map((id) => Number(id))
+                  .filter((id) => !isNaN(id));
+                const attorneyId = docketwiseMatter.attorney_id
+                  ? Number(docketwiseMatter.attorney_id)
+                  : null;
+
                 // Combine user_ids and attorney_id, removing duplicates
-                const allAssigneeIds = [...new Set([
-                  ...userIds,
-                  ...(attorneyId && !isNaN(attorneyId) ? [attorneyId] : [])
-                ])];
-                
-                const userIdsStr = allAssigneeIds.length > 0 ? JSON.stringify(allAssigneeIds) : null;
-                
+                const allAssigneeIds = [
+                  ...new Set([
+                    ...userIds,
+                    ...(attorneyId && !isNaN(attorneyId) ? [attorneyId] : []),
+                  ]),
+                ];
+
+                const userIdsStr =
+                  allAssigneeIds.length > 0
+                    ? JSON.stringify(allAssigneeIds)
+                    : null;
+
                 // Resolve assignee names from all IDs using userMap
                 const assigneeNames = allAssigneeIds
-                  .map(id => userMap.get(id))
+                  .map((id) => userMap.get(id))
                   .filter((name): name is string => !!name);
-                const assigneesStr = assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
-                
+                const assigneesStr =
+                  assigneeNames.length > 0 ? assigneeNames.join(", ") : null;
+
                 // Debug log for matters with assignee issues
                 if (allAssigneeIds.length > 0 || !hasDetailData) {
-                  console.log(`[SYNC DEBUG] Matter ${docketwiseMatter.id} "${docketwiseMatter.title}":`);
+                  console.log(
+                    `[SYNC DEBUG] Matter ${docketwiseMatter.id} "${docketwiseMatter.title}":`,
+                  );
                   console.log(`  - hasDetailData: ${hasDetailData}`);
-                  console.log(`  - user_ids from API:`, docketwiseMatter.user_ids);
-                  console.log(`  - attorney_id from API:`, docketwiseMatter.attorney_id);
+                  console.log(
+                    `  - user_ids from API:`,
+                    docketwiseMatter.user_ids,
+                  );
+                  console.log(
+                    `  - attorney_id from API:`,
+                    docketwiseMatter.attorney_id,
+                  );
                   console.log(`  - allAssigneeIds:`, allAssigneeIds);
                   console.log(`  - resolved names:`, assigneesStr);
                   if (allAssigneeIds.length > 0 && !assigneesStr) {
-                    console.log(`  - WARNING: IDs found but no names resolved!`);
-                    console.log(`  - userMap has these IDs:`, allAssigneeIds.map(id => ({ id, inMap: userMap.has(id) })));
+                    console.log(
+                      `  - WARNING: IDs found but no names resolved!`,
+                    );
+                    console.log(
+                      `  - userMap has these IDs:`,
+                      allAssigneeIds.map((id) => ({
+                        id,
+                        inMap: userMap.has(id),
+                      })),
+                    );
                   }
                 }
-                
+
                 // Resolve workflow stage name (this is the "Status" column in Docketwise)
                 let workflowStageName =
                   docketwiseMatter.workflow_stage?.name || null;
@@ -614,24 +831,54 @@ export async function syncMatters(userId: string) {
                     null;
                 }
                 // Fallback: resolve from clientMap using client_id
-                if (!resolvedClientName && docketwiseMatter.client_id && clientMap.has(docketwiseMatter.client_id)) {
-                  resolvedClientName = clientMap.get(docketwiseMatter.client_id) || null;
+                if (
+                  !resolvedClientName &&
+                  docketwiseMatter.client_id &&
+                  clientMap.has(docketwiseMatter.client_id)
+                ) {
+                  resolvedClientName =
+                    clientMap.get(docketwiseMatter.client_id) || null;
                 }
+
+                // Check if resolution failed (we have IDs but no resolved names)
+                const assigneesResolutionFailed = allAssigneeIds.length > 0 && !assigneesStr;
+                
+                // Check if specific data fields are missing from the source object (undefined keys)
+                // This protects against partial API responses or schema changes
+                const isUserIdsMissing = docketwiseMatter.user_ids === undefined;
+                // Check both object and legacy string field
+                const isMatterTypeMissing = docketwiseMatter.matter_type === undefined && docketwiseMatter.type === undefined;
+                
+                // Check if status resolution failed (we have an ID but no resolved name)
+                const statusId = docketwiseMatter.workflow_stage?.id || 
+                                 docketwiseMatter.workflow_stage_id || 
+                                 docketwiseMatter.matter_status_id;
+                const statusResolutionFailed = !!statusId && !workflowStageName;
 
                 // IMPORTANT: When we don't have detail data, preserve existing values for fields that require details
                 // This prevents overwriting good data with null when detail fetch fails due to rate limiting
                 const shouldPreserveExisting = !hasDetailData && existingMatter;
-                
-                // Determine final values - preserve existing if no detail data available
-                const finalAssignees = shouldPreserveExisting && existingMatter.assignees 
-                  ? existingMatter.assignees 
-                  : assigneesStr;
-                const finalStatus = shouldPreserveExisting && existingMatter.status
-                  ? existingMatter.status
-                  : workflowStageName;
-                const finalMatterType = shouldPreserveExisting && existingMatter.matterType
-                  ? existingMatter.matterType
-                  : (docketwiseMatter.matter_type?.name || docketwiseMatter.type || null);
+
+                // Determine final values - preserve existing if:
+                // 1. No detail data available (shouldPreserveExisting)
+                // 2. We have detail data, but failed to resolve the name (ResolutionFailed)
+                // 3. The source data is missing the field entirely (isMissing)
+                const finalAssignees =
+                  ((shouldPreserveExisting || assigneesResolutionFailed || isUserIdsMissing) && existingMatter?.assignees)
+                    ? existingMatter.assignees
+                    : assigneesStr;
+
+                const finalStatus =
+                  ((shouldPreserveExisting || statusResolutionFailed) && existingMatter?.status)
+                    ? existingMatter.status
+                    : workflowStageName;
+
+                const finalMatterType =
+                  ((shouldPreserveExisting || isMatterTypeMissing) && existingMatter?.matterType)
+                    ? existingMatter.matterType
+                    : docketwiseMatter.matter_type?.name ||
+                      docketwiseMatter.type ||
+                      null;
 
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
@@ -754,170 +1001,7 @@ export async function syncMatters(userId: string) {
       }
 
       if (page === 1) {
-        const clientIds = [
-          ...new Set(
-            matters.filter((m) => m.client_id).map((m) => m.client_id),
-          ),
-        ];
-        if (clientIds.length > 0) {
-          console.log(`[SYNC] Fetching all clients (with pagination)...`);
-          try {
-            // Fetch all pages of contacts
-            const allClients: DocketwiseContact[] = [];
-            let contactPage = 1;
-            const MAX_CONTACT_PAGES = 10;
-
-            while (contactPage <= MAX_CONTACT_PAGES) {
-              // Add delay between contact pages
-              if (contactPage > 1) {
-                await delay(RATE_LIMIT_DELAY_MS);
-              }
-
-              let clientsResponse: Response;
-              try {
-                clientsResponse = await fetchWithRetry(
-                  `${DOCKETWISE_API_URL}/contacts?page=${contactPage}`,
-                  {
-                    headers: {
-                      Authorization: `Bearer ${token}`,
-                      "Content-Type": "application/json",
-                    },
-                  },
-                );
-              } catch {
-                console.warn(`[SYNC] Failed to fetch contacts page ${contactPage}, stopping contact sync`);
-                break;
-              }
-
-              if (!clientsResponse.ok) break;
-
-              const pageClients =
-                (await clientsResponse.json()) as DocketwiseContact[];
-              if (pageClients.length === 0) break;
-
-              allClients.push(...pageClients);
-              console.log(
-                `[SYNC] Fetched contacts page ${contactPage}: ${pageClients.length} contacts`,
-              );
-
-              // Check pagination header
-              const contactPagination =
-                clientsResponse.headers.get("X-Pagination");
-              if (contactPagination) {
-                try {
-                  const pag = JSON.parse(
-                    contactPagination,
-                  ) as DocketwisePagination;
-                  if (!pag.next_page) break;
-                } catch {
-                  // If no pagination header or parse fails, check if we got less than 200
-                  if (pageClients.length < 200) break;
-                }
-              } else if (pageClients.length < 200) {
-                break;
-              }
-
-              contactPage++;
-            }
-
-            console.log(`[SYNC] Total contacts fetched: ${allClients.length}`);
-
-            // Save contacts to database
-            if (allClients.length > 0) {
-              let contactsSaved = 0;
-              for (const contact of allClients) {
-                await prisma.contacts.upsert({
-                  where: { docketwiseId: contact.id },
-                  update: {
-                    firstName: contact.first_name || null,
-                    lastName: contact.last_name || null,
-                    middleName: contact.middle_name || null,
-                    companyName: contact.company_name || null,
-                    email: contact.email || null,
-                    phone: contact.phone || null,
-                    type: contact.type || null,
-                    isLead: contact.lead ?? false,
-                    streetAddress: contact.street_address || null,
-                    apartmentNumber: contact.apartment_number || null,
-                    city: contact.city || null,
-                    state: contact.state || null,
-                    province: contact.province || null,
-                    zipCode: contact.zip_code || null,
-                    country: contact.country || null,
-                    lastSyncedAt: new Date(),
-                  },
-                  create: {
-                    docketwiseId: contact.id,
-                    firstName: contact.first_name || null,
-                    lastName: contact.last_name || null,
-                    middleName: contact.middle_name || null,
-                    companyName: contact.company_name || null,
-                    email: contact.email || null,
-                    phone: contact.phone || null,
-                    type: contact.type || null,
-                    isLead: contact.lead ?? false,
-                    streetAddress: contact.street_address || null,
-                    apartmentNumber: contact.apartment_number || null,
-                    city: contact.city || null,
-                    state: contact.state || null,
-                    province: contact.province || null,
-                    zipCode: contact.zip_code || null,
-                    country: contact.country || null,
-                    lastSyncedAt: new Date(),
-                  },
-                });
-                contactsSaved++;
-              }
-              console.log(`[SYNC] Saved ${contactsSaved} contacts to database`);
-
-              const clientMap = new Map<number, string | null>(
-                allClients.map((c) => [
-                  c.id,
-                  // For Institution contacts, use company_name; for Person contacts, use first/last name
-                  c.company_name?.trim() ||
-                    `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
-                    null,
-                ]),
-              );
-
-              const mattersToUpdate = await prisma.matters.findMany({
-                where: {
-                  userId,
-                  clientId: { not: null },
-                  isEdited: false,
-                },
-                select: { id: true, clientId: true },
-              });
-
-              const mattersByClient = new Map<number, string[]>();
-              for (const matter of mattersToUpdate) {
-                if (matter.clientId && clientMap.has(matter.clientId)) {
-                  if (!mattersByClient.has(matter.clientId)) {
-                    mattersByClient.set(matter.clientId, []);
-                  }
-                  mattersByClient.get(matter.clientId)!.push(matter.id);
-                }
-              }
-
-              let updatedCount = 0;
-              for (const [clientId, matterIds] of mattersByClient) {
-                const clientName = clientMap.get(clientId);
-                if (clientName) {
-                  await prisma.matters.updateMany({
-                    where: { id: { in: matterIds } },
-                    data: { clientName },
-                  });
-                  updatedCount += matterIds.length;
-                }
-              }
-              console.log(
-                `[SYNC] Updated client names for ${updatedCount} matters`,
-              );
-            }
-          } catch (clientError) {
-            console.error(`[SYNC] Error fetching clients:`, clientError);
-          }
-        }
+        // Redundant contact sync removed - already performed at start of sync
       }
 
       const hasNextPage = pagination

@@ -34,23 +34,28 @@ interface AssigneeStat {
   name: string;
   email: string;
   matterCount: number;
+  completedCount: number;
+  overdueCount: number;
+  onTimeRate: number;
+  avgDaysOpen: number;
 }
 
 interface ParalegalKPIProps {
   assigneeStats?: AssigneeStat[];
 }
 
-// Generate performance data from assignee stats
-function generatePerformanceData(assigneeStats: AssigneeStat[]) {
-  return assigneeStats.map((member, index) => {
-    // Use actual matter count, generate other metrics based on ID for consistency
-    const seed = member.id || index;
-    const cases = member.matterCount;
-    const onTime = 70 + (seed % 25);
-    const avgDays = 10 + (seed % 15);
-    const status = onTime >= 85 ? "good" : onTime >= 70 ? "watch" : "alert";
+// Map backend stats to display format
+function mapPerformanceData(assigneeStats: AssigneeStat[]) {
+  return assigneeStats.map((member) => {
+    const status = member.onTimeRate >= 85 ? "good" : member.onTimeRate >= 70 ? "watch" : "alert";
     
-    return { name: member.name, cases, onTime, avgDays, status };
+    return { 
+      name: member.name, 
+      cases: member.matterCount, 
+      onTime: member.onTimeRate, 
+      avgDays: member.avgDaysOpen, 
+      status 
+    };
   });
 }
 
@@ -100,17 +105,17 @@ function RankIcon({ rank }: { rank: number }) {
 export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
   // Use real assignee data if available, otherwise use fallback
   const paralegalData = assigneeStats.length > 0 
-    ? generatePerformanceData(assigneeStats)
+    ? mapPerformanceData(assigneeStats)
     : fallbackParalegalData;
 
-  const totalCases = paralegalData.reduce((sum, p) => sum + p.cases, 0);
+  const totalCases = paralegalData.reduce((sum: number, p: { cases: number }) => sum + p.cases, 0);
   const avgOnTimeRate = paralegalData.length > 0 
-    ? Math.round(paralegalData.reduce((sum, p) => sum + p.onTime, 0) / paralegalData.length)
+    ? Math.round(paralegalData.reduce((sum: number, p: { onTime: number }) => sum + p.onTime, 0) / paralegalData.length)
     : 0;
   const avgDaysToFile = paralegalData.length > 0 
-    ? (paralegalData.reduce((sum, p) => sum + p.avgDays, 0) / paralegalData.length).toFixed(1)
+    ? (paralegalData.reduce((sum: number, p: { avgDays: number }) => sum + p.avgDays, 0) / paralegalData.length).toFixed(1)
     : "0";
-  const attentionNeeded = paralegalData.filter(p => p.status !== "good").length;
+  const attentionNeeded = paralegalData.filter((p: { status: string }) => p.status !== "good").length;
 
   return (
     <div className="space-y-6">
