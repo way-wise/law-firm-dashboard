@@ -20,3 +20,16 @@ export const formatDateTime = (date: string | Date) => {
 
   return format(new Date(date), "dd MMM yyyy - hh:mm a");
 };
+
+// Get initials from name (first 2 letters)
+export const getInitials = (name: string): string => {
+  if (!name) return "??";
+  
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) {
+    // First letter of first two words
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  // If only one word, take first 2 characters
+  return name.slice(0, 2).toUpperCase();
+};

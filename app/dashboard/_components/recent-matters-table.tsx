@@ -3,10 +3,12 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { MatterViewDrawer } from "@/components/matter-view-drawer";
 import { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceToNow } from "date-fns";
 import { Eye } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 interface RecentMatter {
   id: string;
@@ -52,6 +54,14 @@ const formatBillingStatus = (status: string | null) => {
 };
 
 export function RecentMattersTable({ matters }: RecentMattersTableProps) {
+  const [viewMatterDocketwiseId, setViewMatterDocketwiseId] = useState<number | null>(null);
+  const [viewDrawerOpen, setViewDrawerOpen] = useState(false);
+
+  const handleView = (docketwiseId: number) => {
+    setViewMatterDocketwiseId(docketwiseId);
+    setViewDrawerOpen(true);
+  };
+
   const columns: ColumnDef<RecentMatter>[] = [
     {
       header: "Title",
@@ -72,9 +82,21 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
     {
       header: "Type",
       accessorKey: "matterType",
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.matterType || "-"}</p>
-      ),
+      cell: ({ row }) => {
+        const type = row.original.matterType;
+        const status = row.original.status || row.original.statusForFiling;
+        
+        if (!type) return <p className="text-sm text-muted-foreground">-</p>;
+        
+        return (
+          <div className="flex flex-col">
+            <p className="text-sm font-medium">{type}</p>
+            {status && (
+              <p className="text-xs text-muted-foreground">{status}</p>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: "Assignee",
@@ -84,13 +106,21 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
       ),
     },
     {
-      header: "Status",
-      accessorKey: "status",
+      header: "Started At",
+      accessorKey: "docketwiseCreatedAt",
       cell: ({ row }) => {
-        // Show workflow stage (status) if available, otherwise fall back to statusForFiling
-        const displayStatus = row.original.status || row.original.statusForFiling;
+        const createdAt = row.original.docketwiseCreatedAt;
+        if (!createdAt) return <p className="text-sm text-muted-foreground">-</p>;
+        
+        const date = new Date(createdAt);
+        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+        
         return (
-          <Badge variant="outline">{displayStatus || "No Status"}</Badge>
+          <p className="text-sm text-muted-foreground">
+            {date.toLocaleDateString()}
+          </p>
         );
       },
     },
@@ -166,15 +196,12 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
     {
       id: "actions",
       cell: ({ row }) => (
-        <Button
-          variant="ghost"
+        <Button 
+          variant="ghost" 
           size="icon"
-          asChild
-          title="View in Matters"
+          onClick={() => handleView(row.original.docketwiseId)}
         >
-          <Link href={`/dashboard/matters?search=${encodeURIComponent(row.original.title)}`}>
-            <Eye className="size-4" />
-          </Link>
+          <Eye className="size-4" />
         </Button>
       ),
     },
@@ -198,6 +225,13 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
           emptyMessage="No matters found. Sync data to see recent matters."
         />
       </div>
+
+      {/* View Drawer */}
+      <MatterViewDrawer
+        docketwiseId={viewMatterDocketwiseId}
+        open={viewDrawerOpen}
+        onOpenChange={setViewDrawerOpen}
+      />
     </div>
   );
 }

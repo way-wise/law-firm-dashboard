@@ -63,6 +63,14 @@ interface DocketwiseMatter {
     company_name?: string | null;
   } | null;
   priority_date?: string | null;
+  notes?: Array<{
+    id: number;
+    title: string | null;
+    content: string;
+    created_at: string;
+    updated_at: string;
+    created_by_name?: string | null;
+  }> | null;
 }
 
 interface DocketwisePagination {
@@ -114,6 +122,14 @@ interface MappedMatter {
   userId: string;
   createdAt: Date;
   updatedAt: Date;
+  notes?: Array<{
+    id: number;
+    title: string | null;
+    content: string;
+    created_at: string;
+    updated_at: string;
+    created_by_name?: string | null;
+  }> | null;
 }
 
 /**
@@ -375,8 +391,15 @@ export async function fetchMattersRealtime(
     });
     const editedMap = new Map(editedMatters.map((m) => [m.docketwiseId, m]));
 
-    // 5. Map matters with reference data resolution
-    const mappedMatters: MappedMatter[] = matters.map((matter) => {
+    // 5. Sort matters by updated_at DESC (most recent first)
+    const sortedMatters = matters.sort((a, b) => {
+      const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    // 6. Map matters with reference data resolution
+    const mappedMatters: MappedMatter[] = sortedMatters.map((matter) => {
       const edited = editedMap.get(matter.id);
 
       // Resolve IDs to names
@@ -552,11 +575,12 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       userId,
       createdAt: edited?.createdAt || now,
       updatedAt: edited?.updatedAt || now,
+      notes: matter.notes || null,
     };
 
     return mapped;
-  } catch (error) {
-    console.error("[MATTERS-FETCH] Error fetching matter detail:", error);
-    throw error;
-  }
+} catch (error) {
+  console.error("[MATTER-DETAIL] Error fetching matter:", error);
+  throw error;
+}
 }

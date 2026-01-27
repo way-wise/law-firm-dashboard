@@ -73,12 +73,23 @@ interface DocketwiseMatterStatus {
   name: string;
   duration: number | null;
   sort: number | null;
+  created_at?: string;
+  updated_at?: string;
+  firm_id?: number;
+  task_list_id?: number | null;
+  message_template_id?: number | null;
+  move_to_next_status?: boolean;
+  cc_message_to_matter_applicant?: boolean;
 }
 
 interface DocketwiseMatterType {
   id: number;
   name: string;
   category?: string;
+  matter_statuses?: DocketwiseMatterStatus[];
+  created_at?: string;
+  updated_at?: string;
+  firm_id?: number;
 }
 
 interface DocketwisePagination {
@@ -181,9 +192,9 @@ export async function syncReferenceData(userId: string) {
         const types = (await typesResponse.json()) as DocketwiseMatterType[];
         console.log(`[REFERENCE-SYNC] Loaded ${types.length} matter types`);
 
-        // Save to database
+        // Save types and their statuses to database
         for (const type of types) {
-          await prisma.matterTypes.upsert({
+          const savedType = await prisma.matterTypes.upsert({
             where: { docketwiseId: type.id },
             update: {
               name: type.name,
@@ -195,6 +206,34 @@ export async function syncReferenceData(userId: string) {
               lastSyncedAt: new Date(),
             },
           });
+
+          // Save statuses linked to this matter type
+          if (type.matter_statuses && type.matter_statuses.length > 0) {
+            console.log(`[REFERENCE-SYNC] Type "${type.name}" has ${type.matter_statuses.length} statuses`);
+            for (const status of type.matter_statuses) {
+              await prisma.matterStatuses.upsert({
+                where: { docketwiseId: status.id },
+                update: {
+                  name: status.name,
+                  duration: status.duration,
+                  sort: status.sort,
+                  matterTypeId: savedType.id,
+                  lastSyncedAt: new Date(),
+                },
+                create: {
+                  docketwiseId: status.id,
+                  name: status.name,
+                  duration: status.duration,
+                  sort: status.sort,
+                  matterTypeId: savedType.id,
+                  lastSyncedAt: new Date(),
+                },
+              });
+            }
+            console.log(`[REFERENCE-SYNC] Synced ${type.matter_statuses.length} statuses for type "${type.name}"`);
+          } else {
+            console.log(`[REFERENCE-SYNC] Type "${type.name}" has NO statuses in API response`);
+          }
         }
 
         // Cache type map in Redis (24h TTL)
@@ -369,53 +408,57 @@ export async function syncReferenceData(userId: string) {
 
       console.log(`[REFERENCE-SYNC] Loaded ${allContacts.length} total contacts`);
 
-      // Save to database in batches
+      // Save to database in batches with increased timeout
       const CONTACT_BATCH_SIZE = 50;
       for (let i = 0; i < allContacts.length; i += CONTACT_BATCH_SIZE) {
         const batch = allContacts.slice(i, i + CONTACT_BATCH_SIZE);
         await prisma.$transaction(
-          batch.map((contact) =>
-            prisma.contacts.upsert({
-              where: { docketwiseId: contact.id },
-              update: {
-                firstName: contact.first_name,
-                lastName: contact.last_name,
-                middleName: contact.middle_name,
-                companyName: contact.company_name,
-                email: contact.email,
-                phone: contact.phone,
-                type: contact.type,
-                isLead: contact.lead || false,
-                streetAddress: contact.street_address,
-                apartmentNumber: contact.apartment_number,
-                city: contact.city,
-                state: contact.state,
-                province: contact.province,
-                zipCode: contact.zip_code,
-                country: contact.country,
-                lastSyncedAt: new Date(),
-              },
-              create: {
-                docketwiseId: contact.id,
-                firstName: contact.first_name,
-                lastName: contact.last_name,
-                middleName: contact.middle_name,
-                companyName: contact.company_name,
-                email: contact.email,
-                phone: contact.phone,
-                type: contact.type,
-                isLead: contact.lead || false,
-                streetAddress: contact.street_address,
-                apartmentNumber: contact.apartment_number,
-                city: contact.city,
-                state: contact.state,
-                province: contact.province,
-                zipCode: contact.zip_code,
-                country: contact.country,
-                lastSyncedAt: new Date(),
-              },
-            }),
-          ),
+          async (tx) => {
+            const promises = batch.map((contact) =>
+              tx.contacts.upsert({
+                where: { docketwiseId: contact.id },
+                update: {
+                  firstName: contact.first_name,
+                  lastName: contact.last_name,
+                  middleName: contact.middle_name,
+                  companyName: contact.company_name,
+                  email: contact.email,
+                  phone: contact.phone,
+                  type: contact.type,
+                  isLead: contact.lead || false,
+                  streetAddress: contact.street_address,
+                  apartmentNumber: contact.apartment_number,
+                  city: contact.city,
+                  state: contact.state,
+                  province: contact.province,
+                  zipCode: contact.zip_code,
+                  country: contact.country,
+                  lastSyncedAt: new Date(),
+                },
+                create: {
+                  docketwiseId: contact.id,
+                  firstName: contact.first_name,
+                  lastName: contact.last_name,
+                  middleName: contact.middle_name,
+                  companyName: contact.company_name,
+                  email: contact.email,
+                  phone: contact.phone,
+                  type: contact.type,
+                  isLead: contact.lead || false,
+                  streetAddress: contact.street_address,
+                  apartmentNumber: contact.apartment_number,
+                  city: contact.city,
+                  state: contact.state,
+                  province: contact.province,
+                  zipCode: contact.zip_code,
+                  country: contact.country,
+                  lastSyncedAt: new Date(),
+                },
+              })
+            );
+            await Promise.all(promises);
+          },
+          { timeout: 30000 }
         );
       }
 

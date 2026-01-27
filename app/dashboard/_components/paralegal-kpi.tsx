@@ -9,12 +9,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  Legend,
 } from "recharts";
 import { 
   TrendingUp, 
@@ -27,6 +21,7 @@ import {
   Medal,
   Award,
 } from "lucide-react";
+import { getInitials } from "@/lib/utils";
 
 // Assignee stat from dashboard API
 interface AssigneeStat {
@@ -62,22 +57,6 @@ function mapPerformanceData(assigneeStats: AssigneeStat[]) {
 // Fallback data when no assignees available
 const fallbackParalegalData = [
   { name: "No team data", cases: 0, onTime: 0, avgDays: 0, status: "watch" as const },
-];
-
-const trendData = [
-  { day: "Mon", filings: 4, onTime: 3 },
-  { day: "Tue", filings: 6, onTime: 5 },
-  { day: "Wed", filings: 3, onTime: 3 },
-  { day: "Thu", filings: 8, onTime: 7 },
-  { day: "Fri", filings: 5, onTime: 4 },
-  { day: "Sat", filings: 2, onTime: 2 },
-  { day: "Sun", filings: 1, onTime: 1 },
-];
-
-const statusDistribution = [
-  { name: "On Time", value: 78, color: "#10B981" },
-  { name: "At Risk", value: 15, color: "#F59E0B" },
-  { name: "Late", value: 7, color: "#EF4444" },
 ];
 
 // Status icon component
@@ -241,88 +220,7 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
           </div>
         </Card>
 
-        {/* Filing Status Distribution - Better Layout */}
-        <Card className="p-5">
-          <h4 className="font-medium mb-4">Filing Status Distribution</h4>
-          <div className="h-[220px] min-h-[220px] flex items-center">
-            <div className="flex-1 h-full min-w-[200px]">
-              <ResponsiveContainer width="100%" height="100%" minWidth={150} minHeight={200}>
-                <PieChart>
-                  <Pie
-                    data={statusDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {statusDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    formatter={(value) => [`${value}%`, ""]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex flex-col gap-3 min-w-[120px]">
-              {statusDistribution.map((item) => (
-                <div key={item.name} className="flex items-center gap-2">
-                  <div className="size-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="text-sm whitespace-nowrap">{item.name}</span>
-                  <span className="text-sm font-semibold ml-auto">{item.value}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
       </div>
-
-      {/* Weekly Trend */}
-      <Card className="p-5">
-        <h4 className="font-medium mb-4">Weekly Filing Trend</h4>
-        <div className="h-[200px] min-h-[200px]">
-          <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={180}>
-            <LineChart data={trendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-              <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line
-                type="monotone"
-                dataKey="filings"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                dot={{ fill: "#3B82F6", strokeWidth: 0, r: 4 }}
-                name="Total Filings"
-              />
-              <Line
-                type="monotone"
-                dataKey="onTime"
-                stroke="#10B981"
-                strokeWidth={2}
-                dot={{ fill: "#10B981", strokeWidth: 0, r: 4 }}
-                name="On Time"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
 
       {/* Assignee Overview */}
       <Card className="p-5">
@@ -353,7 +251,7 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
                       <div className="flex items-center gap-3">
                         <Avatar className="size-8">
                           <AvatarFallback className="text-xs">
-                            {paralegal.name.split(" ").map(n => n[0]).join("")}
+                            {getInitials(paralegal.name)}
                           </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{paralegal.name}</span>

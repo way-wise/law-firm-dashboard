@@ -8,17 +8,17 @@ const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC
   const [stats, assigneeStats, recentMatters] = await Promise.all([
     client.dashboard.getStats({}).catch(() => ({
-      totalCases: 0,
-      drafting: 0,
-      rfes: 0,
-      filed: 0,
-      activeUnfiled: 0,
-      monthlyGrowth: 0,
+      totalContacts: 0,
+      activeContacts: 0,
+      totalMatterTypes: 0,
       teamMembers: 0,
-      avgResolutionTime: 0,
+      avgDaysOpen: 0,
+      contactsThisMonth: 0,
+      activeTeamMembers: 0,
+      matterTypesWithWorkflow: 0,
     })),
     client.dashboard.getAssigneeStats({}).catch(() => []),
-    client.dashboard.getRecentMatters({ limit: 10 }).catch(() => []),
+    client.dashboard.getRecentMatters({ limit: 15 }).catch(() => []),
   ]);
 
   return (

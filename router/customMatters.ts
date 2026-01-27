@@ -8,7 +8,7 @@ import {
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
-import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
+import { fetchMattersRealtime, fetchMatterDetail } from "@/lib/services/docketwise-matters";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -145,7 +145,7 @@ export const getCustomMatters = authorized
     }, MATTERS_CACHE_TTL);
   });
 
-// Get Custom Matter by ID
+// Get Custom Matter by ID (from local DB)
 export const getCustomMatterById = authorized
   .route({
     method: "GET",
@@ -175,6 +175,28 @@ export const getCustomMatterById = authorized
     }
 
     return matter;
+  });
+
+// Get Matter Detail by Docketwise ID (fetch from API on-demand)
+export const getMatterDetailByDocketwiseId = authorized
+  .route({
+    method: "GET",
+    path: "/custom-matters/detail/{docketwiseId}",
+    summary: "Get matter detail from Docketwise API on-demand",
+    tags: ["Custom Matters"],
+  })
+  .input(z.object({ docketwiseId: z.number() }))
+  .output(matterSchema)
+  .handler(async ({ input, context }) => {
+    try {
+      const matter = await fetchMatterDetail(input.docketwiseId, context.user.id);
+      return matter;
+    } catch (error) {
+      console.error("[MATTER-DETAIL] Error fetching matter:", error);
+      throw new ORPCError("NOT_FOUND", {
+        message: error instanceof Error ? error.message : "Matter not found",
+      });
+    }
   });
 
 // Update Custom Matter Fields

@@ -2,10 +2,8 @@
 
 import { Card } from "@/components/ui/card";
 import {
-  AlertTriangle,
   Calendar,
   CheckCircle2,
-  Clock,
   FileText,
   TrendingUp,
   Users,
@@ -13,14 +11,14 @@ import {
 } from "lucide-react";
 
 interface DashboardStats {
-  totalCases: number;
-  drafting: number;
-  rfes: number;
-  filed: number;
-  activeUnfiled: number;
-  monthlyGrowth: number;
+  totalContacts: number;
+  activeContacts: number;
+  totalMatterTypes: number;
   teamMembers: number;
-  avgResolutionTime: number;
+  avgDaysOpen: number;
+  contactsThisMonth: number;
+  activeTeamMembers: number;
+  matterTypesWithWorkflow: number;
 }
 
 interface StatsCardsProps {
@@ -29,65 +27,53 @@ interface StatsCardsProps {
 
 const statsConfig = [
   {
-    key: "totalCases" as const,
-    label: "Total Cases",
-    icon: FileText,
+    key: "totalContacts" as const,
+    label: "Total Contacts",
+    icon: Users,
     chartType: "bar" as const,
     chartColor: "#3b82f6",
     iconBg: "bg-blue-500/10",
     iconColor: "text-blue-500",
   },
   {
-    key: "activeUnfiled" as const,
-    label: "Active Cases",
-    icon: Clock,
-    chartType: "progress" as const,
-    chartColor: "#3b82f6",
-    iconBg: "bg-blue-500/10",
-    iconColor: "text-blue-500",
-    maxValue: 10,
-  },
-  {
-    key: "drafting" as const,
-    label: "In Progress",
-    icon: Activity,
-    chartType: "progress" as const,
-    chartColor: "#3b82f6",
-    iconBg: "bg-blue-500/10",
-    iconColor: "text-blue-500",
-    maxValue: 10,
-  },
-  {
-    key: "rfes" as const,
-    label: "RFEs Pending",
-    icon: AlertTriangle,
-    chartType: "indicator" as const,
-    chartColor: "#f59e0b",
-    iconBg: "bg-amber-500/10",
-    iconColor: "text-amber-500",
-  },
-  {
-    key: "filed" as const,
-    label: "Cases Filed",
+    key: "activeContacts" as const,
+    label: "Active Clients",
     icon: CheckCircle2,
-    chartType: "area" as const,
+    chartType: "dots" as const,
     chartColor: "#10b981",
     iconBg: "bg-emerald-500/10",
     iconColor: "text-emerald-500",
   },
   {
-    key: "monthlyGrowth" as const,
-    label: "Monthly Growth",
+    key: "contactsThisMonth" as const,
+    label: "New This Month",
     icon: TrendingUp,
     chartType: "area" as const,
     chartColor: "#10b981",
     iconBg: "bg-emerald-500/10",
     iconColor: "text-emerald-500",
-    isPercentage: true,
+  },
+  {
+    key: "totalMatterTypes" as const,
+    label: "Matter Types",
+    icon: FileText,
+    chartType: "dots" as const,
+    chartColor: "#8b5cf6",
+    iconBg: "bg-purple-500/10",
+    iconColor: "text-purple-500",
+  },
+  {
+    key: "matterTypesWithWorkflow" as const,
+    label: "With Workflow",
+    icon: Activity,
+    chartType: "indicator" as const,
+    chartColor: "#8b5cf6",
+    iconBg: "bg-purple-500/10",
+    iconColor: "text-purple-500",
   },
   {
     key: "teamMembers" as const,
-    label: "Team Members",
+    label: "Total Team",
     icon: Users,
     chartType: "dots" as const,
     chartColor: "#3b82f6",
@@ -95,15 +81,24 @@ const statsConfig = [
     iconColor: "text-blue-500",
   },
   {
-    key: "avgResolutionTime" as const,
-    label: "Avg Resolution",
+    key: "activeTeamMembers" as const,
+    label: "Active Members",
+    icon: CheckCircle2,
+    chartType: "dots" as const,
+    chartColor: "#10b981",
+    iconBg: "bg-emerald-500/10",
+    iconColor: "text-emerald-500",
+  },
+  {
+    key: "avgDaysOpen" as const,
+    label: "Avg Days Open",
     icon: Calendar,
     chartType: "gauge" as const,
     chartColor: "#6b7280",
     iconBg: "bg-gray-500/10",
     iconColor: "text-gray-500",
     isDays: true,
-    targetValue: 60,
+    targetValue: 90,
   },
 ];
 
@@ -181,25 +176,6 @@ function IndicatorChart({ value, color }: { value: number; color: string }) {
   );
 }
 
-function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const percentage = Math.min((value / max) * 100, 100);
-  
-  return (
-    <div className="w-full">
-      <div className="flex justify-between text-xs text-muted-foreground mb-1">
-        <span>{value} of {max}</span>
-        <span>{Math.round(percentage)}%</span>
-      </div>
-      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${percentage}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function GaugeChart({ value, target, color }: { value: number; target: number; color: string }) {
   const percentage = Math.min((value / target) * 100, 100);
   const isGood = value <= target;
@@ -259,9 +235,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
               </div>
               <div className="mt-3">
                 <p className="text-2xl font-bold">
-                  {config.isPercentage ? (
-                    <>{value}%</>
-                  ) : config.isDays ? (
+                  {config.isDays ? (
                     <>{value} days</>
                   ) : (
                     value.toLocaleString()
@@ -271,10 +245,6 @@ export function StatsCards({ stats }: StatsCardsProps) {
               
               {/* Chart based on type */}
               <div className="mt-auto">
-                {config.chartType === "progress" && config.maxValue && (
-                  <ProgressBar value={value} max={config.maxValue} color={config.chartColor} />
-                )}
-                
                 {config.chartType === "gauge" && config.targetValue && (
                   <GaugeChart value={value} target={config.targetValue} color={config.chartColor} />
                 )}

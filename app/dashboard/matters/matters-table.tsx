@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { LastSyncIndicator } from "@/components/last-sync-indicator";
 import { EditMatterDrawer } from "@/components/edit-matter-drawer";
+import { MatterViewDrawer } from "@/components/matter-view-drawer";
 import { AdvancedSelect } from "@/components/ui/advanced-select";
 import {
   AlertDialog,
@@ -16,26 +17,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
-import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ArrowLeft, Calendar, Eye, FileText, Pencil, Plus, Trash, User, X } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, Trash } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
@@ -69,6 +55,20 @@ const formatBillingStatus = (status: string | null) => {
   return status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 };
 
+interface MatterTypeWithStatuses {
+  id: string;
+  docketwiseId: number;
+  name: string;
+  estimatedDays: number | null;
+  matterStatuses: {
+    id: string;
+    docketwiseId: number;
+    name: string;
+    duration: number | null;
+    sort: number | null;
+  }[];
+}
+
 interface MattersTableProps {
   matters: {
     data: MatterType[];
@@ -79,14 +79,15 @@ interface MattersTableProps {
       totalPages: number;
     } | null;
   };
+  matterTypes: MatterTypeWithStatuses[];
 }
 
-const MattersTable = ({ matters }: MattersTableProps) => {
+const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mounted = useMounted();
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
-  const [viewMatter, setViewMatter] = useState<MatterType | null>(null);
+  const [viewMatterDocketwiseId, setViewMatterDocketwiseId] = useState<number | null>(null);
   const [viewDrawerOpen, setViewDrawerOpen] = useState(false);
   const [editMatter, setEditMatter] = useState<MatterType | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -102,7 +103,7 @@ const MattersTable = ({ matters }: MattersTableProps) => {
     }));
 
   const handleView = (matter: MatterType) => {
-    setViewMatter(matter);
+    setViewMatterDocketwiseId(matter.docketwiseId);
     setViewDrawerOpen(true);
   };
 
@@ -123,15 +124,12 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       await client.customMatters.delete({ id: deleteMatter.id });
       toast.success("Matter deleted successfully");
       setDeleteDialogOpen(false);
+      setDeleteMatter(null);
       router.refresh();
     } catch (error) {
       console.error("Error deleting matter:", error);
       toast.error("Failed to delete matter");
     }
-  };
-
-  const handleSuccess = () => {
-    router.refresh();
   };
 
   const updateFilters = (key: string, value: string) => {
@@ -193,9 +191,21 @@ const MattersTable = ({ matters }: MattersTableProps) => {
       header: "Type",
       accessorKey: "matterType",
       enableSorting: true,
-      cell: ({ row }) => (
-        <p className="text-sm">{row.original.matterType || "-"}</p>
-      ),
+      cell: ({ row }) => {
+        const type = row.original.matterType;
+        const status = row.original.status || row.original.statusForFiling;
+        
+        if (!type) return <p className="text-sm text-muted-foreground">-</p>;
+        
+        return (
+          <div className="flex flex-col">
+            <p className="text-sm font-medium">{type}</p>
+            {status && (
+              <p className="text-xs text-muted-foreground">{status}</p>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: "Status",
@@ -206,6 +216,27 @@ const MattersTable = ({ matters }: MattersTableProps) => {
         const displayStatus = row.original.status || row.original.statusForFiling;
         return (
           <Badge variant="outline">{displayStatus || "No Status"}</Badge>
+        );
+      },
+    },
+    {
+      header: "Started At",
+      accessorKey: "docketwiseCreatedAt",
+      enableSorting: true,
+      cell: ({ row }) => {
+        const createdAt = row.original.docketwiseCreatedAt;
+        if (!createdAt) return <p className="text-sm text-muted-foreground">-</p>;
+        
+        const date = new Date(createdAt);
+        // Validate date (not 1970)
+        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+        
+        return (
+          <p className="text-sm text-muted-foreground">
+            {format(date, "MMM dd, yyyy")}
+          </p>
         );
       },
     },
@@ -258,16 +289,22 @@ const MattersTable = ({ matters }: MattersTableProps) => {
           colorClass = "text-yellow-600 font-medium";
         }
         
+        // Get estimated days from matter type
+        const matterTypeForRow = row.original.matterTypeId 
+          ? matterTypes.find(mt => mt.docketwiseId === row.original.matterTypeId)
+          : null;
+        const estimatedDays = matterTypeForRow?.estimatedDays;
+        
         return (
           <div className="flex flex-col">
             <p className={`text-sm ${colorClass}`}>
               {format(date, "MMM dd, yyyy")}
             </p>
-            {isCalculated && (
-              <p className="text-xs text-muted-foreground/70">Est. from type</p>
+            {isCalculated && estimatedDays && (
+              <p className="text-xs text-muted-foreground/70">Est. Days {estimatedDays}</p>
             )}
-            {isOverdue && (
-              <p className="text-xs text-red-500">Overdue</p>
+            {isCalculated && !estimatedDays && (
+              <p className="text-xs text-muted-foreground/70">No Est Set</p>
             )}
             {isUpcoming && (
               <p className="text-xs text-yellow-600">{daysUntilDue} days left</p>
@@ -474,280 +511,24 @@ const MattersTable = ({ matters }: MattersTableProps) => {
         </div>
       </div>
 
-      {/* View Drawer */}
-      <Drawer open={viewDrawerOpen} onOpenChange={setViewDrawerOpen} direction="right">
-        <DrawerContent side="right" className="w-full max-w-2xl overflow-x-hidden">
-          {viewMatter && (
-            <>
-              <DrawerHeader>
-                <div className="flex flex-col gap-1">
-                  <DrawerTitle className="text-xl font-medium">{viewMatter.title}</DrawerTitle>
-                  <DrawerDescription className="flex items-center gap-2">
-                    {viewMatter.matterType && <span>{viewMatter.matterType}</span>}
-                    {viewMatter.matterType && viewMatter.clientName && <span>•</span>}
-                    {viewMatter.clientName && <span>{viewMatter.clientName}</span>}
-                  </DrawerDescription>
-                </div>
-                <DrawerClose asChild>
-                  <Button variant="ghost" size="icon-lg">
-                    <X />
-                  </Button>
-                </DrawerClose>
-              </DrawerHeader>
-
-              <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden p-6">
-                {/* Status Badges */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {viewMatter.status && (
-                    <Badge variant="outline">{viewMatter.status}</Badge>
-                  )}
-                  {viewMatter.statusForFiling && (
-                    <Badge variant="secondary">{viewMatter.statusForFiling}</Badge>
-                  )}
-                  {viewMatter.billingStatus && (
-                    <Badge variant={getBillingStatusColor(viewMatter.billingStatus) as "default" | "secondary" | "destructive" | "outline"}>
-                      {formatBillingStatus(viewMatter.billingStatus)}
-                    </Badge>
-                  )}
-                  {viewMatter.isEdited && (
-                    <Badge variant="outline" className="border-amber-500 text-amber-600">Customized</Badge>
-                  )}
-                </div>
-
-                <Separator />
-
-                {/* Matter Information */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Matter Information</h4>
-                  
-                  <div className="grid gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <FileText className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Matter Type</p>
-                        <p className="text-sm font-medium">{viewMatter.matterType || "Not specified"}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <User className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Client Name</p>
-                        <p className="text-sm font-medium">{viewMatter.clientName || "Unknown"}</p>
-                      </div>
-                    </div>
-
-                    {viewMatter.description && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <FileText className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Description</p>
-                          <p className="text-sm font-medium">{viewMatter.description}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <User className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Assignees</p>
-                        <p className="text-sm font-medium">{viewMatter.assignees || "Not assigned"}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <FileText className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Status</p>
-                        <p className="text-sm font-medium">{viewMatter.status || "No Status"}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <FileText className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Billing Status</p>
-                        {viewMatter.billingStatus ? (
-                          <Badge variant={getBillingStatusColor(viewMatter.billingStatus) as "default" | "secondary" | "destructive" | "outline"}>
-                            {formatBillingStatus(viewMatter.billingStatus)}
-                          </Badge>
-                        ) : (
-                          <p className="text-sm font-medium text-muted-foreground">Not Set</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {viewMatter.statusForFiling && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <FileText className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Status For Filing</p>
-                          <p className="text-sm font-medium">{viewMatter.statusForFiling}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-start gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                        <FileText className="size-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total Hours</p>
-                        <p className="text-sm font-medium">{viewMatter.totalHours != null ? `${viewMatter.totalHours} hours` : "Not recorded"}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Deadlines & Dates */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Deadlines & Dates</h4>
-                  
-                  <div className="grid gap-3">
-                    {viewMatter.assignedDate && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <Calendar className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Assigned Date</p>
-                          <p className="text-sm font-medium">{format(new Date(viewMatter.assignedDate), "MMM d, yyyy")}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {viewMatter.estimatedDeadline && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <Calendar className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Estimated Deadline</p>
-                          <p className="text-sm font-medium">{format(new Date(viewMatter.estimatedDeadline), "MMM d, yyyy")}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {viewMatter.actualDeadline && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <Calendar className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Actual Deadline</p>
-                          <p className="text-sm font-medium">{format(new Date(viewMatter.actualDeadline), "MMM d, yyyy")}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {viewMatter.customNotes && (
-                  <>
-                    <Separator />
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Custom Notes</h4>
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                          <FileText className="size-4 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm break-words whitespace-pre-wrap">{viewMatter.customNotes}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <Separator />
-
-                {/* Timeline */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Timeline</h4>
-                  
-                  <div className="grid gap-3">
-                    {viewMatter.openedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Opened</span>
-                        <span className="text-sm">{format(new Date(viewMatter.openedAt), "MMM d, yyyy")}</span>
-                      </div>
-                    )}
-                    {viewMatter.closedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Closed</span>
-                        <span className="text-sm">{format(new Date(viewMatter.closedAt), "MMM d, yyyy")}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Created in System</span>
-                      <span className="text-sm">{format(new Date(viewMatter.createdAt), "MMM d, yyyy")}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Last Updated</span>
-                      <span className="text-sm">{format(new Date(viewMatter.updatedAt), "MMM d, yyyy h:mm a")}</span>
-                    </div>
-                    {viewMatter.lastSyncedAt && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Last Synced from Docketwise</span>
-                        <span className="text-sm">{format(new Date(viewMatter.lastSyncedAt), "MMM d, yyyy h:mm a")}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Last Edited By Section */}
-                {viewMatter.isEdited && viewMatter.editedByUser && (
-                  <>
-                    <Separator />
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Last Modified By</h4>
-                      <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-                        <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
-                          {viewMatter.editedByUser.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{viewMatter.editedByUser.name}</p>
-                          <p className="text-xs text-muted-foreground">{viewMatter.editedByUser.email}</p>
-                        </div>
-                        {viewMatter.editedAt && (
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground">Edited on</p>
-                            <p className="text-sm">{format(new Date(viewMatter.editedAt), "MMM d, yyyy")}</p>
-                            <p className="text-xs text-muted-foreground">{format(new Date(viewMatter.editedAt), "h:mm a")}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </DrawerContent>
-      </Drawer>
+      {/* View Drawer - Fetches details on-demand */}
+      <MatterViewDrawer
+        docketwiseId={viewMatterDocketwiseId}
+        open={viewDrawerOpen}
+        onOpenChange={setViewDrawerOpen}
+      />
 
       {/* Edit Drawer */}
       <EditMatterDrawer
         matter={editMatter}
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
-        onSuccess={handleSuccess}
+        onSuccess={() => {
+          router.refresh();
+          setEditDialogOpen(false);
+          setEditMatter(null);
+        }}
+        matterTypes={matterTypes}
       />
 
       {/* Delete AlertDialog */}

@@ -28,11 +28,25 @@ import { X } from "lucide-react";
 import type { MatterType } from "@/schema/customMatterSchema";
 import { workers } from "@/data/workers";
 
+interface MatterTypeWithStatuses {
+  id: string;
+  docketwiseId: number;
+  name: string;
+  matterStatuses: {
+    id: string;
+    docketwiseId: number;
+    name: string;
+    duration: number | null;
+    sort: number | null;
+  }[];
+}
+
 interface EditMatterDrawerProps {
   matter: MatterType | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  matterTypes: MatterTypeWithStatuses[];
 }
 
 export function EditMatterDrawer({
@@ -40,10 +54,12 @@ export function EditMatterDrawer({
   open,
   onOpenChange,
   onSuccess,
+  matterTypes,
 }: EditMatterDrawerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [matterType, setMatterType] = useState("");
+  const [matterTypeId, setMatterTypeId] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
   const [status, setStatus] = useState("");
   const [assignedDate, setAssignedDate] = useState<Date | null>(null);
@@ -54,6 +70,28 @@ export function EditMatterDrawer({
   const [description, setDescription] = useState("");
   const [totalHours, setTotalHours] = useState<number | null>(null);
   const [customNotes, setCustomNotes] = useState("");
+
+  // Get current matter type from preloaded data
+  const currentMatterType = matterTypeId
+    ? matterTypes.find(mt => mt.id === matterTypeId)
+    : matter?.matterType
+    ? matterTypes.find(mt => mt.name === matter.matterType)
+    : null;
+
+  // Get available statuses for the current matter type
+  const availableStatuses = currentMatterType?.matterStatuses || [];
+  
+  // Always include current status as option even if not in the type's status list
+  const statusOptions = [...availableStatuses];
+  if (status && !statusOptions.some(s => s.name === status)) {
+    statusOptions.push({
+      id: 'current',
+      docketwiseId: 0,
+      name: status,
+      duration: null,
+      sort: null,
+    });
+  }
 
   // Get active paralegals for dropdown
   const paralegalOptions: AdvancedSelectOption[] = workers
@@ -78,8 +116,14 @@ export function EditMatterDrawer({
       setDescription(matter.description || "");
       setTotalHours(matter.totalHours ?? null);
       setCustomNotes(matter.customNotes || "");
+      
+      // Find the matter type ID from the type name
+      if (matter.matterType) {
+        const foundType = matterTypes.find((mt: MatterTypeWithStatuses) => mt.name === matter.matterType);
+        setMatterTypeId(foundType?.id || null);
+      }
     }
-  }, [matter]);
+  }, [matter, matterTypes]);
 
   const handleSave = async () => {
     if (!matter) return;
@@ -144,16 +188,50 @@ export function EditMatterDrawer({
                 />
               </div>
 
-              {/* Matter Type */}
+              {/* Type/Status - Single field showing current type and status dropdown */}
               <div className="space-y-2">
-                <Label htmlFor="matterType">Matter Type</Label>
-                <Input
-                  id="matterType"
-                  type="text"
-                  placeholder="e.g., Family Based Petition"
-                  value={matterType}
-                  onChange={(e) => setMatterType(e.target.value)}
-                />
+                <Label htmlFor="typeStatus">Type / Status</Label>
+                <div className="space-y-2">
+                  {/* Show current matter type as text */}
+                  <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/50">
+                    <span className="text-sm font-medium">
+                      {currentMatterType ? currentMatterType.name : matterType || "No type set"}
+                    </span>
+                    {currentMatterType && (
+                      <span className="text-xs text-muted-foreground">
+                        ({currentMatterType.matterStatuses.length} stages)
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Status dropdown - always visible */}
+                  <Select value={status || ""} onValueChange={setStatus}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select workflow status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions
+                        .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+                        .map((statusOption) => (
+                          <SelectItem key={statusOption.id} value={statusOption.name}>
+                            <div className="flex items-center justify-between w-full">
+                              <span>{statusOption.name}</span>
+                              {statusOption.duration && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {statusOption.duration}d
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {availableStatuses.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      This matter type has no workflow stages defined. Showing current status only.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Client Name */}
@@ -177,18 +255,6 @@ export function EditMatterDrawer({
                   placeholder="Matter description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-
-              {/* Status (Workflow Stage) */}
-              <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
-                <Input
-                  id="status"
-                  type="text"
-                  placeholder="e.g., Case Evaluation"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
                 />
               </div>
 

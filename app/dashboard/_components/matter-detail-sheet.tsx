@@ -52,7 +52,7 @@ export function MatterDetailSheet({ matter, open, onOpenChange }: MatterDetailSh
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
       <DrawerContent side="right" className="w-full max-w-2xl overflow-x-hidden">
-        <DrawerHeader>
+        <DrawerHeader className="py-4">
           <div className="flex flex-col gap-1">
             <DrawerTitle className="text-xl font-medium">{clientName}</DrawerTitle>
             <DrawerDescription className="flex items-center gap-2">

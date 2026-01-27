@@ -54,6 +54,7 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
     } catch (error) {
       console.error("Error loading sync settings:", error);
       toast.error("Failed to load sync settings");
+      // Keep default 720 if loading fails
     } finally {
       setIsLoading(false);
     }

@@ -11,6 +11,7 @@ import {
   deleteCustomMatter,
   getCustomMatterById,
   getCustomMatters,
+  getMatterDetailByDocketwiseId,
   updateCustomMatter,
 } from "./customMatters";
 import { getConnectionStatus } from "./docketwise";
@@ -97,6 +98,7 @@ export const router = {
   customMatters: {
     get: getCustomMatters,
     getById: getCustomMatterById,
+    getDetailByDocketwiseId: getMatterDetailByDocketwiseId,
     create: createCustomMatter,
     update: updateCustomMatter,
     delete: deleteCustomMatter,

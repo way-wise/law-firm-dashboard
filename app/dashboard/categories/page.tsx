@@ -123,63 +123,72 @@ export default function CategoriesPage() {
         </Button>
       </div>
 
-      {/* Categories Grid */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {categories.map((category) => (
-            <Card key={category.id} className="p-4 flex flex-col">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <div
-                    className="size-3 rounded-full shrink-0 mt-1.5"
-                    style={{ backgroundColor: category.color || "#6B7280" }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold truncate">{category.name}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
-                      {category.description || "No description"}
-                    </p>
+      {/* Categories Grid - Always show card wrapper */}
+      <div className="rounded-xl border bg-card">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : categories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-muted-foreground">No categories found</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Click &ldquo;Add Category&rdquo; to create your first category
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 p-6">
+            {categories.map((category) => (
+              <Card key={category.id} className="p-4 flex flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div
+                      className="size-3 rounded-full shrink-0 mt-1.5"
+                      style={{ backgroundColor: category.color || "#6B7280" }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold truncate">{category.name}</h3>
+                      <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
+                        {category.description || "No description"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center shrink-0">
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleEdit(category)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(category.id)}
+                      disabled={deletingId === category.id}
+                    >
+                      {deletingId === category.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center shrink-0">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => handleEdit(category)}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(category.id)}
-                    disabled={deletingId === category.id}
-                  >
-                    {deletingId === category.id ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-4" />
-                    )}
-                  </Button>
+                <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Order: {category.sortOrder}
+                  </span>
+                  <Badge variant={category.isActive ? "default" : "secondary"}>
+                    {category.isActive ? "Active" : "Inactive"}
+                  </Badge>
                 </div>
-              </div>
-              <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  Order: {category.sortOrder}
-                </span>
-                <Badge variant={category.isActive ? "default" : "secondary"}>
-                  {category.isActive ? "Active" : "Inactive"}
-                </Badge>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Create/Edit Dialog */}
       <Dialog 

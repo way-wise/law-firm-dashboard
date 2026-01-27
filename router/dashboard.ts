@@ -4,16 +4,16 @@ import { getOrSetCache, DEFAULT_CACHE_TTL, CACHE_KEYS } from "@/lib/redis";
 import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import * as z from "zod";
 
-// Dashboard stats schema - matches original StatsCards interface
+// Dashboard stats schema - focuses on contacts, team, and configuration data
 const dashboardStatsSchema = z.object({
-  totalCases: z.number(),
-  drafting: z.number(),
-  rfes: z.number(),
-  filed: z.number(),
-  activeUnfiled: z.number(),
-  monthlyGrowth: z.number(),
+  totalContacts: z.number(),
+  activeContacts: z.number(),
+  totalMatterTypes: z.number(),
   teamMembers: z.number(),
-  avgResolutionTime: z.number(),
+  avgDaysOpen: z.number(),
+  contactsThisMonth: z.number(),
+  activeTeamMembers: z.number(),
+  matterTypesWithWorkflow: z.number(),
 });
 
 // Assignee stats schema
@@ -60,67 +60,76 @@ export const getDashboardStats = authorized
     const cacheKey = `${CACHE_KEYS.DASHBOARD_STATS}:${context.user.id}`;
     
     return getOrSetCache(cacheKey, async () => {
-      // Get all matters for this user
-      const matters = await prisma.matters.findMany({
-        where: {
-          userId: context.user.id,
-        },
-        select: {
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-
-      // Count by status (case-insensitive matching)
-      const statusCounts = matters.reduce((acc, m) => {
-        const status = (m.status || "").toLowerCase();
-        
-        if (status.includes("draft") || status.includes("document collection") || status.includes("evaluation")) {
-          acc.drafting++;
-          acc.activeUnfiled++;
-        } else if (status.includes("rfe")) {
-          acc.rfes++;
-        } else if (status.includes("filed") || status.includes("pending")) {
-          acc.filed++;
-        }
-        
-        return acc;
-      }, { drafting: 0, rfes: 0, filed: 0, activeUnfiled: 0 });
-
-      // Get team member count (active users only)
-      const teamMembers = await prisma.docketwiseUsers.count({
-        where: {
-          isActive: true,
-        },
-      });
-
-      // Calculate monthly growth (compare this month to last month)
       const now = new Date();
       const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      
-      const thisMonthCount = matters.filter(m => new Date(m.createdAt) >= thisMonthStart).length;
-      const lastMonthCount = matters.filter(m => 
-        new Date(m.createdAt) >= lastMonthStart && new Date(m.createdAt) < thisMonthStart
-      ).length;
-      
-      const monthlyGrowth = lastMonthCount > 0 
-        ? Math.round(((thisMonthCount - lastMonthCount) / lastMonthCount) * 100)
-        : thisMonthCount > 0 ? 100 : 0;
 
-      // Calculate average resolution time
-      const avgResolutionTime = 45;
+      // Count all contacts
+      const totalContacts = await prisma.contacts.count();
+      
+      // Count active contacts (those marked as not leads)
+      const activeContacts = await prisma.contacts.count({
+        where: { isLead: false },
+      });
+      
+      // Count contacts added this month
+      const contactsThisMonth = await prisma.contacts.count({
+        where: {
+          createdAt: { gte: thisMonthStart },
+        },
+      });
+
+      // Count matter types
+      const totalMatterTypes = await prisma.matterTypes.count();
+      
+      // Count matter types with workflow stages
+      const matterTypesWithWorkflow = await prisma.matterTypes.count({
+        where: {
+          matterStatuses: {
+            some: {},
+          },
+        },
+      });
+
+      // Count all team members
+      const teamMembers = await prisma.docketwiseUsers.count();
+      
+      // Count active team members
+      const activeTeamMembers = await prisma.docketwiseUsers.count({
+        where: { isActive: true },
+      });
+
+      // Calculate average days matters are open (from local DB only)
+      const openMatters = await prisma.matters.findMany({
+        where: {
+          userId: context.user.id,
+          closedAt: null,
+        },
+        select: {
+          docketwiseCreatedAt: true,
+        },
+      });
+      
+      let avgDaysOpen = 0;
+      if (openMatters.length > 0) {
+        const totalDays = openMatters.reduce((sum, m) => {
+          if (m.docketwiseCreatedAt) {
+            const days = Math.floor((now.getTime() - m.docketwiseCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
+            return sum + days;
+          }
+          return sum;
+        }, 0);
+        avgDaysOpen = Math.round(totalDays / openMatters.length);
+      }
 
       return {
-        totalCases: matters.length,
-        drafting: statusCounts.drafting,
-        rfes: statusCounts.rfes,
-        filed: statusCounts.filed,
-        activeUnfiled: statusCounts.activeUnfiled,
-        monthlyGrowth,
+        totalContacts,
+        activeContacts,
+        contactsThisMonth,
+        totalMatterTypes,
+        matterTypesWithWorkflow,
         teamMembers,
-        avgResolutionTime,
+        activeTeamMembers,
+        avgDaysOpen,
       };
     }, DEFAULT_CACHE_TTL);
   });
