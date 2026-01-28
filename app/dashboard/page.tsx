@@ -4,11 +4,13 @@ import { EnhancedStatsCards } from "./_components/enhanced-stats-cards";
 import { ParalegalKPI } from "./_components/paralegal-kpi";
 import { RecentMattersTable } from "./_components/recent-matters-table";
 import { MatterStatusChart } from "./_components/matter-status-chart";
-import { MatterTypeChart } from "./_components/matter-type-chart";
+import { PerformanceTrendsChart } from "./_components/performance-trends-chart";
+import { WorkloadDistributionChart } from "./_components/workload-distribution-chart";
+import { AnalyticsOverviewChart } from "./_components/analytics-overview-chart";
 
 const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC
-  const [stats, assigneeStats, recentMatters, statusDistribution, typeDistribution] = await Promise.all([
+  const [stats, assigneeStats, recentMatters, statusDistribution] = await Promise.all([
     client.dashboard.getStats({}).catch(() => ({
       totalContacts: 0,
       totalMatters: 0,
@@ -36,28 +38,33 @@ const DashboardOverviewPage = async () => {
     client.dashboard.getAssigneeStats({}).catch(() => []),
     client.dashboard.getRecentMatters({ limit: 15 }).catch(() => []),
     client.dashboard.getStatusDistribution({}).catch(() => []),
-    client.dashboard.getTypeDistribution({}).catch(() => []),
   ]);
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome to your immigration law firm dashboard</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
+        <p className="text-muted-foreground dark:text-gray-400">Welcome to your immigration law firm dashboard</p>
       </div>
 
       {/* Enhanced Stats Cards */}
       <EnhancedStatsCards stats={stats} />
 
-      {/* Matter Distribution Charts */}
+      {/* Status Distribution */}
       <MatterStatusChart statusData={statusDistribution} />
-      
-      {/* Matter Type Chart */}
-      <MatterTypeChart typeData={typeDistribution} />
 
-      {/* Paralegal KPI Section with charts and leaderboard */}
+      {/* Performance Trends Chart */}
+      <PerformanceTrendsChart stats={stats} />
+
+      {/* Paralegal Performance Section */}
       <ParalegalKPI assigneeStats={assigneeStats} />
+
+      {/* Analytics Overview Chart */}
+      <AnalyticsOverviewChart stats={stats} />
+
+      {/* Workload Distribution Chart */}
+      <WorkloadDistributionChart assigneeStats={assigneeStats} />
 
       {/* Recent Matters Table */}
       <RecentMattersTable matters={recentMatters} />

@@ -91,10 +91,10 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
   const avgOnTimeRate = paralegalData.length > 0 
     ? Math.round(paralegalData.reduce((sum: number, p: { onTime: number }) => sum + p.onTime, 0) / paralegalData.length)
     : 0;
-  const avgDaysToFile = paralegalData.length > 0 
+  const avgDaysOpen = paralegalData.length > 0 
     ? (paralegalData.reduce((sum: number, p: { avgDays: number }) => sum + p.avgDays, 0) / paralegalData.length).toFixed(1)
     : "0";
-  const attentionNeeded = paralegalData.filter((p: { status: string }) => p.status !== "good").length;
+  const overdueCases = paralegalData.reduce((sum: number, p: { status: string }) => sum + (p.status === "alert" ? 1 : 0), 0);
 
   return (
     <div className="space-y-6">
@@ -106,79 +106,61 @@ export function ParalegalKPI({ assigneeStats = [] }: ParalegalKPIProps) {
         </p>
       </div>
 
-      {/* KPI Summary Cards - matching existing stats-cards design */}
+      {/* KPI Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="overflow-hidden h-[140px] flex flex-col">
-          <div className="p-5 flex-1 flex flex-col">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Total Active Cases</p>
-              <div className="rounded-lg p-2.5 bg-blue-500/10">
-                <Clock className="size-5 text-blue-500" />
-              </div>
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium">Total Active Cases</p>
+            <div className="p-2 rounded-lg bg-muted">
+              <Clock className="h-5 w-5" />
             </div>
-            <div className="mt-3">
-              <p className="text-2xl font-bold">{totalCases}</p>
-            </div>
-            <div className="mt-auto flex items-center text-xs text-muted-foreground">
-              <TrendingUp className="mr-1 size-3 text-emerald-500" />
-              <span className="text-emerald-500">+12%</span>
-              <span className="ml-1">from last month</span>
-            </div>
+          </div>
+          <div className="text-2xl font-bold">{totalCases}</div>
+          <div className="flex items-center text-xs text-muted-foreground mt-2">
+            <TrendingUp className="h-3 w-3 text-emerald-500" />
+            <span className="text-emerald-500">+12% from last month</span>
           </div>
         </Card>
 
-        <Card className="overflow-hidden h-[140px] flex flex-col">
-          <div className="p-5 flex-1 flex flex-col">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">On-Time Filing Rate</p>
-              <div className="rounded-lg p-2.5 bg-emerald-500/10">
-                <CheckCircle2 className="size-5 text-emerald-500" />
-              </div>
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium">On-Time Filing Rate</p>
+            <div className="p-2 rounded-lg bg-muted">
+              <CheckCircle2 className="h-5 w-5" />
             </div>
-            <div className="mt-3">
-              <p className="text-2xl font-bold">{avgOnTimeRate}%</p>
-            </div>
-            <div className="mt-auto flex items-center text-xs text-muted-foreground">
-              <TrendingUp className="mr-1 size-3 text-emerald-500" />
-              <span className="text-emerald-500">+3%</span>
-              <span className="ml-1">improvement</span>
-            </div>
+          </div>
+          <div className="text-2xl font-bold">{avgOnTimeRate}%</div>
+          <div className="flex items-center text-xs text-muted-foreground mt-2">
+            <TrendingUp className="h-3 w-3 text-emerald-500" />
+            <span className="text-emerald-500">+3% improvement</span>
           </div>
         </Card>
 
-        <Card className="overflow-hidden h-[140px] flex flex-col">
-          <div className="p-5 flex-1 flex flex-col">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Avg Days to File</p>
-              <div className="rounded-lg p-2.5 bg-blue-500/10">
-                <Clock className="size-5 text-blue-500" />
-              </div>
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium">Overdue Cases</p>
+            <div className="p-2 rounded-lg bg-muted">
+              <AlertTriangle className="h-5 w-5" />
             </div>
-            <div className="mt-3">
-              <p className="text-2xl font-bold">{avgDaysToFile}</p>
-            </div>
-            <div className="mt-auto flex items-center text-xs text-muted-foreground">
-              <TrendingDown className="mr-1 size-3 text-emerald-500" />
-              <span className="text-emerald-500">-2 days</span>
-              <span className="ml-1">faster</span>
-            </div>
+          </div>
+          <div className="text-2xl font-bold">{overdueCases}</div>
+          <div className="flex items-center text-xs text-muted-foreground mt-2">
+            <TrendingDown className="h-3 w-3 text-red-500" />
+            <span className="text-red-500">+2% needs attention</span>
           </div>
         </Card>
 
-        <Card className="overflow-hidden h-[140px] flex flex-col">
-          <div className="p-5 flex-1 flex flex-col">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Attention Needed</p>
-              <div className="rounded-lg p-2.5 bg-amber-500/10">
-                <AlertTriangle className="size-5 text-amber-500" />
-              </div>
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium">Avg Completion Time</p>
+            <div className="p-2 rounded-lg bg-muted">
+              <Clock className="h-5 w-5" />
             </div>
-            <div className="mt-3">
-              <p className="text-2xl font-bold">{attentionNeeded}</p>
-            </div>
-            <div className="mt-auto flex items-center text-xs text-muted-foreground">
-              <span>Paralegals below target</span>
-            </div>
+          </div>
+          <div className="text-2xl font-bold">{avgDaysOpen} days</div>
+          <div className="flex items-center text-xs text-muted-foreground mt-2">
+            <TrendingUp className="h-3 w-3 text-emerald-500" />
+            <span className="text-emerald-500">-5% faster</span>
           </div>
         </Card>
       </div>
