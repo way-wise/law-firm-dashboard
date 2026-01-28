@@ -57,7 +57,7 @@ export const generateReport = authorized
     });
 
     // Get team members for assignee mapping
-    const teamMembers = await prisma.docketwiseUsers.findMany({
+    const teamMembers = await prisma.teams.findMany({
       where: { isActive: true },
     });
 

@@ -1,5 +1,5 @@
 import { authorized } from "@/lib/orpc";
-import prisma, { Prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import {
   matterFilterSchema,
   matterSchema,
@@ -148,12 +148,12 @@ export const getCustomMatters = authorized
         clientId: matter.clientId,
         teamId: matter.teamId,
         assignee: matter.assignee ? {
-          id: matter.assignee.docketwiseId,
-          name: matter.assignee.fullName || matter.assignee.email,
+          id: matter.assignee.id,
+          name: matter.assignee.name,
           email: matter.assignee.email,
           firstName: matter.assignee.firstName,
           lastName: matter.assignee.lastName,
-          fullName: matter.assignee.fullName || matter.assignee.email,
+          fullName: matter.assignee.fullName,
           teamType: matter.assignee.teamType,
           title: matter.assignee.title,
           isActive: matter.assignee.isActive,
@@ -243,7 +243,23 @@ export const getCustomMatterById = authorized
       });
     }
 
-    return matter;
+    // Transform assignee object to match schema
+    const transformedMatter = {
+      ...matter,
+      assignee: matter.assignee ? {
+        id: matter.assignee.docketwiseId,
+        name: matter.assignee.fullName || matter.assignee.email,
+        email: matter.assignee.email,
+        firstName: matter.assignee.firstName,
+        lastName: matter.assignee.lastName,
+        fullName: matter.assignee.fullName || matter.assignee.email,
+        teamType: matter.assignee.teamType,
+        title: matter.assignee.title,
+        isActive: matter.assignee.isActive,
+      } : null,
+    };
+
+    return transformedMatter;
   });
 
 // Get Matter Detail by Docketwise ID (fetch from API on-demand)
@@ -353,7 +369,23 @@ export const updateCustomMatter = authorized
       console.error("[NOTIFICATION] Failed to check matter changes:", err);
     });
 
-    return updatedMatter;
+    // Transform assignee object to match schema
+    const transformedMatter = {
+      ...updatedMatter,
+      assignee: updatedMatter.assignee ? {
+        id: updatedMatter.assignee.docketwiseId,
+        name: updatedMatter.assignee.fullName || updatedMatter.assignee.email,
+        email: updatedMatter.assignee.email,
+        firstName: updatedMatter.assignee.firstName,
+        lastName: updatedMatter.assignee.lastName,
+        fullName: updatedMatter.assignee.fullName || updatedMatter.assignee.email,
+        teamType: updatedMatter.assignee.teamType,
+        title: updatedMatter.assignee.title,
+        isActive: updatedMatter.assignee.isActive,
+      } : null,
+    };
+
+    return transformedMatter;
   });
 
 // Create Custom Matter (local only, with isEdited flag)
@@ -444,7 +476,23 @@ export const createCustomMatter = authorized
       });
     }
 
-    return matter;
+    // Transform assignee object to match schema
+    const transformedMatter = {
+      ...matter,
+      assignee: matter.assignee ? {
+        id: matter.assignee.docketwiseId,
+        name: matter.assignee.fullName || matter.assignee.email,
+        email: matter.assignee.email,
+        firstName: matter.assignee.firstName,
+        lastName: matter.assignee.lastName,
+        fullName: matter.assignee.fullName || matter.assignee.email,
+        teamType: matter.assignee.teamType,
+        title: matter.assignee.title,
+        isActive: matter.assignee.isActive,
+      } : null,
+    };
+
+    return transformedMatter;
   });
 
 // Delete Custom Matter
