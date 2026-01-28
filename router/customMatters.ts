@@ -312,6 +312,12 @@ export const updateCustomMatter = authorized
       Object.entries(updateData).filter(([, value]) => value !== undefined)
     );
 
+    // Auto-set assignedDate when assignee is being set and no assignedDate exists
+    const hasAssignee = updateData.assignees || updateData.teamId;
+    if (hasAssignee && !existingMatter.assignedDate) {
+      filteredUpdateData.assignedDate = new Date();
+    }
+
     console.log("[MATTER UPDATE] Input:", JSON.stringify(input, null, 2));
     console.log("[MATTER UPDATE] Filtered data:", JSON.stringify(filteredUpdateData, null, 2));
 

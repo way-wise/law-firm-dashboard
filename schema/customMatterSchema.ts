@@ -73,6 +73,7 @@ export const matterSchema = z.object({
   // Dynamic deadline calculation fields
   calculatedDeadline: coercedDateNullable.optional(),
   isPastEstimatedDeadline: z.boolean().optional(),
+  totalHoursElapsed: z.number().optional(),
   // Notes from Docketwise API
   notes: z.array(z.object({
     id: z.number(),
@@ -93,6 +94,7 @@ export const updateCustomMatterFieldsSchema = z.object({
   status: z.string().nullable().optional(),           // Workflow stage
   statusForFiling: z.string().nullable().optional(),  // Status for filing
   assignees: z.string().nullable().optional(),
+  teamId: z.number().nullable().optional(),
   assignedDate: z.date().nullable().optional(),
   estimatedDeadline: z.date().nullable().optional(),
   actualDeadline: z.date().nullable().optional(),

@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, Pencil, Plus, RefreshCw, Trash } from "lucide-react";
+import { ArrowLeft, Eye, Pencil, Plus, RefreshCw, Trash, Clock } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
@@ -53,6 +53,41 @@ const getBillingStatusColor = (status: string | null) => {
 const formatBillingStatus = (status: string | null) => {
   if (!status) return "Not Set";
   return status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+};
+
+// Format deadline - only show if estimated days exist
+const formatDeadline = (calculatedDeadline?: Date | null, isPastEstimatedDeadline?: boolean, hasEstimatedDays?: boolean) => {
+  if (!calculatedDeadline || !hasEstimatedDays) return "-";
+  
+  const formattedDate = format(calculatedDeadline, "MM/dd/yyyy");
+  
+  if (isPastEstimatedDeadline) {
+    return (
+      <div className="flex flex-col">
+        <p className="text-sm text-red-500 font-medium">{formattedDate}</p>
+        <p className="text-xs text-red-500">Overdue</p>
+      </div>
+    );
+  }
+  
+  return <p className="text-sm text-muted-foreground">{formattedDate}</p>;
+};
+
+// Format hours elapsed
+const formatHoursElapsed = (totalHoursElapsed?: number) => {
+  if (!totalHoursElapsed) return "-";
+  
+  if (totalHoursElapsed < 24) {
+    return `${totalHoursElapsed}h`;
+  } else if (totalHoursElapsed < 168) { // Less than 1 week
+    const days = Math.floor(totalHoursElapsed / 24);
+    const hours = totalHoursElapsed % 24;
+    return `${days}d ${hours}h`;
+  } else {
+    const weeks = Math.floor(totalHoursElapsed / 168);
+    const days = Math.floor((totalHoursElapsed % 168) / 24);
+    return `${weeks}w ${days}d`;
+  }
 };
 
 interface MatterTypeWithStatuses {
@@ -268,7 +303,27 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
         
         return (
           <p className="text-sm text-muted-foreground">
-            {format(date, "MMM dd, yyyy")}
+            {format(date, "MM/dd/yy HH:mm")}
+          </p>
+        );
+      },
+    },
+    {
+      header: "Assigned Date",
+      accessorKey: "assignedDate",
+      enableSorting: true,
+      cell: ({ row }) => {
+        const assignedDate = row.original.assignedDate;
+        if (!assignedDate) return <p className="text-sm text-muted-foreground">-</p>;
+
+        const date = new Date(assignedDate);
+        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+
+        return (
+          <p className="text-sm text-muted-foreground">
+            {format(date, "MM/dd/yy HH:mm")}
           </p>
         );
       },
@@ -280,68 +335,56 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
       cell: ({ row }) => {
         const customDeadline = row.original.estimatedDeadline;
         const calculatedDeadline = row.original.calculatedDeadline;
-        
-        // Prefer custom deadline if set, otherwise use calculated deadline
-        let deadline = customDeadline;
-        let isCalculated = false;
-        
-        // Validate custom deadline (not epoch/1970 date)
-        if (deadline) {
-          const date = new Date(deadline);
-          const year = date.getFullYear();
-          if (year <= 1970 || isNaN(year) || !isFinite(date.getTime())) {
-            deadline = null;
-          }
-        }
-        
-        // Fall back to calculated deadline if no custom deadline
-        if (!deadline && calculatedDeadline) {
-          const calcDate = new Date(calculatedDeadline);
-          const calcYear = calcDate.getFullYear();
-          // Only use if valid (not 1970)
-          if (calcYear > 1970 && !isNaN(calcYear) && isFinite(calcDate.getTime())) {
-            deadline = calculatedDeadline;
-            isCalculated = true;
-          }
-        }
-        
-        // No valid deadline found
-        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
-        
-        const date = new Date(deadline);
-        const now = new Date();
-        const isOverdue = date < now;
-        const daysUntilDue = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        const isUpcoming = !isOverdue && daysUntilDue <= 7;
-        
-        // Color coding: red=overdue, yellow=within 7 days, normal=more than 7 days
-        let colorClass = "text-muted-foreground";
-        if (isOverdue) {
-          colorClass = "text-red-500 font-semibold";
-        } else if (isUpcoming) {
-          colorClass = "text-yellow-600 font-medium";
-        }
+        const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
         
         // Get estimated days from matter type
         const matterTypeForRow = row.original.matterTypeId 
           ? matterTypes.find(mt => mt.docketwiseId === row.original.matterTypeId)
           : null;
         const estimatedDays = matterTypeForRow?.estimatedDays;
-        
+
+        // Prefer custom deadline if set, otherwise use calculated deadline
+        let deadline = customDeadline;
+
+        // Check if custom deadline is valid (not epoch date)
+        if (deadline) {
+          const date = new Date(deadline);
+          const year = date.getFullYear();
+          if (year <= 1970 || isNaN(year)) {
+            deadline = null;
+          }
+        }
+
+        // Fall back to calculated deadline if no custom deadline AND we have estimated days
+        if (!deadline && calculatedDeadline && estimatedDays) {
+          return formatDeadline(calculatedDeadline, isPastEstimatedDeadline, true);
+        }
+
+        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
+
+        const date = new Date(deadline);
+        const isOverdue = new Date() > date;
+
         return (
           <div className="flex flex-col">
-            <p className={`text-sm ${colorClass}`}>
-              {format(date, "MMM dd, yyyy")}
+            <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+              {format(date, "MM/dd/yyyy")}
+              {isOverdue && " (Overdue)"}
             </p>
-            {isCalculated && estimatedDays && (
-              <p className="text-xs text-muted-foreground/70">Est. Days {estimatedDays}</p>
-            )}
-            {isCalculated && !estimatedDays && (
-              <p className="text-xs text-muted-foreground/70">No Est Set</p>
-            )}
-            {isUpcoming && (
-              <p className="text-xs text-yellow-600">{daysUntilDue} days left</p>
-            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Time Spent",
+      accessorKey: "totalHoursElapsed",
+      enableSorting: true,
+      cell: ({ row }) => {
+        const hoursElapsed = row.original.totalHoursElapsed;
+        return (
+          <div className="flex items-center gap-1">
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            <span className="text-sm">{formatHoursElapsed(hoursElapsed)}</span>
           </div>
         );
       },

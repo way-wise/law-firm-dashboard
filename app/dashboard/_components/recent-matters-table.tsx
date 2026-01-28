@@ -6,8 +6,8 @@ import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { MatterViewDrawer } from "@/components/matter-view-drawer";
 import { ColumnDef } from "@tanstack/react-table";
-import { formatDistanceToNow } from "date-fns";
-import { Eye } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
+import { Eye, Clock } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -26,7 +26,11 @@ interface RecentMatter {
   calculatedDeadline?: Date | null;
   isPastEstimatedDeadline?: boolean;
   docketwiseCreatedAt: Date | null;
+  assignedDate?: Date | null;
   updatedAt: Date;
+  totalHoursElapsed?: number;
+  daysUntilDeadline?: number;
+  estimatedDays?: number | null;
 }
 
 interface RecentMattersTableProps {
@@ -46,6 +50,41 @@ const getBillingStatusColor = (status: string | null) => {
       return "destructive";
     default:
       return "secondary";
+  }
+};
+
+// Format deadline - only show if estimated days exist
+const formatDeadline = (calculatedDeadline?: Date | null, isPastEstimatedDeadline?: boolean, hasEstimatedDays?: boolean) => {
+  if (!calculatedDeadline || !hasEstimatedDays) return "-";
+  
+  const formattedDate = format(calculatedDeadline, "MM/dd/yyyy");
+  
+  if (isPastEstimatedDeadline) {
+    return (
+      <div className="flex flex-col">
+        <p className="text-sm text-red-500 font-medium">{formattedDate}</p>
+        <p className="text-xs text-red-500">Overdue</p>
+      </div>
+    );
+  }
+  
+  return <p className="text-sm text-muted-foreground">{formattedDate}</p>;
+};
+
+// Format hours elapsed
+const formatHoursElapsed = (totalHoursElapsed?: number) => {
+  if (!totalHoursElapsed) return "-";
+  
+  if (totalHoursElapsed < 24) {
+    return `${totalHoursElapsed}h`;
+  } else if (totalHoursElapsed < 168) { // Less than 1 week
+    const days = Math.floor(totalHoursElapsed / 24);
+    const hours = totalHoursElapsed % 24;
+    return `${days}d ${hours}h`;
+  } else {
+    const weeks = Math.floor(totalHoursElapsed / 168);
+    const days = Math.floor((totalHoursElapsed % 168) / 24);
+    return `${weeks}w ${days}d`;
   }
 };
 
@@ -120,7 +159,26 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
 
         return (
           <p className="text-sm text-muted-foreground">
-            {date.toLocaleDateString()}
+            {format(date, "MM/dd/yy HH:mm")}
+          </p>
+        );
+      },
+    },
+    {
+      header: "Assigned Date",
+      accessorKey: "assignedDate",
+      cell: ({ row }) => {
+        const assignedDate = row.original.assignedDate;
+        if (!assignedDate) return <p className="text-sm text-muted-foreground">-</p>;
+
+        const date = new Date(assignedDate);
+        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
+          return <p className="text-sm text-muted-foreground">-</p>;
+        }
+
+        return (
+          <p className="text-sm text-muted-foreground">
+            {format(date, "MM/dd/yy HH:mm")}
           </p>
         );
       },
@@ -132,10 +190,10 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
         const customDeadline = row.original.estimatedDeadline;
         const calculatedDeadline = row.original.calculatedDeadline;
         const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
+        const estimatedDays = row.original.estimatedDays;
 
         // Prefer custom deadline if set, otherwise use calculated deadline
         let deadline = customDeadline;
-        let isCalculated = false;
 
         // Check if custom deadline is valid (not epoch date)
         if (deadline) {
@@ -146,26 +204,35 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
           }
         }
 
-        // Fall back to calculated deadline if no custom deadline
-        if (!deadline && calculatedDeadline) {
-          deadline = calculatedDeadline;
-          isCalculated = true;
+        // Fall back to calculated deadline if no custom deadline AND we have estimated days
+        if (!deadline && calculatedDeadline && estimatedDays) {
+          return formatDeadline(calculatedDeadline, isPastEstimatedDeadline, true);
         }
 
         if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
 
         const date = new Date(deadline);
-        const isOverdue = isCalculated ? isPastEstimatedDeadline : new Date() > date;
+        const isOverdue = new Date() > date;
 
         return (
           <div className="flex flex-col">
             <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-              {date.toLocaleDateString()}
+              {format(date, "MM/dd/yyyy")}
               {isOverdue && " (Overdue)"}
             </p>
-            {isCalculated && (
-              <p className="text-xs text-muted-foreground/70">Est. from type</p>
-            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Time Spent",
+      accessorKey: "totalHoursElapsed",
+      cell: ({ row }) => {
+        const hoursElapsed = row.original.totalHoursElapsed;
+        return (
+          <div className="flex items-center gap-1">
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            <span className="text-sm">{formatHoursElapsed(hoursElapsed)}</span>
           </div>
         );
       },

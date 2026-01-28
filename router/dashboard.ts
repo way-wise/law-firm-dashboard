@@ -68,7 +68,10 @@ const recentMatterSchema = z.object({
   calculatedDeadline: z.date().nullable().optional(),
   isPastEstimatedDeadline: z.boolean().optional(),
   docketwiseCreatedAt: z.date().nullable(),
+  assignedDate: z.date().nullable().optional(),
   updatedAt: z.date(),
+  totalHoursElapsed: z.number().optional(), // Hours since assignment
+  daysUntilDeadline: z.number().optional(), // Days until calculated deadline
 });
 
 // Matter status distribution schema
@@ -558,6 +561,28 @@ export const getRecentMatters = authorized
       userId: context.user.id,
     });
 
+    // Fetch local database data for assignedDate and other local fields
+    const localMatters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        docketwiseId: {
+          in: result.data.map(m => m.docketwiseId)
+        }
+      },
+      select: {
+        docketwiseId: true,
+        assignedDate: true,
+        estimatedDeadline: true,
+        actualDeadline: true,
+        totalHours: true,
+      },
+    });
+
+    // Create a map for quick lookup
+    const localMattersMap = new Map(
+      localMatters.map(m => [m.docketwiseId, m])
+    );
+
     // Load matter types for deadline calculation
     const matterTypes = await prisma.matterTypes.findMany({
       select: {
@@ -573,11 +598,17 @@ export const getRecentMatters = authorized
       }
     }
 
-    // Calculate deadlines for dashboard matters
+    // Calculate deadlines and hours for dashboard matters
     const mattersWithDeadlines = result.data.map((matter) => {
       let calculatedDeadline: Date | null = null;
       let isPastEstimatedDeadline = false;
+      let daysUntilDeadline: number | undefined;
+      let totalHoursElapsed: number | undefined;
 
+      // Get local data for this matter
+      const localMatter = localMattersMap.get(matter.docketwiseId);
+
+      // Calculate deadline from docketwiseCreatedAt + estimatedDays
       if (matter.docketwiseCreatedAt && matter.matterTypeId) {
         const createdAt = new Date(matter.docketwiseCreatedAt);
         if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
@@ -589,8 +620,25 @@ export const getRecentMatters = authorized
             if (targetDate.getFullYear() > 1970) {
               calculatedDeadline = targetDate;
               isPastEstimatedDeadline = new Date() > calculatedDeadline;
+              
+              // Calculate days until deadline (negative if overdue)
+              const now = new Date();
+              daysUntilDeadline = Math.ceil(
+                (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+              );
             }
           }
+        }
+      }
+
+      // Calculate hours elapsed since assignment (from local database)
+      if (localMatter?.assignedDate) {
+        const assignedAt = new Date(localMatter.assignedDate);
+        if (!isNaN(assignedAt.getTime()) && assignedAt.getFullYear() > 1970) {
+          const now = new Date();
+          totalHoursElapsed = Math.floor(
+            (now.getTime() - assignedAt.getTime()) / (1000 * 60 * 60)
+          );
         }
       }
 
@@ -614,11 +662,15 @@ export const getRecentMatters = authorized
         statusForFiling: matter.statusForFiling,
         assignees: matter.assignees,
         billingStatus: matter.billingStatus,
-        estimatedDeadline,
+        estimatedDeadline: localMatter?.estimatedDeadline || matter.estimatedDeadline,
         docketwiseCreatedAt: matter.docketwiseCreatedAt,
+        assignedDate: localMatter?.assignedDate,
         updatedAt: matter.updatedAt,
         calculatedDeadline,
         isPastEstimatedDeadline,
+        totalHoursElapsed,
+        daysUntilDeadline,
+        estimatedDays: matterTypeEstDaysMap.get(matter.matterTypeId || 0) || null,
       };
     });
 
