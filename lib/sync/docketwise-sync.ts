@@ -263,7 +263,7 @@ export async function syncMatters(userId: string) {
             create: {
               docketwiseId: type.id,
               name: type.name,
-              billingRate: 0, // Default to 0, will be updated manually
+              flatFee: null, // Default to null, will be updated manually
               lastSyncedAt: new Date(),
             },
           });

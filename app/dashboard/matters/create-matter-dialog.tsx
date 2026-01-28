@@ -23,8 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Loader2 } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
-import { orpc } from "@/lib/orpc/tanstack-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { client } from "@/lib/orpc/client";
 import { toast } from "sonner";
 
 const billingStatusOptions = [
@@ -37,6 +37,15 @@ const billingStatusOptions = [
 export function CreateMatterDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  
+  // Fetch team members for assignee dropdown
+  const { data: teamMembersResponse, isLoading: isLoadingTeamMembers } = useQuery({
+    queryKey: ["team-members"],
+    queryFn: () => client.team.get({ active: true }),
+  });
+
+  const teamMembers = teamMembersResponse?.data || [];
+
   const [formData, setFormData] = useState({
     title: "",
     clientName: "",
@@ -48,19 +57,18 @@ export function CreateMatterDialog() {
     customNotes: "",
   });
 
-  const createMutation = useMutation(
-    orpc.customMatters.create.mutationOptions({
-      onSuccess: () => {
-        toast.success("Matter created successfully");
-        setOpen(false);
-        resetForm();
-        router.refresh();
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to create matter");
-      },
-    })
-  );
+  const createMutation = useMutation({
+    mutationFn: (data: any) => client.customMatters.create(data),
+    onSuccess: () => {
+      toast.success("Matter created successfully");
+      setOpen(false);
+      resetForm();
+      router.refresh();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to create matter");
+    },
+  });
 
   const resetForm = () => {
     setFormData({
@@ -143,12 +151,22 @@ export function CreateMatterDialog() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="paralegalAssigned">Assigned Paralegal</Label>
-                <Input
-                  id="paralegalAssigned"
-                  placeholder="Paralegal name"
+                <Select
                   value={formData.paralegalAssigned}
-                  onChange={(e) => setFormData({ ...formData, paralegalAssigned: e.target.value })}
-                />
+                  onValueChange={(value) => setFormData({ ...formData, paralegalAssigned: value })}
+                  disabled={isLoadingTeamMembers}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a team member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id.toString()}>
+                        {member.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="billingStatus">Billing Status</Label>

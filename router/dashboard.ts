@@ -169,6 +169,7 @@ export const getDashboardStats = authorized
           createdAt: true,
           billingStatus: true,
           totalHours: true,
+          flatFee: true,
           assignees: true,
           teamId: true,
           matterTypeId: true,
@@ -177,13 +178,14 @@ export const getDashboardStats = authorized
           errorCount: true,
         },
       }),
-      // Matter types with complexity and billing rates
+      // Matter types with complexity and flat fees
       prisma.matterTypes.findMany({
         select: { 
+          id: true,
           docketwiseId: true, 
           estimatedDays: true,
           complexityWeight: true,
-          billingRate: true,
+          flatFee: true,
           name: true,
         },
       }),
@@ -233,10 +235,10 @@ export const getDashboardStats = authorized
       })
       .reduce((total, matter) => {
         const matterType = matterTypeMap.get(matter.matterTypeId || 0);
-        const rate = matterType?.billingRate;
-        // Skip matters without billing rates for revenue calculations
-        if (rate === null || rate === undefined) return total;
-        return total + rate;
+        const flatFee = matterType?.flatFee;
+        // Skip matters without flat fees for revenue calculations
+        if (flatFee === null || flatFee === undefined) return total;
+        return total + flatFee;
       }, 0);
 
     // 3. Deadline Compliance Rate
@@ -294,36 +296,48 @@ export const getDashboardStats = authorized
       return utilization > 90;
     }).length;
 
-    // Financial metrics
+    // Financial metrics - using flat fees instead of hourly rates
     const totalRevenue = allMatters.reduce((sum, m) => {
+      // Use matter-specific flat fee first, then fall back to matter type flat fee
+      if (m.flatFee !== null && m.flatFee !== undefined) {
+        return sum + m.flatFee;
+      }
       if (!m.matterTypeId) return sum;
       const matterType = matterTypeMap.get(m.matterTypeId || 0);
-      const rate = matterType?.billingRate;
-      // Skip matters without billing rates for revenue calculations
-      if (rate === null || rate === undefined) return sum;
-      return sum + ((m.totalHours || 0) * rate);
+      const flatFee = matterType?.flatFee;
+      // Skip matters without flat fees for revenue calculations
+      if (flatFee === null || flatFee === undefined) return sum;
+      return sum + flatFee;
     }, 0);
 
     const pendingRevenue = allMatters
       .filter(m => m.billingStatus !== "PAID")
       .reduce((sum, m) => {
+        // Use matter-specific flat fee first, then fall back to matter type flat fee
+        if (m.flatFee !== null && m.flatFee !== undefined) {
+          return sum + m.flatFee;
+        }
         if (!m.matterTypeId) return sum;
         const matterType = matterTypeMap.get(m.matterTypeId || 0);
-        const rate = matterType?.billingRate;
-        // Skip matters without billing rates for revenue calculations
-        if (rate === null || rate === undefined) return sum;
-        return sum + ((m.totalHours || 0) * rate);
+        const flatFee = matterType?.flatFee;
+        // Skip matters without flat fees for revenue calculations
+        if (flatFee === null || flatFee === undefined) return sum;
+        return sum + flatFee;
       }, 0);
 
     const collectedRevenue = allMatters
       .filter(m => m.billingStatus === "PAID")
       .reduce((sum, m) => {
+        // Use matter-specific flat fee first, then fall back to matter type flat fee
+        if (m.flatFee !== null && m.flatFee !== undefined) {
+          return sum + m.flatFee;
+        }
         if (!m.matterTypeId) return sum;
         const matterType = matterTypeMap.get(m.matterTypeId || 0);
-        const rate = matterType?.billingRate;
-        // Skip matters without billing rates for revenue calculations
-        if (rate === null || rate === undefined) return sum;
-        return sum + ((m.totalHours || 0) * rate);
+        const flatFee = matterType?.flatFee;
+        // Skip matters without flat fees for revenue calculations
+        if (flatFee === null || flatFee === undefined) return sum;
+        return sum + flatFee;
       }, 0);
 
     // Quality metrics
@@ -603,7 +617,7 @@ export const getRecentMatters = authorized
         docketwiseId: true,
         estimatedDays: true,
         complexityWeight: true,
-        billingRate: true,
+        flatFee: true,
       },
     });
 

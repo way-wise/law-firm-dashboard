@@ -144,6 +144,7 @@ model matters {
   actualDeadline    DateTime?
   billingStatus     BillingStatus?
   totalHours        Float?
+  flatFee           Float? // Flat fee for this specific matter
   customNotes       String?
 
   // Quality metrics
@@ -328,7 +329,7 @@ model matterTypes {
 
   estimatedDays    Int?
   complexityWeight Int         @default(1) // 1=simple, 2=medium, 3=complex
-  billingRate      Float // Hourly rate in USD
+  flatFee          Float? // Flat fee for this matter type
   categoryId       String?
   category         categories? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
