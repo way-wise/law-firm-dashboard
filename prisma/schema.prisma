@@ -136,6 +136,8 @@ model matters {
   docketwiseUserIds   String? // @deprecated - Use assignee relation instead
   openedAt            DateTime?
   closedAt            DateTime?
+  archived            Boolean   @default(false) // Whether matter is archived in Docketwise
+  discardedAt         DateTime? // When matter was deleted/discarded in Docketwise
 
   assignedDate      DateTime?
   estimatedDeadline DateTime?
@@ -173,6 +175,8 @@ model matters {
   @@index([teamId, status])
   @@index([isStale, userId])
   @@index([docketwiseId, userId])
+  @@index([archived])
+  @@index([userId, archived])
 }
 
 model matterTypeDeadlines {

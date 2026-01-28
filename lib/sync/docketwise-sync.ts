@@ -87,10 +87,10 @@ async function fetchMatterDetailsBatch(
       results.set(id, detail);
     }
     completed++;
-    
+
     // Log progress periodically
     if (completed % 5 === 0) {
-       console.log(`[SYNC] Details progress: ${completed}/${matterIds.length}`);
+      console.log(`[SYNC] Details progress: ${completed}/${matterIds.length}`);
     }
 
     // Strict rate limiting: wait after EACH request
@@ -247,11 +247,11 @@ export async function syncMatters(userId: string) {
           },
         },
       );
-      
+
       if (typesResponse.ok) {
         const types = (await typesResponse.json()) as DocketwiseMatterType[];
         console.log(`[SYNC] Loaded ${types.length} matter types`);
-        
+
         // Sync matter types to database
         for (const type of types) {
           await prisma.matterTypes.upsert({
@@ -335,7 +335,7 @@ export async function syncMatters(userId: string) {
           u.id,
           u.attorney_profile
             ? `${u.attorney_profile.first_name || ""} ${u.attorney_profile.last_name || ""}`.trim() ||
-              u.email
+            u.email
             : u.email,
         ]),
       );
@@ -521,8 +521,8 @@ export async function syncMatters(userId: string) {
         contacts.map((c) => [
           c.docketwiseId,
           c.companyName?.trim() ||
-            `${c.firstName || ""} ${c.lastName || ""}`.trim() ||
-            "Unknown Client",
+          `${c.firstName || ""} ${c.lastName || ""}`.trim() ||
+          "Unknown Client",
         ]),
       );
       console.log(
@@ -615,7 +615,7 @@ export async function syncMatters(userId: string) {
           estimatedDeadline: true,
         },
       });
-      
+
       const existingMattersMap = new Map(
         existingMatters.map((m) => [m.docketwiseId, m]),
       );
@@ -628,14 +628,14 @@ export async function syncMatters(userId: string) {
       const idsToFetchDetails = matters.filter(m => {
         const existing = existingMattersMap.get(m.id);
         if (!existing) return true; // New matter
-        
+
         // Check for updates
         if (m.updated_at && existing.docketwiseUpdatedAt) {
           const apiUpdate = new Date(m.updated_at).getTime();
           const dbUpdate = existing.docketwiseUpdatedAt.getTime();
           if (apiUpdate > dbUpdate) return true;
         }
-        
+
         // Check for missing critical data (self-healing)
         if (
           !existing.assignees ||
@@ -644,12 +644,12 @@ export async function syncMatters(userId: string) {
           !existing.clientName
         )
           return true;
-        
+
         return false;
       }).map(m => m.id);
 
       console.log(`[SYNC] Fetching details for ${idsToFetchDetails.length}/${matters.length} matters (new/updated/incomplete)...`);
-      
+
       // Fetch detailed data only for identified matters
       const matterDetails = await fetchMatterDetailsBatch(token, idsToFetchDetails);
       console.log(`[SYNC] Got details for ${matterDetails.size} matters`);
@@ -702,7 +702,7 @@ export async function syncMatters(userId: string) {
                 );
                 const newStatus =
                   typeof docketwiseMatter.status === "object" &&
-                  docketwiseMatter.status
+                    docketwiseMatter.status
                     ? docketwiseMatter.status.name
                     : docketwiseMatter.status;
 
@@ -822,7 +822,7 @@ export async function syncMatters(userId: string) {
                 if (!workflowStageName) {
                   const statusForFiling =
                     typeof docketwiseMatter.status === "object" &&
-                    docketwiseMatter.status
+                      docketwiseMatter.status
                       ? docketwiseMatter.status.name
                       : typeof docketwiseMatter.status === "string"
                         ? docketwiseMatter.status
@@ -853,17 +853,17 @@ export async function syncMatters(userId: string) {
 
                 // Check if resolution failed (we have IDs but no resolved names)
                 const assigneesResolutionFailed = allAssigneeIds.length > 0 && !assigneesStr;
-                
+
                 // Check if specific data fields are missing from the source object (undefined keys)
                 // This protects against partial API responses or schema changes
                 const isUserIdsMissing = docketwiseMatter.user_ids === undefined;
                 // Check both object and legacy string field
                 const isMatterTypeMissing = docketwiseMatter.matter_type === undefined && docketwiseMatter.type === undefined;
-                
+
                 // Check if status resolution failed (we have an ID but no resolved name)
-                const statusId = docketwiseMatter.workflow_stage?.id || 
-                                 docketwiseMatter.workflow_stage_id || 
-                                 docketwiseMatter.matter_status_id;
+                const statusId = docketwiseMatter.workflow_stage?.id ||
+                  docketwiseMatter.workflow_stage_id ||
+                  docketwiseMatter.matter_status_id;
                 const statusResolutionFailed = !!statusId && !workflowStageName;
 
                 // IMPORTANT: When we don't have detail data, preserve existing values for fields that require details
@@ -888,8 +888,8 @@ export async function syncMatters(userId: string) {
                   ((shouldPreserveExisting || isMatterTypeMissing) && existingMatter?.matterType)
                     ? existingMatter.matterType
                     : docketwiseMatter.matter_type?.name ||
-                      docketwiseMatter.type ||
-                      null;
+                    docketwiseMatter.type ||
+                    null;
 
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
@@ -917,14 +917,14 @@ export async function syncMatters(userId: string) {
                     // statusForFiling = status (Docketwise "Status For Filing" column)
                     statusForFiling:
                       typeof docketwiseMatter.status === "object" &&
-                      docketwiseMatter.status
+                        docketwiseMatter.status
                         ? docketwiseMatter.status.name
                         : typeof docketwiseMatter.status === "string"
                           ? docketwiseMatter.status
                           : null,
                     statusForFilingId:
                       typeof docketwiseMatter.status === "object" &&
-                      docketwiseMatter.status
+                        docketwiseMatter.status
                         ? docketwiseMatter.status.id
                         : docketwiseMatter.status_id || null,
                     clientId: docketwiseMatter.client_id || null,
@@ -935,6 +935,10 @@ export async function syncMatters(userId: string) {
                       : null,
                     closedAt: docketwiseMatter.closed_at
                       ? new Date(docketwiseMatter.closed_at)
+                      : null,
+                    archived: docketwiseMatter.archived || false,
+                    discardedAt: docketwiseMatter.discarded_at
+                      ? new Date(docketwiseMatter.discarded_at)
                       : null,
                     // Only update userIds if we have detail data
                     ...(hasDetailData ? { docketwiseUserIds: userIdsStr } : {}),
@@ -970,14 +974,14 @@ export async function syncMatters(userId: string) {
                     // statusForFiling = status (Docketwise "Status For Filing" column)
                     statusForFiling:
                       typeof docketwiseMatter.status === "object" &&
-                      docketwiseMatter.status
+                        docketwiseMatter.status
                         ? docketwiseMatter.status.name
                         : typeof docketwiseMatter.status === "string"
                           ? docketwiseMatter.status
                           : null,
                     statusForFilingId:
                       typeof docketwiseMatter.status === "object" &&
-                      docketwiseMatter.status
+                        docketwiseMatter.status
                         ? docketwiseMatter.status.id
                         : docketwiseMatter.status_id || null,
                     clientId: docketwiseMatter.client_id || null,
@@ -987,6 +991,10 @@ export async function syncMatters(userId: string) {
                       : null,
                     closedAt: docketwiseMatter.closed_at
                       ? new Date(docketwiseMatter.closed_at)
+                      : null,
+                    archived: docketwiseMatter.archived || false,
+                    discardedAt: docketwiseMatter.discarded_at
+                      ? new Date(docketwiseMatter.discarded_at)
                       : null,
                     docketwiseUserIds: userIdsStr,
                     assignees: assigneesStr,

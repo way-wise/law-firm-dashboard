@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { MatterViewDrawer } from "@/components/matter-view-drawer";
 import { ColumnDef } from "@tanstack/react-table";
@@ -85,9 +86,9 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
       cell: ({ row }) => {
         const type = row.original.matterType;
         const status = row.original.status || row.original.statusForFiling;
-        
+
         if (!type) return <p className="text-sm text-muted-foreground">-</p>;
-        
+
         return (
           <div className="flex flex-col">
             <p className="text-sm font-medium">{type}</p>
@@ -111,12 +112,12 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
       cell: ({ row }) => {
         const createdAt = row.original.docketwiseCreatedAt;
         if (!createdAt) return <p className="text-sm text-muted-foreground">-</p>;
-        
+
         const date = new Date(createdAt);
         if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
           return <p className="text-sm text-muted-foreground">-</p>;
         }
-        
+
         return (
           <p className="text-sm text-muted-foreground">
             {date.toLocaleDateString()}
@@ -131,11 +132,11 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
         const customDeadline = row.original.estimatedDeadline;
         const calculatedDeadline = row.original.calculatedDeadline;
         const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
-        
+
         // Prefer custom deadline if set, otherwise use calculated deadline
         let deadline = customDeadline;
         let isCalculated = false;
-        
+
         // Check if custom deadline is valid (not epoch date)
         if (deadline) {
           const date = new Date(deadline);
@@ -144,18 +145,18 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
             deadline = null;
           }
         }
-        
+
         // Fall back to calculated deadline if no custom deadline
         if (!deadline && calculatedDeadline) {
           deadline = calculatedDeadline;
           isCalculated = true;
         }
-        
+
         if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
-        
+
         const date = new Date(deadline);
         const isOverdue = isCalculated ? isPastEstimatedDeadline : new Date() > date;
-        
+
         return (
           <div className="flex flex-col">
             <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
@@ -187,8 +188,8 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
       accessorKey: "updatedAt",
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
-          {row.original.updatedAt 
-            ? formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true }) 
+          {row.original.updatedAt
+            ? formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true })
             : "-"}
         </p>
       ),
@@ -196,8 +197,8 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
     {
       id: "actions",
       cell: ({ row }) => (
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           size="icon"
           onClick={() => handleView(row.original.docketwiseId)}
         >
@@ -208,23 +209,24 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold">Recent Matters</h3>
-          <Badge variant="secondary">{matters.length}</Badge>
+    <Card className="p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h4 className="font-semibold">Recent Matters</h4>
+          <p className="text-sm text-muted-foreground">
+            Latest {matters.length} matters from Docketwise
+          </p>
         </div>
         <Button variant="outline" size="sm" asChild>
-          <Link href="/dashboard/matters">View All Matters</Link>
+          <Link href="/dashboard/matters">View All</Link>
         </Button>
       </div>
-      <div className="rounded-xl border bg-card">
-        <DataTable
-          data={matters}
-          columns={columns}
-          emptyMessage="No matters found. Sync data to see recent matters."
-        />
-      </div>
+
+      <DataTable
+        data={matters}
+        columns={columns}
+        emptyMessage="No matters found. Sync data to see recent matters."
+      />
 
       {/* View Drawer */}
       <MatterViewDrawer
@@ -232,6 +234,6 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
         open={viewDrawerOpen}
         onOpenChange={setViewDrawerOpen}
       />
-    </div>
+    </Card>
   );
 }
