@@ -1,9 +1,10 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Plug } from "lucide-react";
+import { Bell, Plug, Settings } from "lucide-react";
 import { IntegrationsTab } from "./integrations-tab";
 import { NotificationsTab } from "./notifications-tab";
+import { PlatformTab } from "./platform-tab";
 
 export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
   return (
@@ -15,8 +16,12 @@ export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
         </p>
       </div>
 
-      <Tabs defaultValue={defaultTab || "integrations"} className="w-full">
+      <Tabs defaultValue={defaultTab || "platform"} className="w-full">
         <TabsList>
+          <TabsTrigger value="platform">
+            <Settings className="h-4 w-4" />
+            Platform
+          </TabsTrigger>
           <TabsTrigger value="integrations">
             <Plug className="h-4 w-4" />
             Integrations
@@ -26,6 +31,10 @@ export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
             Notifications
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="platform">
+          <PlatformTab />
+        </TabsContent>
 
         <TabsContent value="integrations">
           <IntegrationsTab />

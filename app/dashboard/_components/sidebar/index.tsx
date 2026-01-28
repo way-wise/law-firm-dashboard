@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useLayoutEffect } from "react";
 import { LuX } from "react-icons/lu";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import {
   Drawer,
   DrawerClose,
@@ -33,21 +34,32 @@ const Sidebar = () => {
       <Drawer open={openMobile} onOpenChange={setOpenMobile}>
         <DrawerContent>
           <DrawerHeader>
-            <div className="flex flex-col">
-              <DrawerTitle className="text-xl font-medium">
-                Brand Logo
-              </DrawerTitle>
-              <DrawerDescription className="sr-only">
-                Mobile sidebar navigation
-              </DrawerDescription>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Image 
+                  src="/logo.png" 
+                  alt="Law Firm Dashboard" 
+                  width={32}
+                  height={32}
+                  className="h-8 w-auto"
+                  priority
+                  quality={100}
+                />
+                <DrawerTitle className="text-xl font-medium">
+                  Dashboard
+                </DrawerTitle>
+              </div>
+              <DrawerClose
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "icon-lg" }),
+                )}
+              >
+                <LuX />
+              </DrawerClose>
             </div>
-            <DrawerClose
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "icon-lg" }),
-              )}
-            >
-              <LuX />
-            </DrawerClose>
+            <DrawerDescription className="sr-only">
+              Mobile sidebar navigation
+            </DrawerDescription>
           </DrawerHeader>
           <SidebarMenu />
         </DrawerContent>
@@ -64,6 +76,15 @@ const Sidebar = () => {
         },
       )}
     >
+      <div className="flex items-center justify-center p-6 border-b">
+        <Image 
+          src="/logo.png" 
+          alt="Law Firm Dashboard" 
+          width={48}
+          height={48}
+          className="h-12 w-auto"
+        />
+      </div>
       <SidebarMenu />
     </aside>
   );
