@@ -110,6 +110,7 @@ export const syncMatterTypes = authorized
             data: {
               docketwiseId: dwType.id,
               name: dwType.name,
+              billingRate: 0, // Default to 0, will be updated manually
               lastSyncedAt: new Date(),
             },
           });

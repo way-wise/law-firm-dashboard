@@ -146,6 +146,12 @@ model matters {
   totalHours        Float?
   customNotes       String?
 
+  // Quality metrics
+  rfeCount         Int       @default(0)
+  revisionCount    Int       @default(0)
+  errorCount       Int       @default(0)
+  lastQualityCheck DateTime?
+
   lastSyncedAt DateTime @default(now())
   isStale      Boolean  @default(false)
 
@@ -236,15 +242,21 @@ model paralegalMetrics {
 }
 
 model teams {
-  id           String   @id @default(ulid())
-  docketwiseId Int      @unique
+  id           String  @id @default(ulid())
+  docketwiseId Int     @unique
   email        String
   firstName    String?
   lastName     String?
   fullName     String?
-  isActive     Boolean  @default(true)
-  teamType     String   @default("inHouse") // "inHouse" | "contractor"
+  isActive     Boolean @default(true)
+  teamType     String  @default("inHouse") // "inHouse" | "contractor"
   title        String? // e.g., "Senior Paralegal", "Attorney"
+
+  // Paralegal capacity settings (nullable for non-paralegals)
+  availableHoursPerWeek Float? // e.g., 40, 35, 20
+  utilizationTarget     Float? // e.g., 0.75, 0.80 (75%, 80%)
+  performanceIndex      Float? // Calculated performance score (0-100)
+
   lastSyncedAt DateTime @default(now())
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -314,9 +326,11 @@ model matterTypes {
   docketwiseId Int    @unique
   name         String
 
-  estimatedDays Int?
-  categoryId    String?
-  category      categories? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  estimatedDays    Int?
+  complexityWeight Int         @default(1) // 1=simple, 2=medium, 3=complex
+  billingRate      Float // Hourly rate in USD
+  categoryId       String?
+  category         categories? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   isEdited     Boolean   @default(false)
   editedBy     String?

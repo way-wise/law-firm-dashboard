@@ -2,7 +2,6 @@
 
 import { Card } from "@/components/ui/card";
 import {
-    FileText,
     CheckCircle2,
     AlertTriangle,
     Activity,
@@ -12,19 +11,22 @@ import {
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 
 export interface HeroKPIStats {
-    // New matters this month
-    newMattersCount: number;
-    newMattersTrend?: number;
+    // Weighted Active Matters
+    weightedActiveMatters: number;
+    weightedActiveMattersTrend?: number;
 
-    // Approval rate
-    approvalRate: number;
-    approvalRateTrend?: number;
+    // Revenue at Risk
+    revenueAtRisk: number;
+    revenueAtRiskTrend?: number;
 
-    // Matters approaching deadline (within 7 days)
-    deadlineAlerts: number;
+    // Deadline Compliance Rate
+    deadlineComplianceRate: number;
 
-    // Active cases total
-    activeCases: number;
+    // Average Cycle Time
+    avgCycleTime: number;
+
+    // Paralegal Utilization
+    paralegalUtilization: number;
 }
 
 interface HeroKPIsProps {
@@ -90,37 +92,39 @@ const TrendIndicator = ({ trend }: { trend?: number }) => {
 export function HeroKPIs({ stats }: HeroKPIsProps) {
     const kpis = [
         {
-            label: "New Matters (MTD)",
-            value: stats.newMattersCount,
-            trend: stats.newMattersTrend,
-            icon: FileText,
+            label: "Active Matters (Weighted)",
+            value: stats.weightedActiveMatters,
+            trend: stats.weightedActiveMattersTrend,
+            icon: Activity,
             color: "#3b82f6",
-            description: "Month to date",
+            description: "Weighted by complexity",
         },
         {
-            label: "Approval Rate",
-            value: `${stats.approvalRate}%`,
-            trend: stats.approvalRateTrend,
-            icon: CheckCircle2,
-            color: "#10b981",
-            description: "Success rate",
-        },
-        {
-            label: "Deadline Alerts",
-            value: stats.deadlineAlerts,
-            trend: undefined,
+            label: "Revenue at Risk",
+            value: `$${(stats.revenueAtRisk / 1000).toFixed(1)}k`,
+            trend: stats.revenueAtRiskTrend,
             icon: AlertTriangle,
-            color: stats.deadlineAlerts > 0 ? "#f59e0b" : "#10b981",
-            description: "Due within 7 days",
-            isAlert: stats.deadlineAlerts > 0,
+            color: stats.revenueAtRisk > 0 ? "#f59e0b" : "#10b981",
+            description: "Due in next 14 days",
+            isAlert: stats.revenueAtRisk > 0,
         },
         {
-            label: "Active Cases",
-            value: stats.activeCases,
+            label: "Deadline Compliance",
+            value: `${stats.deadlineComplianceRate.toFixed(1)}%`,
+            trend: undefined,
+            icon: CheckCircle2,
+            color: stats.deadlineComplianceRate >= 95 ? "#10b981" : "#f59e0b",
+            description: "Target: 95%",
+            isAlert: stats.deadlineComplianceRate < 95,
+        },
+        {
+            label: "Paralegal Utilization",
+            value: `${stats.paralegalUtilization.toFixed(0)}%`,
             trend: undefined,
             icon: Activity,
-            color: "#8b5cf6",
-            description: "Currently open",
+            color: stats.paralegalUtilization > 90 ? "#f59e0b" : "#10b981",
+            description: "Average utilization",
+            isAlert: stats.paralegalUtilization > 90,
         },
     ];
 

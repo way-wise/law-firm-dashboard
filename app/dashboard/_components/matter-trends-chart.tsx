@@ -13,10 +13,7 @@ import {
 } from "recharts";
 import { format, subMonths, startOfMonth } from "date-fns";
 
-interface MatterTrendsChartProps {
-    // For now, we'll generate sample data
-    // In the future, this should come from the API
-}
+type MatterTrendsChartProps = Record<string, never>;
 
 export function MatterTrendsChart({ }: MatterTrendsChartProps) {
     // Generate 6 months of sample data
@@ -27,11 +24,11 @@ export function MatterTrendsChart({ }: MatterTrendsChartProps) {
         for (let i = 5; i >= 0; i--) {
             const month = startOfMonth(subMonths(now, i));
 
-            // Generate realistic-looking data
-            const baseNew = 20 + Math.floor(Math.random() * 10);
-            const baseApproved = 15 + Math.floor(Math.random() * 8);
-            const baseDenied = 1 + Math.floor(Math.random() * 3);
-            const basePending = 10 + Math.floor(Math.random() * 5);
+            // Generate realistic-looking data (deterministic)
+            const baseNew = 20 + (i % 10);
+            const baseApproved = 15 + (i % 8);
+            const baseDenied = 1 + (i % 3);
+            const basePending = 10 + (i % 5);
 
             data.push({
                 month: format(month, 'MMM yyyy'),

@@ -15,12 +15,18 @@ const dashboardStatsSchema = z.object({
   matterTypesWithWorkflow: z.number(),
   editedMatters: z.number(),
 
-  // Matter performance metrics
-  activeMatters: z.number(),
-  completedMatters: z.number(),
+  // Executive KPIs (Top Row)
+  weightedActiveMatters: z.number(), // Active matters weighted by complexity
+  revenueAtRisk: z.number(), // Revenue from matters due in next 14 days
+  deadlineComplianceRate: z.number(), // Percentage of matters completed on time
+  avgCycleTime: z.number(), // Average days from creation to completion
+  paralegalUtilization: z.number(), // Average utilization across paralegals
+
+  // Risk Command Center
   overdueMatters: z.number(),
   atRiskMatters: z.number(), // Due within 7 days
   unassignedMatters: z.number(),
+  overloadedParalegals: z.number(), // Paralegals with >90% utilization
 
   // Financial metrics
   totalRevenue: z.number(),
@@ -33,11 +39,23 @@ const dashboardStatsSchema = z.object({
   onTimeRate: z.number(), // Percentage completed on time
   teamUtilization: z.number(), // Active capacity percentage
 
+  // Quality metrics
+  avgRfeRate: z.number(), // Average RFE rate per paralegal
+  totalReworkCount: z.number(), // Total revisions across all matters
+  qualityScore: z.number(), // Overall quality score (0-100)
+
+  // Capacity analysis
+  totalAvailableHours: z.number(), // Total available hours per month
+  totalAssignedHours: z.number(), // Total estimated hours for assigned matters
+  totalBillableHours: z.number(), // Total actual billable hours
+
   // Trend data (month over month)
   mattersTrend: z.number().optional(), // Percentage change
   revenueTrend: z.number().optional(), // Percentage change
+  deadlineMissTrend: z.number().optional(), // Deadline miss trend last 30 days
 });
 
+// Get Dashboard Stats
 // Assignee stats schema
 const assigneeStatsSchema = z.object({
   id: z.number(),
@@ -72,6 +90,7 @@ const recentMatterSchema = z.object({
   updatedAt: z.date(),
   totalHoursElapsed: z.number().optional(), // Hours since assignment
   daysUntilDeadline: z.number().optional(), // Days until calculated deadline
+  estimatedDays: z.number().nullable().optional(),
 });
 
 // Matter status distribution schema
@@ -96,6 +115,8 @@ export const getDashboardStats = authorized
   })
   .output(dashboardStatsSchema)
   .handler(async ({ context }) => {
+    // === EXECUTIVE KPI CALCULATIONS ===
+    
     // Basic counts
     const totalContacts = await prisma.contacts.count();
     const totalMatters = await prisma.matters.count({
@@ -127,174 +148,214 @@ export const getDashboardStats = authorized
       },
     });
 
-    // Get all matters for performance calculations
-    const allMatters = await prisma.matters.findMany({
-      where: { 
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
-      select: {
-        status: true,
-        closedAt: true,
-        estimatedDeadline: true,
-        actualDeadline: true,
-        docketwiseCreatedAt: true,
-        createdAt: true,
-        billingStatus: true,
-        totalHours: true,
-        assignees: true,
-        archived: true,
-        discardedAt: true,
-      },
-    });
+    // === COMPREHENSIVE DATA FETCH ===
+    
+    // Get comprehensive data for KPI calculations
+    const [allMatters, matterTypesFull, paralegals] = await Promise.all([
+      // All matters with full data
+      prisma.matters.findMany({
+        where: { 
+          userId: context.user.id,
+          archived: false,
+          discardedAt: null,
+        },
+        select: {
+          id: true,
+          status: true,
+          closedAt: true,
+          estimatedDeadline: true,
+          actualDeadline: true,
+          docketwiseCreatedAt: true,
+          createdAt: true,
+          billingStatus: true,
+          totalHours: true,
+          assignees: true,
+          teamId: true,
+          matterTypeId: true,
+          rfeCount: true,
+          revisionCount: true,
+          errorCount: true,
+        },
+      }),
+      // Matter types with complexity and billing rates
+      prisma.matterTypes.findMany({
+        select: { 
+          docketwiseId: true, 
+          estimatedDays: true,
+          complexityWeight: true,
+          billingRate: true,
+          name: true,
+        },
+      }),
+      // Paralegals (active team members with capacity settings)
+      prisma.teams.findMany({
+        where: {
+          isActive: true,
+          availableHoursPerWeek: { not: null },
+        },
+        select: {
+          docketwiseId: true,
+          fullName: true,
+          email: true,
+          availableHoursPerWeek: true,
+          utilizationTarget: true,
+        },
+      }),
+    ]);
 
-    // Calculate matter performance metrics
+    // Create lookup maps
+    const matterTypeMap = new Map(matterTypesFull.map(mt => [mt.docketwiseId, mt]));
+
+    // Calculate basic matter metrics
     const now = new Date();
-    const activeMatters = allMatters.filter(
-      (m) =>
-        !m.archived &&
-        !m.discardedAt &&
-        !m.closedAt &&
-        !(m.status || "").toLowerCase().includes("closed"),
-    ).length;
 
-    const completedMatters = allMatters.filter(
-      (m) =>
-        !m.archived &&
-        !m.discardedAt &&
-        (m.closedAt || (m.status || "").toLowerCase().includes("closed")),
-    ).length;
+    // === EXECUTIVE KPI CALCULATIONS ===
+    
+    // 1. Weighted Active Matters
+    const weightedActiveMatters = allMatters
+      .filter(matter => !matter.closedAt && !(matter.status || "").toLowerCase().includes("closed"))
+      .reduce((total, matter) => {
+        const complexity = matterTypeMap.get(matter.matterTypeId || 0)?.complexityWeight || 1;
+        return total + complexity;
+      }, 0);
 
-    // Calculate overdue and at-risk matters
-    let overdueMatters = 0;
-    let atRiskMatters = 0;
-    let totalDaysOpen = 0;
-    let onTimeCount = 0;
+    // 2. Revenue at Risk (matters due in next 14 days)
+    const next14Days = new Date();
+    next14Days.setDate(next14Days.getDate() + 14);
+    
+    const revenueAtRisk = allMatters
+      .filter(matter => {
+        if (!matter.matterTypeId) return false;
+        const deadline = matter.estimatedDeadline;
+        if (!deadline) return false;
+        const deadlineDate = new Date(deadline);
+        return deadlineDate <= next14Days && deadlineDate >= now;
+      })
+      .reduce((total, matter) => {
+        const matterType = matterTypeMap.get(matter.matterTypeId || 0);
+        const rate = matterType?.billingRate;
+        // Skip matters without billing rates for revenue calculations
+        if (rate === null || rate === undefined) return total;
+        return total + rate;
+      }, 0);
 
-    // Get matter types for deadline calculations
-    const matterTypes = await prisma.matterTypes.findMany({
-      select: { docketwiseId: true, estimatedDays: true },
-    });
-    const matterTypeEstDaysMap = new Map<number, number>();
-    for (const mt of matterTypes) {
-      if (mt.estimatedDays) {
-        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
-      }
-    }
-
-    for (const matter of allMatters) {
-      // Determine deadline
-      const deadline = matter.estimatedDeadline;
-      if (!deadline && matter.docketwiseCreatedAt) {
-        // This would need matterTypeId from the matter record
-        // For now, skip calculated deadlines
-      }
-
-      const isClosed =
-        !!matter.closedAt ||
-        (matter.status || "").toLowerCase().includes("closed");
-
-      if (!isClosed && deadline) {
-        if (now > deadline) {
-          overdueMatters++;
-        } else if (
-          deadline.getTime() - now.getTime() <=
-          7 * 24 * 60 * 60 * 1000
-        ) {
-          atRiskMatters++;
-        }
-      }
-
-      // Calculate days open for velocity
-      const created = matter.docketwiseCreatedAt
-        ? new Date(matter.docketwiseCreatedAt)
-        : matter.createdAt;
-      if (created && !isNaN(created.getTime())) {
-        const ageDays = Math.max(
-          0,
-          (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24),
-        );
-        if (!isClosed) {
-          totalDaysOpen += ageDays;
-        }
-      }
-
-      // Calculate on-time completion
-      if (isClosed && deadline) {
-        const completionDate = matter.actualDeadline || matter.closedAt || now;
-        if (completionDate <= deadline) {
-          onTimeCount++;
-        }
-      }
-    }
-
-    const unassignedMatters = allMatters.filter((m) => !m.assignees).length;
-    const matterVelocity =
-      activeMatters > 0 ? Math.round(totalDaysOpen / activeMatters) : 0;
-    const onTimeRate =
-      completedMatters > 0
-        ? Math.round((onTimeCount / completedMatters) * 100)
-        : 100;
-    const teamUtilization =
-      activeTeamMembers > 0
-        ? Math.round((activeMatters / (activeTeamMembers * 20)) * 100)
-        : 0; // Assuming 20 matters per team member
-
-    // Calculate financial metrics (assuming hourly rate of $200)
-    const hourlyRate = 200;
-    const totalRevenue = allMatters.reduce(
-      (sum, m) => sum + (m.totalHours || 0) * hourlyRate,
-      0,
+    // 3. Deadline Compliance Rate
+    const completedWithDeadlines = allMatters.filter(m => 
+      m.closedAt && m.estimatedDeadline
     );
+    const onTimeDeliveries = completedWithDeadlines.filter(m => 
+      new Date(m.actualDeadline || m.closedAt!) <= new Date(m.estimatedDeadline!)
+    ).length;
+    const deadlineComplianceRate = completedWithDeadlines.length > 0 
+      ? (onTimeDeliveries / completedWithDeadlines.length) * 100 
+      : 0;
+
+    // 4. Average Cycle Time
+    const completedMatterData = allMatters.filter(matter => 
+      matter.closedAt && matter.docketwiseCreatedAt
+    );
+    const avgCycleTime = completedMatterData.length > 0
+      ? completedMatterData.reduce((total, matter) => {
+          const days = (new Date(matter.closedAt!).getTime() - new Date(matter.docketwiseCreatedAt!).getTime()) / (1000 * 60 * 60 * 24);
+          return total + days;
+        }, 0) / completedMatterData.length
+      : 0;
+
+    // 5. Paralegal Utilization
+    const paralegalUtilization = paralegals.length > 0
+      ? paralegals.reduce((total, paralegal) => {
+          const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
+          const billableHours = assignedMatters.reduce((sum, m) => sum + (m.totalHours || 0), 0);
+          const availableHours = (paralegal.availableHoursPerWeek || 0) * 4; // monthly
+          const utilization = availableHours > 0 ? (billableHours / availableHours) * 100 : 0;
+          return total + utilization;
+        }, 0) / paralegals.length
+      : 0;
+
+    // Risk Command Center
+    const overdueMatters = allMatters.filter(m => {
+      if (!m.estimatedDeadline) return false;
+      return new Date(m.estimatedDeadline) < now;
+    }).length;
+
+    const atRiskMatters = allMatters.filter(m => {
+      if (!m.estimatedDeadline) return false;
+      const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return daysUntil > 0 && daysUntil <= 7;
+    }).length;
+
+    const unassignedMatters = allMatters.filter(m => !m.teamId).length;
+
+    const overloadedParalegals = paralegals.filter(paralegal => {
+      const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
+      const billableHours = assignedMatters.reduce((sum, m) => sum + (m.totalHours || 0), 0);
+      const availableHours = (paralegal.availableHoursPerWeek || 0) * 4;
+      const utilization = availableHours > 0 ? (billableHours / availableHours) * 100 : 0;
+      return utilization > 90;
+    }).length;
+
+    // Financial metrics
+    const totalRevenue = allMatters.reduce((sum, m) => {
+      if (!m.matterTypeId) return sum;
+      const matterType = matterTypeMap.get(m.matterTypeId || 0);
+      const rate = matterType?.billingRate;
+      // Skip matters without billing rates for revenue calculations
+      if (rate === null || rate === undefined) return sum;
+      return sum + ((m.totalHours || 0) * rate);
+    }, 0);
+
     const pendingRevenue = allMatters
-      .filter((m) => m.billingStatus !== "PAID")
-      .reduce((sum, m) => sum + (m.totalHours || 0) * hourlyRate, 0);
-    const collectedRevenue = totalRevenue - pendingRevenue;
-    const averageMatterValue =
-      totalMatters > 0 ? totalRevenue / totalMatters : 0;
+      .filter(m => m.billingStatus !== "PAID")
+      .reduce((sum, m) => {
+        if (!m.matterTypeId) return sum;
+        const matterType = matterTypeMap.get(m.matterTypeId || 0);
+        const rate = matterType?.billingRate;
+        // Skip matters without billing rates for revenue calculations
+        if (rate === null || rate === undefined) return sum;
+        return sum + ((m.totalHours || 0) * rate);
+      }, 0);
 
-    // Calculate trend data (compare with previous period)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const collectedRevenue = allMatters
+      .filter(m => m.billingStatus === "PAID")
+      .reduce((sum, m) => {
+        if (!m.matterTypeId) return sum;
+        const matterType = matterTypeMap.get(m.matterTypeId || 0);
+        const rate = matterType?.billingRate;
+        // Skip matters without billing rates for revenue calculations
+        if (rate === null || rate === undefined) return sum;
+        return sum + ((m.totalHours || 0) * rate);
+      }, 0);
 
-    const previousMatters = await prisma.matters.count({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-        createdAt: {
-          lt: thirtyDaysAgo,
-        },
-      },
-    });
+    // Quality metrics
+    const avgRfeRate = paralegals.length > 0
+      ? paralegals.reduce((total, paralegal) => {
+          const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
+          const rfeCount = assignedMatters.reduce((sum, m) => sum + (m.rfeCount || 0), 0);
+          const rfeRate = assignedMatters.length > 0 ? (rfeCount / assignedMatters.length) * 100 : 0;
+          return total + rfeRate;
+        }, 0) / paralegals.length
+      : 0;
 
-    const previousRevenue = await prisma.matters.aggregate({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-        createdAt: {
-          lt: thirtyDaysAgo,
-        },
-      },
-      _sum: {
-        totalHours: true,
-      },
-    });
+    const totalReworkCount = allMatters.reduce((sum, m) => sum + (m.revisionCount || 0), 0);
+    const qualityScore = Math.max(0, 100 - avgRfeRate - (totalReworkCount / Math.max(allMatters.length, 1)) * 10);
 
-    const previousRevenueAmount = (previousRevenue._sum.totalHours || 0) * 200; // Same hourly rate
+    // Capacity analysis
+    const totalAvailableHours = paralegals.reduce((sum, p) => sum + ((p.availableHoursPerWeek || 0) * 4), 0);
+    const totalBillableHours = allMatters.reduce((sum, m) => sum + (m.totalHours || 0), 0);
+    
+    // Estimate assigned hours (using matter type complexity)
+    const totalAssignedHours = allMatters.reduce((sum, m) => {
+      if (!m.matterTypeId) return sum;
+      const matterType = matterTypeMap.get(m.matterTypeId || 0);
+      const complexity = matterType?.complexityWeight || 1;
+      const baseHours = matterType?.estimatedDays || 20; // Use estimated days or default
+      return sum + (baseHours * complexity);
+    }, 0);
 
-    // Calculate trends (handle edge cases)
-    const mattersTrend =
-      previousMatters > 0
-        ? ((totalMatters - previousMatters) / previousMatters) * 100
-        : 0;
-
-    const revenueTrend =
-      previousRevenueAmount > 0
-        ? ((totalRevenue - previousRevenueAmount) / previousRevenueAmount) * 100
-        : 0;
+    // Calculate trends (placeholder - should calculate from historical data)
+    const mattersTrend = undefined; // TODO: Calculate from previous period
+    const revenueTrend = undefined; // TODO: Calculate from previous period  
+    const deadlineMissTrend = undefined; // TODO: Calculate from last 30 days
 
     return {
       // Basic counts
@@ -307,27 +368,44 @@ export const getDashboardStats = authorized
       matterTypesWithWorkflow,
       editedMatters,
 
-      // Matter performance metrics
-      activeMatters,
-      completedMatters,
+      // Executive KPIs (Top Row)
+      weightedActiveMatters,
+      revenueAtRisk,
+      deadlineComplianceRate,
+      avgCycleTime,
+      paralegalUtilization,
+
+      // Risk Command Center
       overdueMatters,
       atRiskMatters,
       unassignedMatters,
+      overloadedParalegals,
 
       // Financial metrics
       totalRevenue,
       pendingRevenue,
       collectedRevenue,
-      averageMatterValue,
+      averageMatterValue: totalMatters > 0 ? totalRevenue / totalMatters : 0,
 
       // Performance metrics
-      matterVelocity,
-      onTimeRate,
-      teamUtilization,
+      matterVelocity: avgCycleTime,
+      onTimeRate: deadlineComplianceRate,
+      teamUtilization: paralegalUtilization,
+
+      // Quality metrics
+      avgRfeRate,
+      totalReworkCount,
+      qualityScore,
+
+      // Capacity analysis
+      totalAvailableHours,
+      totalAssignedHours,
+      totalBillableHours,
 
       // Trend data
-      mattersTrend: mattersTrend || 0,
-      revenueTrend: revenueTrend || 0,
+      mattersTrend,
+      revenueTrend,
+      deadlineMissTrend,
     };
   });
 
@@ -378,10 +456,11 @@ export const getAssigneeStats = authorized
         discardedAt: null,
       },
       select: {
+        assignees: true,
         docketwiseUserIds: true,
         status: true,
+        statusForFiling: true,
         closedAt: true,
-        createdAt: true,
         docketwiseCreatedAt: true,
         estimatedDeadline: true,
         actualDeadline: true,
@@ -389,20 +468,17 @@ export const getAssigneeStats = authorized
       },
     });
 
-    // Initialize stats per assignee
-    const assigneeStats = new Map<
-      number,
-      {
-        total: number;
-        completed: number;
-        overdue: number;
-        onTime: number;
-        totalDaysOpen: number;
-        openCount: number;
-      }
-    >();
+    // Calculate stats per assignee
+    const assigneeStats = new Map<number, {
+      total: number;
+      completed: number;
+      overdue: number;
+      onTime: number;
+      totalDaysOpen: number;
+      openCount: number;
+    }>();
 
-    // Initialize all team members with 0 stats
+    // Initialize stats for all team members
     for (const member of teamMembers) {
       assigneeStats.set(member.docketwiseId, {
         total: 0,
@@ -414,85 +490,52 @@ export const getAssigneeStats = authorized
       });
     }
 
+    // Process matters
     const now = new Date();
-
     for (const matter of matters) {
-      if (matter.docketwiseUserIds) {
-        let userIds: number[] = [];
-        try {
-          const rawIds = JSON.parse(matter.docketwiseUserIds);
-          userIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
-            .map((id: unknown) => Number(id))
-            .filter((id: number) => !isNaN(id));
-        } catch {
-          continue;
+      const userIds = matter.docketwiseUserIds?.split(',').map(id => parseInt(id.trim())) || [];
+      
+      for (const userId of userIds) {
+        const stats = assigneeStats.get(userId);
+        if (!stats) continue;
+
+        stats.total++;
+        
+        // Check if completed
+        const isCompleted = matter.closedAt || (matter.status || "").toLowerCase().includes("closed");
+        if (isCompleted) {
+          stats.completed++;
         }
 
-        // Determine matter status
-        const isClosed =
-          !!matter.closedAt ||
-          (matter.status || "").toLowerCase().includes("closed") ||
-          (matter.status || "").toLowerCase().includes("approved");
-
-        // Determine deadline
-        let deadline = matter.estimatedDeadline;
-
-        // Sanitize deadline from DB - if it's 1970, treat as null
-        if (deadline) {
-          const date = new Date(deadline);
-          if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
-            deadline = null;
+        // Check if overdue
+        if (matter.estimatedDeadline && !isCompleted) {
+          const deadlineDate = new Date(matter.estimatedDeadline);
+          if (deadlineDate < now) {
+            stats.overdue++;
           }
         }
 
-        // If no custom deadline, try calculated
-        if (!deadline && matter.docketwiseCreatedAt && matter.matterTypeId) {
-          const createdAt = new Date(matter.docketwiseCreatedAt);
-          if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
-            const estDays = matterTypeEstDaysMap.get(matter.matterTypeId);
-            if (estDays && estDays > 0) {
-              const calculated = new Date(createdAt);
-              calculated.setDate(calculated.getDate() + estDays);
-              // Ensure calculated date is valid
-              if (calculated.getFullYear() > 1970) {
-                deadline = calculated;
-              }
-            }
+        // Check if completed on time
+        if (isCompleted && matter.estimatedDeadline) {
+          const completionDate = matter.actualDeadline ? new Date(matter.actualDeadline) : now;
+          const deadlineDate = new Date(matter.estimatedDeadline);
+          if (completionDate <= deadlineDate) {
+            stats.onTime++;
           }
         }
 
-        const isOverdue = !isClosed && deadline && now > deadline;
-
-        // Determine on-time (only for completed matters)
-        // If completed and (actualDeadline <= estimated OR closedAt <= estimated)
-        let isOnTime = false;
-        if (isClosed && deadline) {
-          const completionDate =
-            matter.actualDeadline || matter.closedAt || now;
-          isOnTime = completionDate <= deadline;
-        } else if (isClosed && !deadline) {
-          isOnTime = true; // Assume on time if no deadline
-        }
-
-        // Calculate age
-        const created = matter.docketwiseCreatedAt
-          ? new Date(matter.docketwiseCreatedAt)
-          : matter.createdAt;
-        const ageDays = Math.max(
-          0,
-          (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24),
-        );
-
-        for (const userId of userIds) {
-          const stats = assigneeStats.get(userId);
-          if (stats) {
-            stats.total++;
-            if (isClosed) {
-              stats.completed++;
-              if (isOnTime) stats.onTime++;
-            } else {
-              if (isOverdue) stats.overdue++;
-              stats.totalDaysOpen += ageDays;
+        // Calculate days open
+        if (matter.docketwiseCreatedAt) {
+          const createdDate = new Date(matter.docketwiseCreatedAt);
+          if (createdDate.getFullYear() > 1970) {
+            const daysOpen = isCompleted
+              ? matter.closedAt
+                ? Math.ceil((new Date(matter.closedAt).getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+                : Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+              : Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            stats.totalDaysOpen += daysOpen;
+            if (!isCompleted) {
               stats.openCount++;
             }
           }
@@ -512,15 +555,8 @@ export const getAssigneeStats = authorized
           openCount: 0,
         };
 
-        const onTimeRate =
-          stats.completed > 0
-            ? Math.round((stats.onTime / stats.completed) * 100)
-            : 100; // Default to 100% if no completed cases
-
-        const avgDaysOpen =
-          stats.openCount > 0
-            ? Math.round(stats.totalDaysOpen / stats.openCount)
-            : 0;
+        const onTimeRate = stats.total > 0 ? Math.round((stats.onTime / stats.total) * 100) : 0;
+        const avgDaysOpen = stats.openCount > 0 ? Math.round(stats.totalDaysOpen / stats.openCount) : 0;
 
         return {
           id: member.docketwiseId,
@@ -536,10 +572,10 @@ export const getAssigneeStats = authorized
           avgDaysOpen,
         };
       })
-      .sort((a, b) => b.matterCount - a.matterCount); // Sort by workload
+      .filter((member) => member.matterCount > 0); // Only return members with matters
   });
 
-// Get Recent Matters for Dashboard
+// Get Recent Matters
 export const getRecentMatters = authorized
   .route({
     method: "GET",
@@ -560,6 +596,23 @@ export const getRecentMatters = authorized
       perPage: input.limit,
       userId: context.user.id,
     });
+
+    // Load matter types for deadline calculation
+    const matterTypes = await prisma.matterTypes.findMany({
+      select: {
+        docketwiseId: true,
+        estimatedDays: true,
+        complexityWeight: true,
+        billingRate: true,
+      },
+    });
+
+    const matterTypeEstDaysMap = new Map<number, number>();
+    for (const mt of matterTypes) {
+      if (mt.estimatedDays) {
+        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+      }
+    }
 
     // Fetch local database data for assignedDate and other local fields
     const localMatters = await prisma.matters.findMany({
@@ -582,21 +635,6 @@ export const getRecentMatters = authorized
     const localMattersMap = new Map(
       localMatters.map(m => [m.docketwiseId, m])
     );
-
-    // Load matter types for deadline calculation
-    const matterTypes = await prisma.matterTypes.findMany({
-      select: {
-        docketwiseId: true,
-        estimatedDays: true,
-      },
-    });
-
-    const matterTypeEstDaysMap = new Map<number, number>();
-    for (const mt of matterTypes) {
-      if (mt.estimatedDays) {
-        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
-      }
-    }
 
     // Calculate deadlines and hours for dashboard matters
     const mattersWithDeadlines = result.data.map((matter) => {
@@ -682,12 +720,11 @@ export const getMatterStatusDistribution = authorized
   .route({
     method: "GET",
     path: "/dashboard/status-distribution",
-    summary: "Get matter status distribution for charts",
+    summary: "Get matter status distribution",
     tags: ["Dashboard"],
   })
   .output(z.array(statusDistributionSchema))
   .handler(async ({ context }) => {
-    // Group matters by status
     const statusGroups = await prisma.matters.groupBy({
       by: ["status"],
       where: {
@@ -710,17 +747,17 @@ export const getMatterTypeDistribution = authorized
   .route({
     method: "GET",
     path: "/dashboard/type-distribution",
-    summary: "Get matter type distribution for charts",
+    summary: "Get matter type distribution",
     tags: ["Dashboard"],
   })
   .output(z.array(typeDistributionSchema))
   .handler(async ({ context }) => {
-    // Group matters by type
     const typeGroups = await prisma.matters.groupBy({
       by: ["matterType"],
       where: {
         userId: context.user.id,
-        matterType: { not: null },
+        archived: false,
+        discardedAt: null,
       },
       _count: true,
     });

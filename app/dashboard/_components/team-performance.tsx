@@ -28,9 +28,10 @@ interface AssigneeStat {
 interface TeamPerformanceProps {
     assigneeStats: AssigneeStat[];
     stats: {
-        onTimeRate: number;
-        matterVelocity: number;
-        completedMatters: number;
+        deadlineComplianceRate: number;
+        avgCycleTime: number;
+        paralegalUtilization: number;
+        qualityScore: number;
     };
 }
 
@@ -134,12 +135,12 @@ export function TeamPerformance({ assigneeStats, stats }: TeamPerformanceProps) 
                                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                                 <span className="text-sm font-medium">On-Time Filing Rate</span>
                             </div>
-                            <span className="text-2xl font-bold">{stats.onTimeRate}%</span>
+                            <span className="text-2xl font-bold">{stats.deadlineComplianceRate.toFixed(1)}%</span>
                         </div>
                         <div className="w-full bg-muted rounded-full h-2">
                             <div
                                 className="bg-emerald-500 h-2 rounded-full transition-all"
-                                style={{ width: `${stats.onTimeRate}%` }}
+                                style={{ width: `${stats.deadlineComplianceRate}%` }}
                             ></div>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -154,7 +155,7 @@ export function TeamPerformance({ assigneeStats, stats }: TeamPerformanceProps) 
                                 <Clock className="h-5 w-5 text-blue-500" />
                                 <span className="text-sm font-medium">Avg Completion Time</span>
                             </div>
-                            <span className="text-2xl font-bold">{stats.matterVelocity} days</span>
+                            <span className="text-2xl font-bold">{stats.avgCycleTime.toFixed(1)} days</span>
                         </div>
                         <p className="text-xs text-muted-foreground">
                             Average time from opening to completion
@@ -166,12 +167,12 @@ export function TeamPerformance({ assigneeStats, stats }: TeamPerformanceProps) 
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                                 <TrendingUp className="h-5 w-5 text-purple-500" />
-                                <span className="text-sm font-medium">Completed This Month</span>
+                                <span className="text-sm font-medium">Quality Score</span>
                             </div>
-                            <span className="text-2xl font-bold">{stats.completedMatters}</span>
+                            <span className="text-2xl font-bold">{stats.qualityScore.toFixed(0)}</span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            Total matters closed in current month
+                            Overall quality score (0-100)
                         </p>
                     </div>
 
