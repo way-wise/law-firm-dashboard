@@ -1,6 +1,6 @@
 import "@/lib/orpc/server";
 import { client } from "@/lib/orpc/client";
-import { StatsCards } from "./_components/stats-cards";
+import { EnhancedStatsCards } from "./_components/enhanced-stats-cards";
 import { ParalegalKPI } from "./_components/paralegal-kpi";
 import { RecentMattersTable } from "./_components/recent-matters-table";
 import { MatterStatusChart } from "./_components/matter-status-chart";
@@ -18,6 +18,20 @@ const DashboardOverviewPage = async () => {
       activeTeamMembers: 0,
       matterTypesWithWorkflow: 0,
       editedMatters: 0,
+      activeMatters: 0,
+      completedMatters: 0,
+      overdueMatters: 0,
+      atRiskMatters: 0,
+      unassignedMatters: 0,
+      totalRevenue: 0,
+      pendingRevenue: 0,
+      collectedRevenue: 0,
+      averageMatterValue: 0,
+      matterVelocity: 0,
+      onTimeRate: 0,
+      teamUtilization: 0,
+      mattersTrend: undefined,
+      revenueTrend: undefined,
     })),
     client.dashboard.getAssigneeStats({}).catch(() => []),
     client.dashboard.getRecentMatters({ limit: 15 }).catch(() => []),
@@ -33,8 +47,8 @@ const DashboardOverviewPage = async () => {
         <p className="text-muted-foreground">Welcome to your immigration law firm dashboard</p>
       </div>
 
-      {/* Stats Cards */}
-      <StatsCards stats={stats} />
+      {/* Enhanced Stats Cards */}
+      <EnhancedStatsCards stats={stats} />
 
       {/* Matter Distribution Charts */}
       <MatterStatusChart statusData={statusDistribution} />

@@ -3,8 +3,9 @@ import prisma from "@/lib/prisma";
 import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
 import * as z from "zod";
 
-// Dashboard stats schema - focuses on real, countable local data
+// Enhanced dashboard stats schema - comprehensive KPIs
 const dashboardStatsSchema = z.object({
+  // Basic counts
   totalContacts: z.number(),
   totalMatters: z.number(),
   totalMatterTypes: z.number(),
@@ -13,6 +14,28 @@ const dashboardStatsSchema = z.object({
   activeTeamMembers: z.number(),
   matterTypesWithWorkflow: z.number(),
   editedMatters: z.number(),
+  
+  // Matter performance metrics
+  activeMatters: z.number(),
+  completedMatters: z.number(),
+  overdueMatters: z.number(),
+  atRiskMatters: z.number(), // Due within 7 days
+  unassignedMatters: z.number(),
+  
+  // Financial metrics
+  totalRevenue: z.number(),
+  pendingRevenue: z.number(),
+  collectedRevenue: z.number(),
+  averageMatterValue: z.number(),
+  
+  // Performance metrics
+  matterVelocity: z.number(), // Average days to completion
+  onTimeRate: z.number(), // Percentage completed on time
+  teamUtilization: z.number(), // Active capacity percentage
+  
+  // Trend data (month over month)
+  mattersTrend: z.number().optional(), // Percentage change
+  revenueTrend: z.number().optional(), // Percentage change
 });
 
 // Assignee stats schema
@@ -68,55 +91,193 @@ export const getDashboardStats = authorized
   })
   .output(dashboardStatsSchema)
   .handler(async ({ context }) => {
-    // Count all synced contacts
+    // Basic counts
     const totalContacts = await prisma.contacts.count();
-      
-      // Count all synced matters
-      const totalMatters = await prisma.matters.count({
-        where: { userId: context.user.id },
-      });
-      
-      // Count categories
-      const categories = await prisma.categories.count();
-
-      // Count matter types
-      const totalMatterTypes = await prisma.matterTypes.count();
-      
-      // Count matter types with workflow stages
-      const matterTypesWithWorkflow = await prisma.matterTypes.count({
-        where: {
-          matterStatuses: {
-            some: {},
-          },
+    const totalMatters = await prisma.matters.count({
+      where: { userId: context.user.id },
+    });
+    const categories = await prisma.categories.count();
+    const totalMatterTypes = await prisma.matterTypes.count();
+    const matterTypesWithWorkflow = await prisma.matterTypes.count({
+      where: {
+        matterStatuses: {
+          some: {},
         },
-      });
+      },
+    });
+    const teamMembers = await prisma.teams.count();
+    const activeTeamMembers = await prisma.teams.count({
+      where: { isActive: true },
+    });
+    const editedMatters = await prisma.matters.count({
+      where: { 
+        userId: context.user.id,
+        isEdited: true 
+      },
+    });
 
-      // Count all team members
-      const teamMembers = await prisma.teams.count();
+    // Get all matters for performance calculations
+    const allMatters = await prisma.matters.findMany({
+      where: { userId: context.user.id },
+      select: {
+        status: true,
+        closedAt: true,
+        estimatedDeadline: true,
+        actualDeadline: true,
+        docketwiseCreatedAt: true,
+        createdAt: true,
+        billingStatus: true,
+        totalHours: true,
+        assignees: true,
+      },
+    });
+
+    // Calculate matter performance metrics
+    const now = new Date();
+    const activeMatters = allMatters.filter(m => 
+      !m.closedAt && !(m.status || "").toLowerCase().includes("closed")
+    ).length;
+    
+    const completedMatters = allMatters.filter(m => 
+      m.closedAt || (m.status || "").toLowerCase().includes("closed")
+    ).length;
+
+    // Calculate overdue and at-risk matters
+    let overdueMatters = 0;
+    let atRiskMatters = 0;
+    let totalDaysOpen = 0;
+    let onTimeCount = 0;
+
+    // Get matter types for deadline calculations
+    const matterTypes = await prisma.matterTypes.findMany({
+      select: { docketwiseId: true, estimatedDays: true },
+    });
+    const matterTypeEstDaysMap = new Map<number, number>();
+    for (const mt of matterTypes) {
+      if (mt.estimatedDays) {
+        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+      }
+    }
+
+    for (const matter of allMatters) {
+      // Determine deadline
+      const deadline = matter.estimatedDeadline;
+      if (!deadline && matter.docketwiseCreatedAt) {
+        // This would need matterTypeId from the matter record
+        // For now, skip calculated deadlines
+      }
+
+      const isClosed = !!matter.closedAt || (matter.status || "").toLowerCase().includes("closed");
       
-      // Count active team members
-      const activeTeamMembers = await prisma.teams.count({
-        where: { isActive: true },
-      });
+      if (!isClosed && deadline) {
+        if (now > deadline) {
+          overdueMatters++;
+        } else if (deadline.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000) {
+          atRiskMatters++;
+        }
+      }
 
-      // Count matters with custom edits
-      const editedMatters = await prisma.matters.count({
-        where: {
-          userId: context.user.id,
-          isEdited: true,
+      // Calculate days open for velocity
+      const created = matter.docketwiseCreatedAt ? new Date(matter.docketwiseCreatedAt) : matter.createdAt;
+      if (created && !isNaN(created.getTime())) {
+        const ageDays = Math.max(0, (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+        if (!isClosed) {
+          totalDaysOpen += ageDays;
+        }
+      }
+
+      // Calculate on-time completion
+      if (isClosed && deadline) {
+        const completionDate = matter.actualDeadline || matter.closedAt || now;
+        if (completionDate <= deadline) {
+          onTimeCount++;
+        }
+      }
+    }
+
+    const unassignedMatters = allMatters.filter(m => !m.assignees).length;
+    const matterVelocity = activeMatters > 0 ? Math.round(totalDaysOpen / activeMatters) : 0;
+    const onTimeRate = completedMatters > 0 ? Math.round((onTimeCount / completedMatters) * 100) : 100;
+    const teamUtilization = activeTeamMembers > 0 ? Math.round((activeMatters / (activeTeamMembers * 20)) * 100) : 0; // Assuming 20 matters per team member
+
+    // Calculate financial metrics (assuming hourly rate of $200)
+    const hourlyRate = 200;
+    const totalRevenue = allMatters.reduce((sum, m) => sum + (m.totalHours || 0) * hourlyRate, 0);
+    const pendingRevenue = allMatters
+      .filter(m => m.billingStatus !== "PAID")
+      .reduce((sum, m) => sum + (m.totalHours || 0) * hourlyRate, 0);
+    const collectedRevenue = totalRevenue - pendingRevenue;
+    const averageMatterValue = totalMatters > 0 ? totalRevenue / totalMatters : 0;
+
+    // Calculate trend data (compare with previous period)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const previousMatters = await prisma.matters.count({
+      where: {
+        userId: context.user.id,
+        createdAt: {
+          lt: thirtyDaysAgo,
         },
-      });
+      },
+    });
+    
+    const previousRevenue = await prisma.matters.aggregate({
+      where: {
+        userId: context.user.id,
+        createdAt: {
+          lt: thirtyDaysAgo,
+        },
+      },
+      _sum: {
+        totalHours: true,
+      },
+    });
+    
+    const previousRevenueAmount = (previousRevenue._sum.totalHours || 0) * 200; // Same hourly rate
+    
+    // Calculate trends (handle edge cases)
+    const mattersTrend = previousMatters > 0 
+      ? ((totalMatters - previousMatters) / previousMatters) * 100 
+      : 0;
+    
+    const revenueTrend = previousRevenueAmount > 0 
+      ? ((totalRevenue - previousRevenueAmount) / previousRevenueAmount) * 100 
+      : 0;
 
-      return {
-        totalContacts,
-        totalMatters,
-        totalMatterTypes,
-        teamMembers,
-        categories,
-        activeTeamMembers,
-        matterTypesWithWorkflow,
-        editedMatters,
-      };
+    return {
+      // Basic counts
+      totalContacts,
+      totalMatters,
+      totalMatterTypes,
+      teamMembers,
+      categories,
+      activeTeamMembers,
+      matterTypesWithWorkflow,
+      editedMatters,
+      
+      // Matter performance metrics
+      activeMatters,
+      completedMatters,
+      overdueMatters,
+      atRiskMatters,
+      unassignedMatters,
+      
+      // Financial metrics
+      totalRevenue,
+      pendingRevenue,
+      collectedRevenue,
+      averageMatterValue,
+      
+      // Performance metrics
+      matterVelocity,
+      onTimeRate,
+      teamUtilization,
+      
+      // Trend data
+      mattersTrend: mattersTrend || 0,
+      revenueTrend: revenueTrend || 0,
+    };
   });
 
 // Get Assignee Stats (matters per assignee)
