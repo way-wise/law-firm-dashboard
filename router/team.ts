@@ -26,9 +26,9 @@ export const getTeamMembers = authorized
     const page = input.page || 1;
     const perPage = 50;
 
-
-    // Temporarily bypass cache to get fresh data
-    // return getOrSetCache(cacheKey, async () => {
+    try {
+      // Temporarily bypass cache to get fresh data
+      // return getOrSetCache(cacheKey, async () => {
       const where: Prisma.teamsWhereInput = {};
       
       if (input.active !== undefined) {
@@ -74,8 +74,18 @@ export const getTeamMembers = authorized
         } : undefined,
       };
 
+      console.log(`[TEAM] Successfully fetched ${data.length} team members from database`);
+
       return result;
     // }, DEFAULT_CACHE_TTL);
+    } catch (error) {
+      console.error('[TEAM] Error fetching from database:', error);
+      // Return empty result rather than crashing
+      return {
+        data: [],
+        pagination: undefined,
+      };
+    }
   });
 
 // Get Team Members List (simple list for assignee filter)

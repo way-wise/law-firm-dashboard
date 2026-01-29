@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import * as React from "react";
-import { LuCheck, LuChevronDown } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuX } from "react-icons/lu";
 
 export interface AdvancedSelectOption {
   value: string;
@@ -62,6 +62,13 @@ export function AdvancedSelect({
     setInputValue("");
   };
 
+  const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onChange?.("");
+    setInputValue("");
+  };
+
   const handleInputChange = (newValue: string) => {
     setInputValue(newValue);
     onInputChange?.(newValue);
@@ -73,30 +80,39 @@ export function AdvancedSelect({
     : options;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <button
           type="button"
           disabled={disabled}
           className={cn(
-            "flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm transition-colors hover:border-input focus-visible:border-primary focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-10 w-full items-center justify-between rounded-md border-2 border-input bg-background px-3 py-2 text-sm transition-colors hover:border-input focus-visible:border-primary focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
         >
           <span
             className={cn(
-              "truncate",
+              "truncate flex-1 text-left",
               !selectedOption && "text-muted-foreground",
             )}
           >
             {selectedOption ? selectedOption.label : placeholder}
           </span>
-          <LuChevronDown className="size-5 shrink-0 opacity-50" />
+          <div className="flex items-center gap-2 shrink-0">
+            {isClearable && selectedOption && (
+              <LuX 
+                className="size-4 opacity-50 hover:opacity-100 cursor-pointer" 
+                onClick={handleClear}
+              />
+            )}
+            <LuChevronDown className="size-5 opacity-50" />
+          </div>
         </button>
       </PopoverTrigger>
       <PopoverContent
         className="w-[var(--radix-popover-trigger-width)] p-0"
         align="start"
+        sideOffset={4}
       >
         <Command shouldFilter={!filterOption}>
           <CommandInput
@@ -104,7 +120,7 @@ export function AdvancedSelect({
             value={inputValue}
             onValueChange={handleInputChange}
           />
-          <CommandList>
+          <CommandList className="max-h-[300px] overflow-y-auto">
             {isLoading ? (
               <div className="flex items-center justify-center py-6">
                 <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -120,7 +136,10 @@ export function AdvancedSelect({
                         key={option.value}
                         value={option.value}
                         onSelect={() => handleSelect(option.value)}
-                        className="flex cursor-pointer items-center justify-between"
+                        className={cn(
+                          "flex cursor-pointer items-center justify-between",
+                          isSelected && "bg-accent"
+                        )}
                       >
                         {option.customRender ? (
                           <div className="flex-1">{option.customRender}</div>

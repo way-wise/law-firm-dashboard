@@ -18,9 +18,6 @@ import {
 } from "@/components/ui/select";
 import { AdvancedSelect } from "@/components/ui/advanced-select";
 import { Textarea } from "@/components/ui/textarea";
-import { clients, getContactName } from "@/data/clients";
-import { matterStatuses, matterTypes } from "@/data/matters";
-import { workers } from "@/data/workers";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -38,30 +35,44 @@ import Link from "next/link";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
+import { client } from "@/lib/orpc/client";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import type { TeamMemberSchemaType } from "@/schema/teamSchema";
 
-// Form schemas for each step - all optional for demo
+// Extended team type for form usage
+interface TeamMember extends TeamMemberSchemaType {
+  docketwiseId?: number;
+  fullName?: string;
+}
+
+// Form schema matching database fields
 const step1Schema = z.object({
-  client_id: z.string().optional(),
-  matter_type_id: z.string().optional(),
-  title: z.string().optional(),
-  workflow_stage_id: z.string().optional(),
-  case_number: z.string().optional(),
-  priority_date: z.string().optional(),
+  clientId: z.number().min(1, "Please select a client"),
+  clientName: z.string().optional(),
+  title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
+  matterTypeId: z.number().optional(),
+  matterType: z.string().optional(),
+  statusId: z.number().optional(),
+  status: z.string().optional(),
+  priorityDate: z.date().optional(),
 });
 
 const step2Schema = z.object({
-  paralegal_id: z.string().optional(),
-  attorney_id: z.string().optional(),
-  assignment_notes: z.string().optional(),
+  teamId: z.number().optional(),
+  assignees: z.string().optional(),
+  assignedDate: z.date().optional(),
 });
 
 const step3Schema = z.object({
-  billing_status: z.string().optional(),
-  retainer_amount: z.string().optional(),
-  total_hours: z.string().optional(),
-  case_notes: z.string().optional(),
-  tags: z.string().optional(),
+  billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).optional(),
+  totalHours: z.number().optional(),
+  flatFee: z.number().optional(),
+  estimatedDeadline: z.date().optional(),
+  actualDeadline: z.date().optional(),
+  customNotes: z.string().optional(),
 });
 
 // Combined schema
@@ -89,63 +100,112 @@ const steps = [
 ];
 
 const NewMatterForm = () => {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const activeClients = clients;
-  const activeWorkers = workers.filter((w) => w.isActive);
+  // Fetch real data from API
+  const { data: contactsData } = useQuery({
+    queryKey: ["contacts-all"],
+    queryFn: () => client.contacts.get({ page: 1 }),
+  });
+  const contacts = contactsData?.data || [];
+
+  const { data: matterTypesData } = useQuery({
+    queryKey: ["matter-types-all"],
+    queryFn: () => client.matterTypes.get(),
+  });
+
+  const { data: teamsData } = useQuery({
+    queryKey: ["teams-all"],
+    queryFn: () => client.team.get({ page: 1 }),
+  });
+  // Map team data to include docketwiseId and fullName for easier access
+  const teams: TeamMember[] = (teamsData?.data || []).map((team: TeamMemberSchemaType) => ({
+    ...team,
+    docketwiseId: team.id,
+    fullName: team.first_name && team.last_name 
+      ? `${team.first_name} ${team.last_name}`
+      : team.first_name || team.last_name || team.email,
+  }));
 
   const form = useForm<MatterInput>({
     resolver: zodResolver(matterSchema),
     defaultValues: {
-      client_id: "",
-      matter_type_id: "",
-      case_number: "",
       title: "",
       description: "",
-      workflow_stage_id: "1",
-      priority_date: "",
-      paralegal_id: "",
-      attorney_id: "",
-      assignment_notes: "",
-      billing_status: "pending",
-      retainer_amount: "",
-      case_notes: "",
-      tags: "",
+      customNotes: "",
     },
-    mode: "onChange",
+    mode: "onBlur",
   });
 
+  // Watch matterTypeId to get available statuses
+  const selectedMatterTypeId = form.watch("matterTypeId");
+  const selectedMatterType = matterTypesData?.find((mt) => mt.docketwiseId === selectedMatterTypeId);
+  const availableStatuses = selectedMatterType?.matterStatuses || [];
+
   const onSubmit = async (data: MatterInput) => {
-    console.log("Matter data:", data);
-    // TODO: API call to create matter
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSubmitted(true);
+    try {
+      setIsSubmitting(true);
+
+      // Create matter in local database with all fields
+      await client.customMatters.create({
+        title: data.title,
+        description: data.description,
+        clientName: data.clientName,
+        clientId: data.clientId,
+        matterType: data.matterType,
+        matterTypeId: data.matterTypeId,
+        status: data.status,
+        assignees: data.assignees,
+        assignedDate: data.assignedDate,
+        estimatedDeadline: data.estimatedDeadline,
+        billingStatus: data.billingStatus,
+        customNotes: data.customNotes,
+      });
+
+      toast.success("Matter created successfully!");
+      setIsSubmitted(true);
+
+      // Optionally sync to Docketwise API (only if you want to)
+      // This would use client.matters.create() with only allowed fields:
+      // { title, description, client_id, user_ids }
+
+    } catch (error) {
+      console.error("Error creating matter:", error);
+      toast.error("Failed to create matter. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Validate current step before proceeding - all optional for demo
+  // Validate current step before proceeding
   const validateStep = async () => {
+    if (currentStep === 1) {
+      const result = await form.trigger(["clientId", "title"]);
+      return result;
+    }
     return true;
   };
 
   // Options for AdvancedSelect components
-  const clientOptions = activeClients.map((client) => ({
-    value: client.id.toString(),
-    label: getContactName(client),
-  }));
+  const clientOptions = contacts.map((contact) => {
+    const name = contact.firstName && contact.lastName
+      ? `${contact.firstName} ${contact.lastName}`
+      : contact.firstName || contact.lastName || contact.email;
+    return {
+      value: String(contact.id),
+      label: name,
+      description: contact.email,
+    };
+  });
 
-  const paralegalOptions = activeWorkers.map((worker) => ({
-    value: worker.id,
-    label: worker.name,
+  const teamOptions = teams.map((team) => ({
+    value: String(team.docketwiseId),
+    label: team.fullName || team.email,
+    description: team.email,
   }));
-
-  const attorneyOptions = activeWorkers
-    .filter((w) => w.title.toLowerCase().includes("attorney"))
-    .map((worker) => ({
-      value: worker.id,
-      label: worker.name,
-    }));
 
   const handleNext = async () => {
     const isValid = await validateStep();
@@ -244,11 +304,9 @@ const NewMatterForm = () => {
               Your new matter has been created and is ready for processing.
             </p>
             <div className="mt-8 flex gap-3">
-              <Button variant="outline" asChild>
-                <Link href="/dashboard/matters">
-                  <Eye />
-                  View All Matters
-                </Link>
+              <Button variant="outline" onClick={() => router.push("/dashboard/matters")}>
+                <Eye />
+                View All Matters
               </Button>
               <Button
                 onClick={() => {
@@ -270,7 +328,7 @@ const NewMatterForm = () => {
             }}
             autoComplete="off"
           >
-            <FieldSet disabled={form.formState.isSubmitting}>
+            <FieldSet disabled={isSubmitting}>
               {/* Step 1: Case Information */}
               {currentStep === 1 && (
               <div>
@@ -284,15 +342,25 @@ const NewMatterForm = () => {
                 <FieldGroup>
                   {/* Client Selection */}
                   <Controller
-                    name="client_id"
+                    name="clientId"
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <Field>
-                        <FieldLabel htmlFor="client_id">Client</FieldLabel>
+                        <FieldLabel htmlFor="clientId">Client *</FieldLabel>
                         <AdvancedSelect
                           options={clientOptions}
-                          value={field.value}
-                          onChange={field.onChange}
+                          value={field.value ? String(field.value) : ""}
+                          onChange={(value) => {
+                            const clientId = parseInt(value);
+                            form.setValue("clientId", clientId);
+                            const contact = contacts.find(c => c.id === clientId);
+                            if (contact) {
+                              const name = contact.firstName && contact.lastName
+                                ? `${contact.firstName} ${contact.lastName}`
+                                : contact.firstName || contact.lastName || contact.email;
+                              form.setValue("clientName", name);
+                            }
+                          }}
                           placeholder="Select a client"
                         />
                         <p className="text-xs text-muted-foreground">
@@ -309,21 +377,31 @@ const NewMatterForm = () => {
                     )}
                   />
 
-                  {/* Matter Type & Workflow Stage */}
+                  {/* Matter Type & Status */}
                   <FieldGroup className="grid sm:grid-cols-2">
                     <Controller
-                      name="matter_type_id"
+                      name="matterTypeId"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="matter_type_id">Matter Type</FieldLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <FieldLabel htmlFor="matterTypeId">Matter Type</FieldLabel>
+                          <Select 
+                            value={field.value ? String(field.value) : ""} 
+                            onValueChange={(value) => {
+                              const id = parseInt(value);
+                              form.setValue("matterTypeId", id);
+                              const mt = matterTypesData?.find((m) => m.docketwiseId === id);
+                              if (mt) {
+                                form.setValue("matterType", mt.name);
+                              }
+                            }}
+                          >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select matter type" />
                             </SelectTrigger>
                             <SelectContent>
-                              {matterTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.id.toString()}>
+                              {(matterTypesData || []).map((mt) => (
+                                <SelectItem key={mt.docketwiseId} value={String(mt.docketwiseId)}>
                                   {mt.name}
                                 </SelectItem>
                               ))}
@@ -335,18 +413,29 @@ const NewMatterForm = () => {
                     />
 
                     <Controller
-                      name="workflow_stage_id"
+                      name="statusId"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="workflow_stage_id">Workflow Stage</FieldLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <FieldLabel htmlFor="statusId">Status</FieldLabel>
+                          <Select 
+                            value={field.value ? String(field.value) : ""} 
+                            onValueChange={(value) => {
+                              const id = parseInt(value);
+                              form.setValue("statusId", id);
+                              const status = availableStatuses.find((s) => s.docketwiseId === id);
+                              if (status) {
+                                form.setValue("status", status.name);
+                              }
+                            }}
+                            disabled={!selectedMatterTypeId}
+                          >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select stage" />
+                              <SelectValue placeholder={selectedMatterTypeId ? "Select status" : "Select type first"} />
                             </SelectTrigger>
                             <SelectContent>
-                              {matterStatuses.map((status) => (
-                                <SelectItem key={status.id} value={status.id.toString()}>
+                              {availableStatuses.map((status) => (
+                                <SelectItem key={status.docketwiseId} value={String(status.docketwiseId)}>
                                   {status.name}
                                 </SelectItem>
                               ))}
@@ -375,36 +464,23 @@ const NewMatterForm = () => {
                     )}
                   />
 
-                  {/* Case Number & Priority Date */}
-                  <FieldGroup className="grid sm:grid-cols-2">
-                    <Controller
-                      name="case_number"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field>
-                          <FieldLabel htmlFor="case_number">Case Number</FieldLabel>
-                          <Input
-                            {...field}
-                            id="case_number"
-                            placeholder="M-2024-XXX (auto-generated if blank)"
-                          />
-                          <FieldError errors={[fieldState.error]} />
-                        </Field>
-                      )}
-                    />
-
-                    <Controller
-                      name="priority_date"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field>
-                          <FieldLabel htmlFor="priority_date">Priority Date</FieldLabel>
-                          <Input {...field} id="priority_date" type="date" />
-                          <FieldError errors={[fieldState.error]} />
-                        </Field>
-                      )}
-                    />
-                  </FieldGroup>
+                  {/* Priority Date */}
+                  <Controller
+                    name="priorityDate"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field>
+                        <FieldLabel htmlFor="priorityDate">Priority Date</FieldLabel>
+                        <Input
+                          type="date"
+                          value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                          onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                          placeholder="Select priority date"
+                        />
+                        <FieldError errors={[fieldState.error]} />
+                      </Field>
+                    )}
+                  />
 
                   {/* Description */}
                   <Controller
@@ -438,19 +514,26 @@ const NewMatterForm = () => {
                 </div>
 
                 <FieldGroup>
-                  {/* Paralegal & Attorney */}
-                  <FieldGroup className="grid sm:grid-cols-2">
+                  {/* Team Member and Assigned Date - side by side on desktop */}
+                  <FieldGroup className="grid gap-4 sm:grid-cols-2">
                     <Controller
-                      name="paralegal_id"
+                      name="teamId"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="paralegal_id">Paralegal</FieldLabel>
+                          <FieldLabel htmlFor="teamId">Team Member</FieldLabel>
                           <AdvancedSelect
-                            options={paralegalOptions}
-                            value={field.value}
-                            onChange={field.onChange}
-                            placeholder="Select paralegal"
+                            options={teamOptions}
+                            value={field.value ? String(field.value) : ""}
+                            onChange={(value) => {
+                              const id = parseInt(value);
+                              form.setValue("teamId", id);
+                              const team = teams.find((t) => t.docketwiseId === id);
+                              if (team) {
+                                form.setValue("assignees", team.fullName || team.email);
+                              }
+                            }}
+                            placeholder="Select team member"
                           />
                           <FieldError errors={[fieldState.error]} />
                         </Field>
@@ -458,89 +541,96 @@ const NewMatterForm = () => {
                     />
 
                     <Controller
-                      name="attorney_id"
+                      name="assignedDate"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="attorney_id">Attorney</FieldLabel>
-                          <AdvancedSelect
-                            options={attorneyOptions}
-                            value={field.value}
-                            onChange={field.onChange}
-                            placeholder="Select attorney"
+                          <FieldLabel htmlFor="assignedDate">Assigned Date</FieldLabel>
+                          <Input
+                            type="date"
+                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                            placeholder="Select assignment date"
                           />
                           <FieldError errors={[fieldState.error]} />
                         </Field>
                       )}
                     />
                   </FieldGroup>
-
-                  {/* Assignment Notes */}
-                  <Controller
-                    name="assignment_notes"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="assignment_notes">Assignment Notes</FieldLabel>
-                        <Textarea
-                          {...field}
-                          id="assignment_notes"
-                          placeholder="Any special instructions for the assigned team member..."
-                          rows={3}
-                        />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
                 </FieldGroup>
               </div>
             )}
 
-            {/* Step 3: Billing & Notes */}
+            {/* Step 3: Billing & Deadlines */}
             {currentStep === 3 && (
               <div>
                 <div className="mb-6">
-                  <h2 className="text-lg font-semibold">Billing & Additional Notes</h2>
+                  <h2 className="text-lg font-semibold">Billing & Deadlines</h2>
                   <p className="text-sm text-muted-foreground">
-                    Set billing status and add any relevant notes
+                    Set billing information and important deadlines
                   </p>
                 </div>
 
                 <FieldGroup>
-                  {/* Billing Status & Retainer */}
+                  {/* Billing Status */}
+                  <Controller
+                    name="billingStatus"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field>
+                        <FieldLabel htmlFor="billingStatus">Billing Status</FieldLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select billing status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PAID">Paid</SelectItem>
+                            <SelectItem value="DEPOSIT_PAID">Deposit Paid</SelectItem>
+                            <SelectItem value="PAYMENT_PLAN">Payment Plan</SelectItem>
+                            <SelectItem value="DUE">Due</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FieldError errors={[fieldState.error]} />
+                      </Field>
+                    )}
+                  />
+
+                  {/* Total Hours & Flat Fee */}
                   <FieldGroup className="grid sm:grid-cols-2">
                     <Controller
-                      name="billing_status"
+                      name="totalHours"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="billing_status">Billing Status</FieldLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="invoiced">Invoiced</SelectItem>
-                              <SelectItem value="paid">Paid</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <FieldLabel htmlFor="totalHours">Total Hours</FieldLabel>
+                          <Input
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                            id="totalHours"
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            placeholder="e.g., 10.5"
+                          />
                           <FieldError errors={[fieldState.error]} />
                         </Field>
                       )}
                     />
 
                     <Controller
-                      name="retainer_amount"
+                      name="flatFee"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="retainer_amount">Retainer Amount</FieldLabel>
+                          <FieldLabel htmlFor="flatFee">Flat Fee ($)</FieldLabel>
                           <Input
-                            {...field}
-                            id="retainer_amount"
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                            id="flatFee"
                             type="number"
-                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            placeholder="e.g., 2500.00"
                           />
                           <FieldError errors={[fieldState.error]} />
                         </Field>
@@ -548,59 +638,56 @@ const NewMatterForm = () => {
                     />
                   </FieldGroup>
 
-                  {/* Total Hours */}
-                  <Controller
-                    name="total_hours"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="total_hours">Total Hours</FieldLabel>
-                        <Input
-                          {...field}
-                          id="total_hours"
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          placeholder="e.g., 10.5"
-                        />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
+                  {/* Deadlines */}
+                  <FieldGroup className="grid sm:grid-cols-2">
+                    <Controller
+                      name="estimatedDeadline"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <Field>
+                          <FieldLabel htmlFor="estimatedDeadline">Estimated Deadline</FieldLabel>
+                          <Input
+                            type="date"
+                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                            placeholder="Select estimated deadline"
+                          />
+                          <FieldError errors={[fieldState.error]} />
+                        </Field>
+                      )}
+                    />
 
-                  {/* Case Notes */}
+                    <Controller
+                      name="actualDeadline"
+                      control={form.control}
+                      render={({ field, fieldState }) => (
+                        <Field>
+                          <FieldLabel htmlFor="actualDeadline">Actual Deadline</FieldLabel>
+                          <Input
+                            type="date"
+                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                            placeholder="Select actual deadline"
+                          />
+                          <FieldError errors={[fieldState.error]} />
+                        </Field>
+                      )}
+                    />
+                  </FieldGroup>
+
+                  {/* Custom Notes */}
                   <Controller
-                    name="case_notes"
+                    name="customNotes"
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <Field>
-                        <FieldLabel htmlFor="case_notes">Case Notes</FieldLabel>
+                        <FieldLabel htmlFor="customNotes">Custom Notes</FieldLabel>
                         <Textarea
                           {...field}
-                          id="case_notes"
+                          id="customNotes"
                           placeholder="Add any relevant notes about this matter..."
                           rows={4}
                         />
-                        <FieldError errors={[fieldState.error]} />
-                      </Field>
-                    )}
-                  />
-
-                  {/* Tags */}
-                  <Controller
-                    name="tags"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field>
-                        <FieldLabel htmlFor="tags">Internal Tags</FieldLabel>
-                        <Input
-                          {...field}
-                          id="tags"
-                          placeholder="e.g., premium-client, expedited, complex"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Separate tags with commas
-                        </p>
                         <FieldError errors={[fieldState.error]} />
                       </Field>
                     )}
@@ -615,25 +702,28 @@ const NewMatterForm = () => {
                 type="button"
                 variant="outline"
                 onClick={handlePrevious}
-                disabled={currentStep === 1}
+                disabled={currentStep === 1 || form.formState.isSubmitting}
               >
                 <ChevronLeft />
                 Previous
               </Button>
 
               {currentStep < steps.length ? (
-                <Button type="button" onClick={handleNext}>
-                  Next Step
+                <Button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={form.formState.isSubmitting}
+                >
+                  Next
                   <ChevronRight />
                 </Button>
               ) : (
                 <Button
                   type="button"
-                  onClick={() => form.handleSubmit(onSubmit)()}
-                  isLoading={form.formState.isSubmitting}
+                  onClick={form.handleSubmit(onSubmit)}
+                  disabled={form.formState.isSubmitting}
                 >
-                  <Check />
-                  Create Matter
+                  {form.formState.isSubmitting ? "Creating..." : "Create Matter"}
                 </Button>
               )}
             </div>

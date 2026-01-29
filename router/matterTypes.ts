@@ -223,7 +223,6 @@ export const getCategories = authorized
   })))
   .handler(async () => {
     const categories = await prisma.categories.findMany({
-      where: { isActive: true },
       orderBy: { sortOrder: "asc" },
     });
 

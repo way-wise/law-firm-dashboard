@@ -57,6 +57,7 @@ export const matterSchema = z.object({
   actualDeadline: coercedDateNullable,
   billingStatus: billingStatusEnum.nullable(),
   totalHours: z.number().nullable(),
+  flatFee: z.number().nullable(),
   customNotes: z.string().nullable(),
   lastSyncedAt: z.coerce.date(),
   isStale: z.boolean(),
@@ -100,6 +101,7 @@ export const updateCustomMatterFieldsSchema = z.object({
   actualDeadline: z.date().nullable().optional(),
   billingStatus: billingStatusEnum.nullable().optional(),
   totalHours: z.number().nullable().optional(),
+  flatFee: z.number().nullable().optional(),
   customNotes: z.string().nullable().optional(),
 });
 
@@ -108,12 +110,12 @@ export const matterFilterSchema = z.object({
   search: z.string().optional(),
   billingStatus: billingStatusEnum.optional(),
   assignees: z.string().optional(),
+  matterType: z.string().optional(),
+  status: z.string().optional(),
   isStale: z.boolean().optional(),
   hasDeadline: z.boolean().optional(),
-  deadlineRange: z.object({
-    from: z.date().optional(),
-    to: z.date().optional(),
-  }).optional(),
+  dateFrom: z.string().optional(), // ISO date string for docketwiseCreatedAt filter
+  dateTo: z.string().optional(), // ISO date string for docketwiseCreatedAt filter
 });
 
 export const paginatedMattersSchema = z.object({

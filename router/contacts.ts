@@ -30,35 +30,35 @@ export const getContacts = authorized
     const page = input.page || 1;
     const perPage = 50;
 
-    
-    // Build where clause
-    const where: Prisma.contactsWhereInput = {};
-    
-    // Type filter
-    if (input.type && input.type !== 'all') {
-      where.type = input.type;
-    }
+    try {
+      // Build where clause
+      const where: Prisma.contactsWhereInput = {};
+      
+      // Type filter - case insensitive
+      if (input.type && input.type !== 'all') {
+        where.type = { equals: input.type, mode: 'insensitive' };
+      }
 
-    // Search filter - search by name and email
-    if (input.search) {
-      const searchLower = input.search.toLowerCase();
-      where.OR = [
-        { firstName: { contains: searchLower, mode: 'insensitive' } },
-        { lastName: { contains: searchLower, mode: 'insensitive' } },
-        { companyName: { contains: searchLower, mode: 'insensitive' } },
-        { email: { contains: searchLower, mode: 'insensitive' } },
-      ];
-    }
+      // Search filter - search by name and email
+      if (input.search) {
+        const searchLower = input.search.toLowerCase();
+        where.OR = [
+          { firstName: { contains: searchLower, mode: 'insensitive' } },
+          { lastName: { contains: searchLower, mode: 'insensitive' } },
+          { companyName: { contains: searchLower, mode: 'insensitive' } },
+          { email: { contains: searchLower, mode: 'insensitive' } },
+        ];
+      }
 
-    const [contacts, total] = await Promise.all([
-      prisma.contacts.findMany({
-        where,
-        skip: (page - 1) * perPage,
-        take: perPage,
-        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-      }),
-      prisma.contacts.count({ where }),
-    ]);
+      const [contacts, total] = await Promise.all([
+        prisma.contacts.findMany({
+          where,
+          skip: (page - 1) * perPage,
+          take: perPage,
+          orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        }),
+        prisma.contacts.count({ where }),
+      ]);
 
     // Transform to match expected schema
     const data = contacts.map(contact => ({
@@ -82,6 +82,8 @@ export const getContacts = authorized
       updated_at: contact.updatedAt.toISOString(),
     }));
 
+    console.log(`[CONTACTS] Successfully fetched ${data.length} contacts from database`);
+
     return {
       data,
       pagination: total > perPage ? {
@@ -91,6 +93,15 @@ export const getContacts = authorized
         total_pages: Math.ceil(total / perPage),
       } : undefined,
     };
+    } catch (error) {
+      console.error('[CONTACTS] Error fetching from database:', error);
+      // Return empty result rather than crashing
+      return {
+        data: [],
+        pagination: undefined,
+        connectionError: true,
+      };
+    }
   });
 
 // Get Contact by ID from database

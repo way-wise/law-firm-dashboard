@@ -53,6 +53,12 @@ const dashboardStatsSchema = z.object({
   mattersTrend: z.number().optional(), // Percentage change
   revenueTrend: z.number().optional(), // Percentage change
   deadlineMissTrend: z.number().optional(), // Deadline miss trend last 30 days
+
+  // Data Quality Metrics
+  mattersWithoutPricing: z.number(), // Matters missing both flatFee and matterType flatFee
+  mattersWithoutDeadline: z.number(), // Matters missing estimatedDeadline
+  mattersWithoutMatterType: z.number(), // Matters missing matterTypeId
+  dataQualityScore: z.number(), // Overall data quality percentage (0-100)
 });
 
 // Get Dashboard Stats
@@ -371,6 +377,34 @@ export const getDashboardStats = authorized
     const revenueTrend = undefined; // TODO: Calculate from previous period  
     const deadlineMissTrend = undefined; // TODO: Calculate from last 30 days
 
+    // Data Quality Metrics
+    const mattersWithoutPricing = allMatters.filter(m => {
+      const hasMatterFee = m.flatFee !== null && m.flatFee !== undefined;
+      if (hasMatterFee) return false;
+      if (!m.matterTypeId) return true;
+      const matterType = matterTypeMap.get(m.matterTypeId);
+      const hasTypeFee = matterType?.flatFee !== null && matterType?.flatFee !== undefined;
+      return !hasTypeFee;
+    }).length;
+
+    const mattersWithoutDeadline = allMatters.filter(m => !m.estimatedDeadline).length;
+    const mattersWithoutMatterType = allMatters.filter(m => !m.matterTypeId).length;
+
+    // Calculate data quality score (percentage of matters with complete data)
+    const totalMattersCount = Math.max(allMatters.length, 1);
+    const mattersWithPricing = totalMattersCount - mattersWithoutPricing;
+    const mattersWithDeadline = totalMattersCount - mattersWithoutDeadline;
+    const mattersWithMatterType = totalMattersCount - mattersWithoutMatterType;
+    const mattersWithTeamId = allMatters.filter(m => m.teamId !== null).length;
+    
+    // Quality score: average of completeness percentages for critical fields
+    const dataQualityScore = Math.round(
+      ((mattersWithPricing / totalMattersCount) * 100 +
+       (mattersWithDeadline / totalMattersCount) * 100 +
+       (mattersWithMatterType / totalMattersCount) * 100 +
+       (mattersWithTeamId / totalMattersCount) * 100) / 4
+    );
+
     return {
       // Basic counts
       totalContacts,
@@ -420,6 +454,12 @@ export const getDashboardStats = authorized
       mattersTrend,
       revenueTrend,
       deadlineMissTrend,
+
+      // Data Quality Metrics
+      mattersWithoutPricing,
+      mattersWithoutDeadline,
+      mattersWithoutMatterType,
+      dataQualityScore,
     };
   });
 
@@ -642,6 +682,7 @@ export const getRecentMatters = authorized
         estimatedDeadline: true,
         actualDeadline: true,
         totalHours: true,
+        flatFee: true,
       },
     });
 

@@ -600,8 +600,11 @@ export async function syncMatters(userId: string) {
       const docketwiseIds = matters.map((m) => m.id);
 
       // Batch fetch existing matters to check update status
+      // IMPORTANT: Fetch ALL matters (including edited ones) so we can check isEdited flag
       const existingMatters = await prisma.matters.findMany({
-        where: { docketwiseId: { in: docketwiseIds } },
+        where: { 
+          docketwiseId: { in: docketwiseIds },
+        },
         select: {
           id: true,
           docketwiseId: true,
@@ -613,6 +616,7 @@ export async function syncMatters(userId: string) {
           clientName: true,
           matterType: true,
           assignees: true,
+          teamId: true,
           estimatedDeadline: true,
         },
       });
@@ -892,15 +896,32 @@ export async function syncMatters(userId: string) {
                     docketwiseMatter.type ||
                     null;
 
+                // Determine primary team member (first assignee or preserve existing)
+                const primaryTeamId = allAssigneeIds.length > 0 ? allAssigneeIds[0] : null;
+                const finalTeamId = (shouldPreserveExisting && existingMatter?.teamId)
+                  ? existingMatter.teamId
+                  : primaryTeamId;
+
+                // CRITICAL: Skip sync if matter has been manually edited
+                if (existingMatter?.isEdited) {
+                  console.log(`[SYNC] Skipping matter ${docketwiseMatter.id} - manually edited`);
+                  continue;
+                }
+
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
                   update: {
+                    docketwiseNumber: docketwiseMatter.number || null,
                     docketwiseCreatedAt: docketwiseMatter.created_at
                       ? new Date(docketwiseMatter.created_at)
                       : null,
                     docketwiseUpdatedAt: docketwiseMatter.updated_at
                       ? new Date(docketwiseMatter.updated_at)
                       : null,
+                    priorityDate: docketwiseMatter.priority_date
+                      ? new Date(docketwiseMatter.priority_date)
+                      : null,
+                    priorityDateStatus: docketwiseMatter.priority_date_status || null,
                     title: docketwiseMatter.title || "Untitled",
                     description: docketwiseMatter.description || null,
                     matterType: finalMatterType,
@@ -943,18 +964,24 @@ export async function syncMatters(userId: string) {
                       : null,
                     // Only update userIds if we have detail data
                     ...(hasDetailData ? { docketwiseUserIds: userIdsStr } : {}),
+                    teamId: finalTeamId,
                     assignees: finalAssignees,
                     lastSyncedAt: new Date(),
                     isStale: false,
                   },
                   create: {
                     docketwiseId: docketwiseMatter.id,
+                    docketwiseNumber: docketwiseMatter.number || null,
                     docketwiseCreatedAt: docketwiseMatter.created_at
                       ? new Date(docketwiseMatter.created_at)
                       : null,
                     docketwiseUpdatedAt: docketwiseMatter.updated_at
                       ? new Date(docketwiseMatter.updated_at)
                       : null,
+                    priorityDate: docketwiseMatter.priority_date
+                      ? new Date(docketwiseMatter.priority_date)
+                      : null,
+                    priorityDateStatus: docketwiseMatter.priority_date_status || null,
                     title: docketwiseMatter.title || "Untitled",
                     description: docketwiseMatter.description || null,
                     matterType:
@@ -998,6 +1025,7 @@ export async function syncMatters(userId: string) {
                       ? new Date(docketwiseMatter.discarded_at)
                       : null,
                     docketwiseUserIds: userIdsStr,
+                    teamId: primaryTeamId,
                     assignees: assigneesStr,
                     userId,
                     lastSyncedAt: new Date(),

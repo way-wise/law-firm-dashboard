@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowLeft, Eye, Pencil, Plus, RefreshCw, Trash, Clock } from "lucide-react";
+import { Eye, Pencil, Plus, RefreshCw, Trash, Clock } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
@@ -32,7 +32,8 @@ import { client } from "@/lib/orpc/client";
 import { toast } from "sonner";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { LuSearch } from "react-icons/lu";
-import { workers } from "@/data/workers";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import type { DateRange } from "react-day-picker";
 
 const getBillingStatusColor = (status: string | null) => {
   if (!status) return "secondary";
@@ -53,24 +54,6 @@ const getBillingStatusColor = (status: string | null) => {
 const formatBillingStatus = (status: string | null) => {
   if (!status) return "Not Set";
   return status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-};
-
-// Format deadline - only show if estimated days exist
-const formatDeadline = (calculatedDeadline?: Date | null, isPastEstimatedDeadline?: boolean, hasEstimatedDays?: boolean) => {
-  if (!calculatedDeadline || !hasEstimatedDays) return "-";
-  
-  const formattedDate = format(calculatedDeadline, "MM/dd/yyyy");
-  
-  if (isPastEstimatedDeadline) {
-    return (
-      <div className="flex flex-col">
-        <p className="text-sm text-red-500 font-medium">{formattedDate}</p>
-        <p className="text-xs text-red-500">Overdue</p>
-      </div>
-    );
-  }
-  
-  return <p className="text-sm text-muted-foreground">{formattedDate}</p>;
 };
 
 // Format hours elapsed
@@ -104,6 +87,22 @@ interface MatterTypeWithStatuses {
   }[];
 }
 
+interface StatusType {
+  id: string;
+  docketwiseId: number;
+  name: string;
+  duration: number | null;
+  sort: number | null;
+}
+
+interface TeamMemberType {
+  id: string;
+  docketwiseId: number;
+  fullName: string | null;
+  email: string;
+  isActive: boolean;
+}
+
 interface MattersTableProps {
   matters: {
     data: MatterType[];
@@ -115,9 +114,11 @@ interface MattersTableProps {
     } | null;
   };
   matterTypes: MatterTypeWithStatuses[];
+  statuses: StatusType[];
+  teams: TeamMemberType[];
 }
 
-const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
+const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTableProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mounted = useMounted();
@@ -129,13 +130,41 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
   const [deleteMatter, setDeleteMatter] = useState<MatterType | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const from = searchParams.get("dateFrom");
+    const to = searchParams.get("dateTo");
+    if (from || to) {
+      return {
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined,
+      };
+    }
+    return undefined;
+  });
 
-  const paralegalOptions = workers
-    .filter((w) => w.isActive && w.teamType === "inHouse")
-    .map((w) => ({
-      value: w.name,
-      label: w.name,
-      description: w.title,
+  // Map teams to select options (use name as value for backend filtering)
+  const assigneeOptions = teams
+    .filter((t) => t.isActive)
+    .map((t) => ({
+      value: t.fullName || t.email,
+      label: t.fullName || t.email,
+      description: t.email,
+    }));
+
+  // Map matter types to select options
+  const matterTypeOptions = matterTypes.map((mt) => ({
+    value: mt.name,
+    label: mt.name,
+    description: mt.estimatedDays ? `Est. ${mt.estimatedDays} days` : undefined,
+  }));
+
+  // Map statuses to select options
+  const statusOptions = statuses
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+    .map((s) => ({
+      value: s.name,
+      label: s.name,
+      description: s.duration ? `${s.duration} days` : undefined,
     }));
 
   const handleView = (matter: MatterType) => {
@@ -212,6 +241,26 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     debouncedSearch(value);
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    const params = new URLSearchParams(searchParams.toString());
+    
+    if (range?.from) {
+      params.set("dateFrom", range.from.toISOString().split('T')[0]);
+    } else {
+      params.delete("dateFrom");
+    }
+    
+    if (range?.to) {
+      params.set("dateTo", range.to.toISOString().split('T')[0]);
+    } else {
+      params.delete("dateTo");
+    }
+    
+    params.delete("page");
+    router.push(`?${params.toString()}`);
   };
 
   const columns: ColumnDef<MatterType>[] = [
@@ -330,12 +379,10 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
     },
     {
       header: "Deadline",
-      accessorKey: "estimatedDeadline",
+      accessorKey: "calculatedDeadline",
       enableSorting: true,
       cell: ({ row }) => {
-        const customDeadline = row.original.estimatedDeadline;
         const calculatedDeadline = row.original.calculatedDeadline;
-        const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
         
         // Get estimated days from matter type
         const matterTypeForRow = row.original.matterTypeId 
@@ -343,34 +390,45 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
           : null;
         const estimatedDays = matterTypeForRow?.estimatedDays;
 
-        // Prefer custom deadline if set, otherwise use calculated deadline
-        let deadline = customDeadline;
-
-        // Check if custom deadline is valid (not epoch date)
-        if (deadline) {
-          const date = new Date(deadline);
-          const year = date.getFullYear();
-          if (year <= 1970 || isNaN(year)) {
-            deadline = null;
-          }
+        if (!calculatedDeadline || !estimatedDays) {
+          return <p className="text-sm text-muted-foreground">-</p>;
         }
 
-        // Fall back to calculated deadline if no custom deadline AND we have estimated days
-        if (!deadline && calculatedDeadline && estimatedDays) {
-          return formatDeadline(calculatedDeadline, isPastEstimatedDeadline, true);
+        const deadlineDate = new Date(calculatedDeadline);
+        const now = new Date();
+        const daysLeft = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Determine color: red if past/today, yellow if <= 7 days, default otherwise
+        let dateColor = "text-muted-foreground";
+        let daysLeftColor = "text-muted-foreground";
+        let daysLeftText = "";
+        
+        if (daysLeft < 0) {
+          dateColor = "text-red-500 font-medium";
+          daysLeftColor = "text-red-500";
+          daysLeftText = `${Math.abs(daysLeft)} days overdue`;
+        } else if (daysLeft === 0) {
+          dateColor = "text-red-500 font-medium";
+          daysLeftColor = "text-red-500";
+          daysLeftText = "Due today";
+        } else if (daysLeft <= 7) {
+          dateColor = "text-yellow-600 font-medium";
+          daysLeftColor = "text-yellow-600";
+          daysLeftText = `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`;
+        } else {
+          daysLeftText = `${daysLeft} days left`;
         }
-
-        if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;
-
-        const date = new Date(deadline);
-        const isOverdue = new Date() > date;
 
         return (
           <div className="flex flex-col">
-            <p className={`text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-              {format(date, "MM/dd/yyyy")}
-              {isOverdue && " (Overdue)"}
+            <p className={`text-sm ${dateColor}`}>
+              {format(deadlineDate, "MM/dd/yyyy")}
             </p>
+            {daysLeftText && (
+              <p className={`text-xs ${daysLeftColor}`}>
+                {daysLeftText}
+              </p>
+            )}
           </div>
         );
       },
@@ -410,6 +468,16 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
           {row.original.totalHours != null ? `${row.original.totalHours}h` : "-"}
+        </p>
+      ),
+    },
+    {
+      header: "Flat Fee",
+      accessorKey: "flatFee",
+      enableSorting: true,
+      cell: ({ row }) => (
+        <p className="text-sm text-muted-foreground">
+          {row.original.flatFee != null ? `$${row.original.flatFee.toLocaleString()}` : "-"}
         </p>
       ),
     },
@@ -462,21 +530,24 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
     <>
       <div className="flex flex-col gap-6">
         {/* Page Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold">Matters</h1>
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/dashboard">
-                <ArrowLeft />
+            <Button
+              variant="outline"
+              onClick={handleSyncMatters}
+              disabled={isSyncing}
+            >
+              <RefreshCw className={`${isSyncing ? "animate-spin" : ""}`} />
+              {isSyncing ? "Syncing..." : "Sync Matters"}
+            </Button>
+            <Button asChild>
+              <Link href="/dashboard/matters/new">
+                <Plus />
+                New Matter
               </Link>
             </Button>
-            <h1 className="text-2xl font-semibold">Matters</h1>
           </div>
-          <Button asChild>
-            <Link href="/dashboard/matters/new">
-              <Plus />
-              New Matter
-            </Link>
-          </Button>
         </div>
 
         {/* Card with filters and table */}
@@ -517,40 +588,42 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
                   </Select>
 
                   <AdvancedSelect
-                    options={paralegalOptions}
+                    options={assigneeOptions}
                     value={searchParams.get("assignees") || ""}
                     onChange={(value: string) => updateFilters("assignees", value)}
                     placeholder="Filter by Assignee"
-                    className="w-[180px]"
+                    className="w-[240px]"
                     isClearable
                   />
 
-                  <Select
-                    value={searchParams.get("hasDeadline") || "all"}
-                    onValueChange={(value) => updateFilters("hasDeadline", value)}
-                  >
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Deadline" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Matters</SelectItem>
-                      <SelectItem value="true">With Deadline</SelectItem>
-                      <SelectItem value="false">No Deadline</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <AdvancedSelect
+                    options={matterTypeOptions}
+                    value={searchParams.get("matterType") || ""}
+                    onChange={(value: string) => updateFilters("matterType", value)}
+                    placeholder="Filter by Type"
+                    className="w-[280px]"
+                    isClearable
+                  />
+
+                  <AdvancedSelect
+                    options={statusOptions}
+                    value={searchParams.get("status") || ""}
+                    onChange={(value: string) => updateFilters("status", value)}
+                    placeholder="Filter by Status"
+                    className="w-[280px]"
+                    isClearable
+                  />
+
+                  <DateRangePicker
+                    value={dateRange}
+                    onChange={handleDateRangeChange}
+                    placeholder="Filter by Date"
+                    className="w-[260px]"
+                  />
                 </>
               )}
             </div>
             <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSyncMatters}
-                disabled={isSyncing}
-              >
-                <RefreshCw className={`${isSyncing ? "animate-spin" : ""}`} />
-                {isSyncing ? "Syncing..." : "Sync Matters"}
-              </Button>
               <LastSyncIndicator />
             </div>
           </div>
@@ -560,7 +633,7 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
             data={matters.data}
             columns={columns}
             emptyMessage="No matters found"
-            defaultSorting={[{ id: "updatedAt", desc: true }]}
+            defaultSorting={[{ id: "docketwiseCreatedAt", desc: true }]}
           />
 
           {/* Pagination */}
@@ -616,6 +689,7 @@ const MattersTable = ({ matters, matterTypes }: MattersTableProps) => {
           setEditMatter(null);
         }}
         matterTypes={matterTypes}
+        teams={teams}
       />
 
       {/* Delete AlertDialog */}

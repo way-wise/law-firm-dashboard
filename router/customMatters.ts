@@ -80,32 +80,51 @@ export const getCustomMatters = authorized
         if (!matchAssigneeName && !matchAssigneeEmail && !matchLegacyAssignees) return false;
       }
 
+      // Matter type filter
+      if (input.matterType) {
+        if (matter.matterType !== input.matterType) return false;
+      }
+
+      // Status filter (workflow stage)
+      if (input.status) {
+        if (matter.status !== input.status) return false;
+      }
+
+      // Date range filter (docketwiseCreatedAt)
+      if (input.dateFrom || input.dateTo) {
+        if (!matter.docketwiseCreatedAt) return false;
+        
+        const createdAt = new Date(matter.docketwiseCreatedAt);
+        if (isNaN(createdAt.getTime()) || createdAt.getFullYear() <= 1970) return false;
+        
+        if (input.dateFrom) {
+          const fromDate = new Date(input.dateFrom);
+          if (createdAt < fromDate) return false;
+        }
+        
+        if (input.dateTo) {
+          const toDate = new Date(input.dateTo);
+          toDate.setHours(23, 59, 59, 999); // End of day
+          if (createdAt > toDate) return false;
+        }
+      }
+
       // Has deadline filter
       if (input.hasDeadline !== undefined) {
         if (input.hasDeadline && !matter.estimatedDeadline) return false;
         if (!input.hasDeadline && matter.estimatedDeadline) return false;
       }
 
-      // Deadline range filter
-      if (input.deadlineRange) {
-        const deadline = matter.estimatedDeadline || matter.calculatedDeadline;
-        if (!deadline) return false;
-        
-        const deadlineDate = new Date(deadline);
-        if (isNaN(deadlineDate.getTime())) return false;
-        
-        if (input.deadlineRange.from && deadlineDate < input.deadlineRange.from) return false;
-        if (input.deadlineRange.to && deadlineDate > input.deadlineRange.to) return false;
-      }
-
       return true;
     });
 
-    // Calculate dynamic deadline for each matter
+    // Calculate dynamic deadline and time spent for each matter
     const mattersWithDeadlines = filteredMatters.map((matter) => {
       let calculatedDeadline: Date | null = null;
       let isPastEstimatedDeadline = false;
+      let totalHoursElapsed: number | undefined = undefined;
       
+      // Calculate deadline based on docketwiseCreatedAt + estimatedDays
       if (matter.docketwiseCreatedAt && matter.matterTypeId) {
         const createdAt = new Date(matter.docketwiseCreatedAt);
         if (!isNaN(createdAt.getTime()) && createdAt.getFullYear() > 1970) {
@@ -119,6 +138,16 @@ export const getCustomMatters = authorized
               isPastEstimatedDeadline = new Date() > calculatedDeadline;
             }
           }
+        }
+      }
+
+      // Calculate time spent: assignedDate to today (in hours)
+      if (matter.assignedDate) {
+        const assignedDate = new Date(matter.assignedDate);
+        if (!isNaN(assignedDate.getTime()) && assignedDate.getFullYear() > 1970) {
+          const now = new Date();
+          const diffMs = now.getTime() - assignedDate.getTime();
+          totalHoursElapsed = Math.floor(diffMs / (1000 * 60 * 60)); // Convert to hours
         }
       }
 
@@ -167,6 +196,7 @@ export const getCustomMatters = authorized
         actualDeadline: matter.actualDeadline,
         billingStatus: matter.billingStatus,
         totalHours: matter.totalHours,
+        flatFee: matter.flatFee,
         customNotes: matter.customNotes,
         lastSyncedAt: matter.lastSyncedAt,
         isStale: matter.isStale,
@@ -184,6 +214,7 @@ export const getCustomMatters = authorized
         updatedAt: matter.updatedAt,
         calculatedDeadline,
         isPastEstimatedDeadline,
+        totalHoursElapsed,
         notes: matter.notes,
       };
     });

@@ -5,7 +5,6 @@ import {
   Drawer,
   DrawerClose,
   DrawerContent,
-  DrawerDescription,
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
@@ -26,7 +25,6 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 import type { MatterType } from "@/schema/customMatterSchema";
-import { workers } from "@/data/workers";
 
 interface MatterTypeWithStatuses {
   id: string;
@@ -47,6 +45,13 @@ interface EditMatterDrawerProps {
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
   matterTypes: MatterTypeWithStatuses[];
+  teams: {
+    id: string;
+    docketwiseId: number;
+    fullName: string | null;
+    email: string;
+    isActive: boolean;
+  }[];
 }
 
 export function EditMatterDrawer({
@@ -55,6 +60,7 @@ export function EditMatterDrawer({
   onOpenChange,
   onSuccess,
   matterTypes,
+  teams,
 }: EditMatterDrawerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [title, setTitle] = useState("");
@@ -69,6 +75,7 @@ export function EditMatterDrawer({
   const [assignees, setAssignees] = useState("");
   const [description, setDescription] = useState("");
   const [totalHours, setTotalHours] = useState<number | null>(null);
+  const [flatFee, setFlatFee] = useState<number | null>(null);
   const [customNotes, setCustomNotes] = useState("");
 
   // Get current matter type from preloaded data
@@ -78,7 +85,7 @@ export function EditMatterDrawer({
     ? matterTypes.find(mt => mt.name === matter.matterType)
     : null;
 
-  // Get available statuses for the current matter type
+  // Use ONLY statuses from the current matter type
   const availableStatuses = currentMatterType?.matterStatuses || [];
   
   // Always include current status as option even if not in the type's status list
@@ -92,14 +99,15 @@ export function EditMatterDrawer({
       sort: null,
     });
   }
+  statusOptions.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
-  // Get active paralegals for dropdown
-  const paralegalOptions: AdvancedSelectOption[] = workers
-    .filter((w) => w.isActive && w.teamType === "inHouse")
-    .map((w) => ({
-      value: w.name,
-      label: w.name,
-      description: w.title,
+  // Map teams to select options
+  const assigneeOptions: AdvancedSelectOption[] = teams
+    .filter((t) => t.isActive)
+    .map((t) => ({
+      value: String(t.docketwiseId),
+      label: t.fullName || t.email,
+      description: t.email,
     }));
 
   useEffect(() => {
@@ -115,6 +123,7 @@ export function EditMatterDrawer({
       setAssignees(matter.assignees || "");
       setDescription(matter.description || "");
       setTotalHours(matter.totalHours ?? null);
+      setFlatFee(matter.flatFee ?? null);
       setCustomNotes(matter.customNotes || "");
       
       // Find the matter type ID from the type name
@@ -143,6 +152,7 @@ export function EditMatterDrawer({
         billingStatus: billingStatus ? (billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE") : null,
         assignees: assignees || null,
         totalHours: totalHours,
+        flatFee: flatFee,
         customNotes: customNotes || null,
       });
 
@@ -163,12 +173,7 @@ export function EditMatterDrawer({
         {matter && (
           <>
             <DrawerHeader className="shrink-0">
-              <div className="flex flex-col gap-1">
-                <DrawerTitle className="text-xl font-medium">Edit Matter</DrawerTitle>
-                <DrawerDescription>
-                  Update custom fields for {matter.title}
-                </DrawerDescription>
-              </div>
+              <DrawerTitle className="text-xl font-medium">Edit Matter</DrawerTitle>
               <DrawerClose asChild>
                 <Button variant="ghost" size="icon-lg">
                   <X />
@@ -177,6 +182,11 @@ export function EditMatterDrawer({
             </DrawerHeader>
 
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-6">
+              {/* Matter Info */}
+              <div className="pb-4 border-b">
+                <p className="text-sm font-medium text-muted-foreground">Editing: {matter.title}</p>
+              </div>
+
               {/* Matter Title */}
               <div className="space-y-2">
                 <Label htmlFor="title">Matter Title</Label>
@@ -204,33 +214,26 @@ export function EditMatterDrawer({
                     )}
                   </div>
                   
-                  {/* Status dropdown - always visible */}
+                  {/* Status dropdown - shows ALL statuses */}
                   <Select value={status || ""} onValueChange={setStatus}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select workflow status" />
                     </SelectTrigger>
                     <SelectContent>
-                      {statusOptions
-                        .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
-                        .map((statusOption) => (
-                          <SelectItem key={statusOption.id} value={statusOption.name}>
-                            <div className="flex items-center justify-between w-full">
-                              <span>{statusOption.name}</span>
-                              {statusOption.duration && (
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  {statusOption.duration}d
-                                </span>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
+                      {statusOptions.map((statusOption) => (
+                        <SelectItem key={statusOption.id} value={statusOption.name}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{statusOption.name}</span>
+                            {statusOption.duration && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {statusOption.duration}d
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  {availableStatuses.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      This matter type has no workflow stages defined. Showing current status only.
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -249,12 +252,12 @@ export function EditMatterDrawer({
               {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
-                <Input
+                <Textarea
                   id="description"
-                  type="text"
                   placeholder="Matter description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
                 />
               </div>
 
@@ -262,7 +265,7 @@ export function EditMatterDrawer({
               <div className="space-y-2">
                 <Label>Assigned Date</Label>
                 <DatePicker
-                  value={assignedDate}
+                  value={assignedDate && new Date(assignedDate).getFullYear() > 1970 ? assignedDate : null}
                   onChange={(date) => setAssignedDate(date || null)}
                   placeholder="Select assigned date"
                 />
@@ -272,7 +275,7 @@ export function EditMatterDrawer({
               <div className="space-y-2">
                 <Label>Estimated Deadline</Label>
                 <DatePicker
-                  value={estimatedDeadline}
+                  value={estimatedDeadline && new Date(estimatedDeadline).getFullYear() > 1970 ? estimatedDeadline : null}
                   onChange={(date) => setEstimatedDeadline(date || null)}
                   placeholder="Select estimated deadline"
                 />
@@ -282,7 +285,7 @@ export function EditMatterDrawer({
               <div className="space-y-2">
                 <Label>Actual Deadline</Label>
                 <DatePicker
-                  value={actualDeadline}
+                  value={actualDeadline && new Date(actualDeadline).getFullYear() > 1970 ? actualDeadline : null}
                   onChange={(date) => setActualDeadline(date || null)}
                   placeholder="Select actual deadline"
                 />
@@ -319,13 +322,39 @@ export function EditMatterDrawer({
                 />
               </div>
 
+              {/* Flat Fee */}
+              <div className="space-y-2">
+                <Label htmlFor="flatFee">Flat Fee ($)</Label>
+                <Input
+                  id="flatFee"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g., 2500.00"
+                  value={flatFee ?? ""}
+                  onChange={(e) => setFlatFee(e.target.value ? parseFloat(e.target.value) : null)}
+                />
+              </div>
+
               {/* Assignees - Advanced Select */}
               <div className="space-y-2">
                 <Label htmlFor="assignees">Assignees</Label>
                 <AdvancedSelect
-                  options={paralegalOptions}
-                  value={assignees}
-                  onChange={setAssignees}
+                  options={assigneeOptions}
+                  value={String(matter.teamId || "")}
+                  onChange={(value: string) => {
+                    // Find the team member by docketwiseId
+                    const selectedTeam = teams.find(t => String(t.docketwiseId) === value);
+                    if (selectedTeam) {
+                      setAssignees(selectedTeam.fullName || selectedTeam.email);
+                      // Auto-set assignedDate to now if not already set
+                      if (!assignedDate || new Date(assignedDate).getFullYear() <= 1970) {
+                        setAssignedDate(new Date());
+                      }
+                    } else {
+                      setAssignees("");
+                    }
+                  }}
                   placeholder="Select assignee"
                   emptyMessage="No assignees found"
                   isClearable

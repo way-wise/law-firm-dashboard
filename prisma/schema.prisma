@@ -118,8 +118,11 @@ enum BillingStatus {
 model matters {
   id                  String    @id @default(ulid())
   docketwiseId        Int       @unique
+  docketwiseNumber    String? // Matter number from Docketwise
   docketwiseCreatedAt DateTime?
   docketwiseUpdatedAt DateTime?
+  priorityDate        DateTime? // Priority date from Docketwise
+  priorityDateStatus  String? // Priority date status from Docketwise
   title               String
   description         String?
   matterType          String?
@@ -130,10 +133,10 @@ model matters {
   statusForFilingId   Int?
   clientName          String?
   clientId            Int?
-  teamId              Int? // Foreign key to teams
+  teamId              Int? // Foreign key to teams (attorney_id from Docketwise)
   assignee            teams?    @relation("MatterAssignee", fields: [teamId], references: [docketwiseId], onDelete: SetNull)
-  assignees           String? // @deprecated - Use assignee relation instead
-  docketwiseUserIds   String? // @deprecated - Use assignee relation instead
+  assignees           String? // Comma-separated assignee names from user_ids
+  docketwiseUserIds   String? // JSON array of user IDs from Docketwise
   openedAt            DateTime?
   closedAt            DateTime?
   archived            Boolean   @default(false) // Whether matter is archived in Docketwise

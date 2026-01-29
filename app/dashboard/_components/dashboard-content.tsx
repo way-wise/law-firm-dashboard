@@ -4,6 +4,10 @@ import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { MatterViewDrawer } from "@/components/matter-view-drawer";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,9 +16,16 @@ import {
   Users,
   XCircle,
   Briefcase,
+  Eye,
 } from "lucide-react";
+import { LuSearch } from "react-icons/lu";
 import { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceToNow } from "date-fns";
+import { useState } from "react";
+import type { DateRange } from "react-day-picker";
+import { useDebounceCallback } from "usehooks-ts";
+import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 // Types
 interface DashboardStats {
@@ -184,6 +195,54 @@ function TeamPerformance({ assigneeStats }: { assigneeStats: AssigneeStat[] }) {
 
 // Recent Matters Table
 function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [viewMatterDocketwiseId, setViewMatterDocketwiseId] = useState<number | null>(null);
+  const [viewDrawerOpen, setViewDrawerOpen] = useState(false);
+
+  const handleView = (docketwiseId: number) => {
+    setViewMatterDocketwiseId(docketwiseId);
+    setViewDrawerOpen(true);
+  };
+
+  const debouncedSearch = useDebounceCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("search", value);
+    } else {
+      params.delete("search");
+    }
+    params.delete("page");
+    router.push(`?${params.toString()}`);
+  }, 300);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    debouncedSearch(value);
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    const params = new URLSearchParams(searchParams.toString());
+    
+    if (range?.from) {
+      params.set("dateFrom", range.from.toISOString().split('T')[0]);
+    } else {
+      params.delete("dateFrom");
+    }
+    
+    if (range?.to) {
+      params.set("dateTo", range.to.toISOString().split('T')[0]);
+    } else {
+      params.delete("dateTo");
+    }
+    
+    params.delete("page");
+    router.push(`?${params.toString()}`);
+  };
+
   const columns: ColumnDef<RecentMatter>[] = [
     {
       header: "Client",
@@ -208,7 +267,7 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
       header: "Assignee",
       accessorKey: "assignees",
       cell: ({ row }) => (
-        <p className="text-sm">{row.original.assignees || "-"}</p>
+        <p className="text-sm text-muted-foreground">{row.original.assignees || "-"}</p>
       ),
     },
     {
@@ -234,15 +293,6 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
       },
     },
     {
-      header: "Billing",
-      accessorKey: "billingStatus",
-      cell: ({ row }) => (
-        <Badge variant={row.original.billingStatus === "PAID" ? "default" : "secondary"}>
-          {row.original.billingStatus || "Pending"}
-        </Badge>
-      ),
-    },
-    {
       header: "Updated",
       accessorKey: "updatedAt",
       cell: ({ row }) => (
@@ -251,22 +301,68 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
         </p>
       ),
     },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => handleView(row.original.docketwiseId)}
+        >
+          <Eye className="size-4" />
+        </Button>
+      ),
+    },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <h3 className="text-lg font-semibold">Recent Matters</h3>
-        <Badge variant="secondary">{matters.length}</Badge>
+    <>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold">Recent Matters</h3>
+            <Badge variant="secondary">{matters.length}</Badge>
+          </div>
+        </div>
+
+        {/* Search and Filter Bar */}
+        <div className="flex items-center gap-3">
+          <InputGroup className="flex-1">
+            <InputGroupAddon>
+              <LuSearch />
+            </InputGroupAddon>
+            <InputGroupInput
+              placeholder="Search matters..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+            />
+          </InputGroup>
+
+          <DateRangePicker
+            value={dateRange}
+            onChange={handleDateRangeChange}
+            placeholder="Filter by date"
+          />
+        </div>
+
+        {/* Table */}
+        <div className="rounded-xl border bg-card">
+          <DataTable
+            data={matters}
+            columns={columns}
+            emptyMessage="No matters found. Sync data to see recent matters."
+          />
+        </div>
       </div>
-      <div className="rounded-xl border bg-card">
-        <DataTable
-          data={matters}
-          columns={columns}
-          emptyMessage="No matters found. Sync data to see recent matters."
-        />
-      </div>
-    </div>
+
+      {/* View Drawer */}
+      <MatterViewDrawer
+        docketwiseId={viewMatterDocketwiseId}
+        open={viewDrawerOpen}
+        onOpenChange={setViewDrawerOpen}
+      />
+    </>
   );
 }
 

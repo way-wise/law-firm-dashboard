@@ -122,6 +122,7 @@ interface MappedMatter {
   actualDeadline: Date | null;
   billingStatus: "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE" | null;
   totalHours: number | null;
+  flatFee: number | null;
   customNotes: string | null;
   lastSyncedAt: Date;
   isStale: boolean;
@@ -331,6 +332,134 @@ function resolveStatus(
   return null;
 }
 
+// Fallback: Fetch matters from database when Docketwise is unavailable
+async function fetchMattersFromDB(
+  options: FetchMattersOptions
+): Promise<{ data: MappedMatter[]; total: number; page: number; perPage: number }> {
+  const { page = 1, perPage = 100, userId } = options;
+  
+  console.log("[MATTERS] Fetching from database (Docketwise unavailable)");
+
+  const skip = (page - 1) * perPage;
+  
+  try {
+    const [matters, total] = await Promise.all([
+      prisma.matters.findMany({
+        where: {
+          userId,
+          archived: false,
+          discardedAt: null,
+        },
+        include: {
+          assignee: {
+            select: {
+              docketwiseId: true,
+              fullName: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              teamType: true,
+              title: true,
+              isActive: true,
+            },
+          },
+          editedByUser: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      prisma.matters.count({
+        where: {
+          userId,
+          archived: false,
+          discardedAt: null,
+        },
+      }),
+    ]);
+
+  const mappedMatters: MappedMatter[] = matters.map((matter) => ({
+    id: matter.id,
+    docketwiseId: matter.docketwiseId,
+    docketwiseCreatedAt: matter.docketwiseCreatedAt,
+    docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+    title: matter.title,
+    description: matter.description,
+    matterType: matter.matterType,
+    matterTypeId: matter.matterTypeId,
+    status: matter.status,
+    statusId: matter.statusId,
+    statusForFiling: matter.statusForFiling,
+    statusForFilingId: matter.statusForFilingId,
+    clientName: matter.clientName,
+    clientId: matter.clientId,
+    teamId: matter.teamId,
+    assignee: matter.assignee ? {
+      id: matter.assignee.docketwiseId,
+      name: matter.assignee.fullName || matter.assignee.email,
+      email: matter.assignee.email,
+      firstName: matter.assignee.firstName,
+      lastName: matter.assignee.lastName,
+      fullName: matter.assignee.fullName || matter.assignee.email,
+      teamType: matter.assignee.teamType,
+      title: matter.assignee.title,
+      isActive: matter.assignee.isActive,
+    } : null,
+    assignees: matter.assignees,
+    docketwiseUserIds: matter.docketwiseUserIds || "[]",
+    openedAt: matter.openedAt,
+    closedAt: matter.closedAt,
+    assignedDate: matter.assignedDate,
+    estimatedDeadline: matter.estimatedDeadline,
+    actualDeadline: matter.actualDeadline,
+    billingStatus: matter.billingStatus,
+    totalHours: matter.totalHours,
+    flatFee: matter.flatFee,
+    customNotes: matter.customNotes,
+    lastSyncedAt: matter.lastSyncedAt,
+    isStale: matter.isStale,
+    archived: matter.archived,
+    priorityDate: null,
+    isEdited: matter.isEdited,
+    editedBy: matter.editedBy,
+    editedAt: matter.editedAt,
+    editedByUser: matter.editedByUser ? {
+      name: matter.editedByUser.name || "",
+      email: matter.editedByUser.email,
+    } : null,
+    userId: matter.userId,
+    createdAt: matter.createdAt,
+    updatedAt: matter.updatedAt,
+    calculatedDeadline: null,
+    isPastEstimatedDeadline: false,
+    notes: null,
+  }));
+
+  console.log(`[MATTERS-DB] Successfully fetched ${mappedMatters.length} matters from database`);
+
+  return {
+    data: mappedMatters,
+    total,
+    page,
+    perPage,
+  };
+  } catch (error) {
+    console.error('[MATTERS-DB] Error fetching from database:', error);
+    // Return empty result rather than crashing
+    return {
+      data: [],
+      total: 0,
+      page,
+      perPage,
+    };
+  }
+}
+
 // Fetch matters with real-time data and assignee resolution
 export async function fetchMattersRealtime(
   options: FetchMattersOptions
@@ -342,7 +471,8 @@ export async function fetchMattersRealtime(
     // 1. Get Docketwise token
     const token = await getDocketwiseToken();
     if (!token) {
-      throw new Error("No Docketwise token available");
+      console.warn("[MATTERS] No Docketwise token available - falling back to database");
+      return fetchMattersFromDB({ page, perPage, userId });
     }
 
     // 2. Load reference maps (from Redis or DB fallback)
@@ -366,7 +496,7 @@ export async function fetchMattersRealtime(
     const matters = (await response.json()) as DocketwiseMatter[];
 
     // Fetch detailed data for attorney_id
-    const mattersWithDetails = await Promise.all(
+    const mattersWithDetails = (await Promise.all(
       matters.map(async (matter) => {
         try {
           const detailResponse = await fetchWithRetry(
@@ -384,11 +514,13 @@ export async function fetchMattersRealtime(
             // Merge the detail data with the list data
             return { ...matter, ...detail };
           }
-        } catch {
-            return matter;
+          return matter;
+        } catch (error) {
+          console.warn(`[MATTERS-FETCH] Failed to fetch detail for matter ${matter.id}:`, error);
+          return matter;
         }
       })
-    );
+    )).filter(m => m && m.id); // Filter out any undefined or invalid matters
 
     // Parse pagination
     let total = matters.length;
@@ -439,8 +571,9 @@ export async function fetchMattersRealtime(
       return dateB - dateA;
     });
 
-    // Map matters with reference data
-    const mappedMatters: MappedMatter[] = sortedMatters.map((matter) => {
+    // Map matters with reference data - filter out invalid matters first
+    const validMatters = sortedMatters.filter(m => m && m.id);
+    const mappedMatters: MappedMatter[] = validMatters.map((matter) => {
       const edited = editedMap.get(matter.id);
 
       // Resolve IDs to names
@@ -502,6 +635,7 @@ export async function fetchMattersRealtime(
         actualDeadline: edited?.actualDeadline || null,
         billingStatus: edited?.billingStatus || null,
         totalHours: edited?.totalHours || null,
+        flatFee: edited?.flatFee || null,
         customNotes: edited?.customNotes || null,
         lastSyncedAt: edited?.lastSyncedAt || now,
         isStale: edited?.isStale || false,
@@ -530,7 +664,8 @@ export async function fetchMattersRealtime(
       perPage,
     };
   } catch (error) {
-    throw error;
+    console.error("[MATTERS] Docketwise API error - falling back to database:", error);
+    return fetchMattersFromDB({ page, perPage, userId });
   }
 }
 
@@ -542,7 +677,96 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
   try {
     const token = await getDocketwiseToken();
     if (!token) {
-      throw new Error("No Docketwise token available");
+      console.warn("[MATTER-DETAIL] No Docketwise token - fetching from database");
+      // Fallback: fetch from database
+      const matter = await prisma.matters.findFirst({
+        where: {
+          docketwiseId,
+          userId,
+        },
+        include: {
+          assignee: {
+            select: {
+              docketwiseId: true,
+              fullName: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              teamType: true,
+              title: true,
+              isActive: true,
+            },
+          },
+          editedByUser: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!matter) {
+        throw new Error("Matter not found in database");
+      }
+
+      // Map to MappedMatter format
+      return {
+        id: matter.id,
+        docketwiseId: matter.docketwiseId,
+        docketwiseCreatedAt: matter.docketwiseCreatedAt,
+        docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+        title: matter.title,
+        description: matter.description,
+        matterType: matter.matterType,
+        matterTypeId: matter.matterTypeId,
+        status: matter.status,
+        statusId: matter.statusId,
+        statusForFiling: matter.statusForFiling,
+        statusForFilingId: matter.statusForFilingId,
+        clientName: matter.clientName,
+        clientId: matter.clientId,
+        teamId: matter.teamId,
+        assignee: matter.assignee ? {
+          id: matter.assignee.docketwiseId,
+          name: matter.assignee.fullName || matter.assignee.email,
+          email: matter.assignee.email,
+          firstName: matter.assignee.firstName,
+          lastName: matter.assignee.lastName,
+          fullName: matter.assignee.fullName || matter.assignee.email,
+          teamType: matter.assignee.teamType,
+          title: matter.assignee.title,
+          isActive: matter.assignee.isActive,
+        } : null,
+        assignees: matter.assignees,
+        docketwiseUserIds: matter.docketwiseUserIds || "[]",
+        openedAt: matter.openedAt,
+        closedAt: matter.closedAt,
+        assignedDate: matter.assignedDate,
+        estimatedDeadline: matter.estimatedDeadline,
+        actualDeadline: matter.actualDeadline,
+        billingStatus: matter.billingStatus,
+        totalHours: matter.totalHours,
+        flatFee: matter.flatFee,
+        customNotes: matter.customNotes,
+        lastSyncedAt: matter.lastSyncedAt,
+        isStale: matter.isStale,
+        archived: matter.archived,
+        priorityDate: null,
+        isEdited: matter.isEdited,
+        editedBy: matter.editedBy,
+        editedAt: matter.editedAt,
+        editedByUser: matter.editedByUser ? {
+          name: matter.editedByUser.name || "",
+          email: matter.editedByUser.email,
+        } : null,
+        userId: matter.userId,
+        createdAt: matter.createdAt,
+        updatedAt: matter.updatedAt,
+        calculatedDeadline: null,
+        isPastEstimatedDeadline: false,
+        notes: null,
+      };
     }
 
     // Load reference maps
@@ -637,6 +861,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       actualDeadline: edited?.actualDeadline || null,
       billingStatus: edited?.billingStatus || null,
       totalHours: edited?.totalHours || null,
+      flatFee: edited?.flatFee || null,
       customNotes: edited?.customNotes || null,
       lastSyncedAt: edited?.lastSyncedAt || new Date(),
       isStale: edited?.isStale || false,
@@ -663,6 +888,96 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
 
     return mapped;
   } catch (error) {
-    throw error;
+    console.error("[MATTER-DETAIL] Docketwise API error - attempting database fallback:", error);
+    
+    // Fallback: try to fetch from database
+    const matter = await prisma.matters.findFirst({
+      where: {
+        docketwiseId,
+        userId,
+      },
+      include: {
+        assignee: {
+          select: {
+            docketwiseId: true,
+            fullName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            teamType: true,
+            title: true,
+            isActive: true,
+          },
+        },
+        editedByUser: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!matter) {
+      throw new Error(`Matter ${docketwiseId} not found in database or Docketwise API`);
+    }
+
+    // Map to MappedMatter format
+    return {
+      id: matter.id,
+      docketwiseId: matter.docketwiseId,
+      docketwiseCreatedAt: matter.docketwiseCreatedAt,
+      docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+      title: matter.title,
+      description: matter.description,
+      matterType: matter.matterType,
+      matterTypeId: matter.matterTypeId,
+      status: matter.status,
+      statusId: matter.statusId,
+      statusForFiling: matter.statusForFiling,
+      statusForFilingId: matter.statusForFilingId,
+      clientName: matter.clientName,
+      clientId: matter.clientId,
+      teamId: matter.teamId,
+      assignee: matter.assignee ? {
+        id: matter.assignee.docketwiseId,
+        name: matter.assignee.fullName || matter.assignee.email,
+        email: matter.assignee.email,
+        firstName: matter.assignee.firstName,
+        lastName: matter.assignee.lastName,
+        fullName: matter.assignee.fullName || matter.assignee.email,
+        teamType: matter.assignee.teamType,
+        title: matter.assignee.title,
+        isActive: matter.assignee.isActive,
+      } : null,
+      assignees: matter.assignees,
+      docketwiseUserIds: matter.docketwiseUserIds || "[]",
+      openedAt: matter.openedAt,
+      closedAt: matter.closedAt,
+      assignedDate: matter.assignedDate,
+      estimatedDeadline: matter.estimatedDeadline,
+      actualDeadline: matter.actualDeadline,
+      billingStatus: matter.billingStatus,
+      totalHours: matter.totalHours,
+      flatFee: matter.flatFee,
+      customNotes: matter.customNotes,
+      lastSyncedAt: matter.lastSyncedAt,
+      isStale: matter.isStale,
+      archived: matter.archived,
+      priorityDate: null,
+      isEdited: matter.isEdited,
+      editedBy: matter.editedBy,
+      editedAt: matter.editedAt,
+      editedByUser: matter.editedByUser ? {
+        name: matter.editedByUser.name || "",
+        email: matter.editedByUser.email,
+      } : null,
+      userId: matter.userId,
+      createdAt: matter.createdAt,
+      updatedAt: matter.updatedAt,
+      calculatedDeadline: null,
+      isPastEstimatedDeadline: false,
+      notes: null,
+    };
   }
 }
