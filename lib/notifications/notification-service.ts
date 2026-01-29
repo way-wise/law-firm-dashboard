@@ -307,6 +307,10 @@ export async function sendNotification(data: NotificationData): Promise<{
 }
 
 // Helper to detect notification type from status change
+// Used by SYNC to determine if an email should be sent
+// Only returns a type for significant status changes: RFE, approval, denial
+// Generic status changes during sync should NOT trigger emails (too noisy)
+// Manual matter updates use detectMatterChanges() which handles all notification types
 export function detectNotificationType(
   oldStatus: string | null | undefined,
   newStatus: string | null | undefined
@@ -315,6 +319,7 @@ export function detectNotificationType(
   
   const statusLower = newStatus.toLowerCase();
   
+  // Only send sync notifications for these significant status changes:
   if (statusLower.includes("rfe") || statusLower.includes("request for evidence")) {
     return "rfe";
   }
@@ -327,10 +332,8 @@ export function detectNotificationType(
     return "denial";
   }
   
-  if (oldStatus !== newStatus) {
-    return "statusChange";
-  }
-  
+  // Do NOT return "statusChange" for sync - it causes too many emails
+  // Generic status changes are only notified via manual matter updates
   return null;
 }
 

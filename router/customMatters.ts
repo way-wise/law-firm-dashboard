@@ -26,9 +26,19 @@ export const getCustomMatters = authorized
     const page = input.page || 1;
     const perPage = 50;
     
+    // Check if any filters are applied (excluding pagination)
+    const hasFilters = input.search || input.billingStatus || input.assignees || 
+                       input.matterType || input.status || input.dateFrom || 
+                       input.dateTo || input.hasDeadline !== undefined;
+    
+    // When filters are applied, we need to fetch more data to find matches
+    // because the Docketwise API doesn't support server-side filtering
+    const fetchPerPage = hasFilters ? 200 : perPage;
+    const fetchPage = hasFilters ? Math.ceil(page / (fetchPerPage / perPage)) : page;
+    
     const result = await fetchMattersRealtime({
-      page,
-      perPage,
+      page: fetchPage,
+      perPage: fetchPerPage,
       userId: context.user.id,
     });
 
@@ -85,9 +95,16 @@ export const getCustomMatters = authorized
         if (matter.matterType !== input.matterType) return false;
       }
 
-      // Status filter (workflow stage)
+      // Status filter - match the matter's actual current status
       if (input.status) {
-        if (matter.status !== input.status) return false;
+        const filterStatus = input.status.toLowerCase().trim();
+        const matterStatus = (matter.status || "").toLowerCase().trim();
+        const matterStatusForFiling = (matter.statusForFiling || "").toLowerCase().trim();
+        
+        // Match if either status field matches the filter
+        if (matterStatus !== filterStatus && matterStatusForFiling !== filterStatus) {
+          return false;
+        }
       }
 
       // Date range filter (docketwiseCreatedAt)
@@ -219,16 +236,30 @@ export const getCustomMatters = authorized
       };
     });
 
+    // When filters are applied, paginate the filtered results
+    // Otherwise use the API's pagination
+    let paginatedData = mattersWithDeadlines;
+    let totalForPagination = result.total;
+    let totalPages = Math.ceil(result.total / perPage);
+    
+    if (hasFilters) {
+      // Client-side pagination of filtered results
+      const startIndex = (page - 1) * perPage % fetchPerPage;
+      const endIndex = startIndex + perPage;
+      paginatedData = mattersWithDeadlines.slice(startIndex, endIndex);
+      totalForPagination = filteredMatters.length;
+      totalPages = Math.max(1, Math.ceil(totalForPagination / perPage));
+    }
+    
     const finalResult = {
-      data: mattersWithDeadlines,
+      data: paginatedData,
       pagination: {
-        total: result.total,
+        total: totalForPagination,
         page,
         perPage,
-        totalPages: Math.ceil(result.total / perPage),
+        totalPages,
       },
     };
-    
         
     return finalResult;
   });

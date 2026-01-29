@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { DateRange } from "react-day-picker";
-import { subMonths, startOfMonth, endOfMonth } from "date-fns";
-import { FileText, Download, FileSpreadsheet, Loader2, AlertTriangle, TrendingUp, Users, Clock, DollarSign } from "lucide-react";
+import { subDays, subMonths, subYears, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
+import { FileText, Download, FileSpreadsheet, Loader2, AlertTriangle, TrendingUp, Users, Clock, DollarSign, Calendar } from "lucide-react";
 import { client } from "@/lib/orpc/client";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Button } from "@/components/ui/button";
@@ -16,15 +16,90 @@ import { exportReportToPDF } from "@/lib/export/pdf-export";
 import { exportReportToExcel } from "@/lib/export/excel-export";
 import type { ReportDataType } from "@/schema/reportSchema";
 
+type PresetType = "today" | "yesterday" | "last7days" | "last30days" | "thisWeek" | "lastWeek" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
+
+const presets: { value: PresetType; label: string; groupBy: "day" | "week" | "month" }[] = [
+  { value: "today", label: "Today", groupBy: "day" },
+  { value: "yesterday", label: "Yesterday", groupBy: "day" },
+  { value: "last7days", label: "Last 7 Days", groupBy: "day" },
+  { value: "last30days", label: "Last 30 Days", groupBy: "day" },
+  { value: "thisWeek", label: "This Week", groupBy: "day" },
+  { value: "lastWeek", label: "Last Week", groupBy: "day" },
+  { value: "thisMonth", label: "This Month", groupBy: "week" },
+  { value: "lastMonth", label: "Last Month", groupBy: "week" },
+  { value: "thisQuarter", label: "This Quarter", groupBy: "month" },
+  { value: "lastQuarter", label: "Last Quarter", groupBy: "month" },
+  { value: "thisYear", label: "This Year", groupBy: "month" },
+  { value: "lastYear", label: "Last Year", groupBy: "month" },
+  { value: "custom", label: "Custom Range", groupBy: "week" },
+];
+
+function getPresetDateRange(preset: PresetType): { from: Date; to: Date } {
+  const now = new Date();
+  switch (preset) {
+    case "today":
+      return { from: startOfDay(now), to: endOfDay(now) };
+    case "yesterday":
+      const yesterday = subDays(now, 1);
+      return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
+    case "last7days":
+      return { from: startOfDay(subDays(now, 6)), to: endOfDay(now) };
+    case "last30days":
+      return { from: startOfDay(subDays(now, 29)), to: endOfDay(now) };
+    case "thisWeek":
+      return { from: startOfWeek(now, { weekStartsOn: 1 }), to: endOfWeek(now, { weekStartsOn: 1 }) };
+    case "lastWeek":
+      const lastWeek = subDays(startOfWeek(now, { weekStartsOn: 1 }), 1);
+      return { from: startOfWeek(lastWeek, { weekStartsOn: 1 }), to: endOfWeek(lastWeek, { weekStartsOn: 1 }) };
+    case "thisMonth":
+      return { from: startOfMonth(now), to: endOfMonth(now) };
+    case "lastMonth":
+      const lastMonth = subMonths(now, 1);
+      return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    case "thisQuarter":
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
+      const quarterEnd = new Date(now.getFullYear(), currentQuarter * 3 + 3, 0);
+      return { from: quarterStart, to: quarterEnd };
+    case "lastQuarter":
+      const prevQuarter = Math.floor(now.getMonth() / 3) - 1;
+      const year = prevQuarter < 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const q = prevQuarter < 0 ? 3 : prevQuarter;
+      const pqStart = new Date(year, q * 3, 1);
+      const pqEnd = new Date(year, q * 3 + 3, 0);
+      return { from: pqStart, to: pqEnd };
+    case "thisYear":
+      return { from: startOfYear(now), to: endOfYear(now) };
+    case "lastYear":
+      const lastYear = subYears(now, 1);
+      return { from: startOfYear(lastYear), to: endOfYear(lastYear) };
+    default:
+      return { from: startOfMonth(subMonths(now, 1)), to: endOfMonth(now) };
+  }
+}
+
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(subMonths(new Date(), 1)),
-    to: endOfMonth(new Date()),
+  const [selectedPreset, setSelectedPreset] = useState<PresetType>("last30days");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const range = getPresetDateRange("last30days");
+    return { from: range.from, to: range.to };
   });
-  const [groupBy, setGroupBy] = useState<"week" | "month">("week");
+  const [groupBy, setGroupBy] = useState<"day" | "week" | "month">("day");
   const [isLoading, setIsLoading] = useState(false);
   const [report, setReport] = useState<ReportDataType | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const handlePresetChange = (preset: PresetType) => {
+    setSelectedPreset(preset);
+    if (preset !== "custom") {
+      const range = getPresetDateRange(preset);
+      setDateRange({ from: range.from, to: range.to });
+      const presetConfig = presets.find(p => p.value === preset);
+      if (presetConfig) {
+        setGroupBy(presetConfig.groupBy);
+      }
+    }
+  };
 
   const generateReport = async () => {
     if (!dateRange?.from || !dateRange?.to) {
@@ -95,34 +170,76 @@ export default function ReportsPage() {
       {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Report Settings</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Report Settings
+          </CardTitle>
           <CardDescription>
-            Select date range and grouping options
+            Select a time period and generate comprehensive reports
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Quick Presets */}
+          <div>
+            <label className="mb-2 block text-sm font-medium">Quick Select</label>
+            <div className="flex flex-wrap gap-2">
+              {presets.slice(0, 8).map((preset) => (
+                <Button
+                  key={preset.value}
+                  variant={selectedPreset === preset.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePresetChange(preset.value)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          
+          {/* More Options */}
           <div className="flex flex-col gap-4 md:flex-row md:items-end">
             <div>
-              <label className="mb-2 block text-sm font-medium">Date Range</label>
-              <DateRangePicker
-                value={dateRange}
-                onChange={setDateRange}
-                placeholder="Select date range"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">Group By</label>
-              <Select value={groupBy} onValueChange={(v) => setGroupBy(v as "week" | "month")}>
-                <SelectTrigger>
+              <label className="mb-2 block text-sm font-medium">Time Period</label>
+              <Select value={selectedPreset} onValueChange={(v) => handlePresetChange(v as PresetType)}>
+                <SelectTrigger className="w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {presets.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {selectedPreset === "custom" && (
+              <div>
+                <label className="mb-2 block text-sm font-medium">Custom Date Range</label>
+                <DateRangePicker
+                  value={dateRange}
+                  onChange={setDateRange}
+                  placeholder="Select date range"
+                />
+              </div>
+            )}
+            
+            <div>
+              <label className="mb-2 block text-sm font-medium">Group By</label>
+              <Select value={groupBy} onValueChange={(v) => setGroupBy(v as "day" | "week" | "month")}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Daily</SelectItem>
                   <SelectItem value="week">Weekly</SelectItem>
                   <SelectItem value="month">Monthly</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={generateReport} disabled={isLoading}>
+            
+            <Button onClick={generateReport} disabled={isLoading} size="lg">
               {isLoading ? (
                 <>
                   <Loader2 className="animate-spin" />
@@ -136,6 +253,7 @@ export default function ReportsPage() {
               )}
             </Button>
           </div>
+          
           {error && (
             <p className="mt-2 text-sm text-destructive">{error}</p>
           )}
@@ -428,7 +546,7 @@ export default function ReportsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    {groupBy === "week" ? "Weekly" : "Monthly"} Trends
+                    {groupBy === "day" ? "Daily" : groupBy === "week" ? "Weekly" : "Monthly"} Trends
                   </CardTitle>
                   <CardDescription>
                     Matter activity over time

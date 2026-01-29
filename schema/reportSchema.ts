@@ -4,7 +4,7 @@ import * as z from "zod";
 export const reportFilterSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date(),
-  groupBy: z.enum(["week", "month"]).default("week"),
+  groupBy: z.enum(["day", "week", "month"]).default("week"),
 });
 
 // Matter summary stats
@@ -88,7 +88,7 @@ export const reportDataSchema = z.object({
     start: z.coerce.date(),
     end: z.coerce.date(),
   }),
-  groupBy: z.enum(["week", "month"]),
+  groupBy: z.enum(["day", "week", "month"]),
   summary: matterSummarySchema,
   statusBreakdown: z.array(statusBreakdownSchema),
   typeBreakdown: z.array(typeBreakdownSchema),

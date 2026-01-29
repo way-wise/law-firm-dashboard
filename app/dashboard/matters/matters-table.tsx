@@ -642,8 +642,12 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
           />
 
           {/* Pagination */}
-          {matters.pagination && matters.pagination.totalPages > 1 && (
-            <div className="flex items-center justify-end gap-3 px-6 pt-4">
+          {matters.pagination && (
+            <div className="flex items-center justify-between px-6 pt-4">
+              <span className="text-sm text-muted-foreground">
+                Showing {matters.data.length} of {matters.pagination.total} results
+              </span>
+              <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
                 Page {matters.pagination.page} of {matters.pagination.totalPages}
               </span>
@@ -671,6 +675,7 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
               >
                 Next
               </Button>
+              </div>
             </div>
           )}
         </div>

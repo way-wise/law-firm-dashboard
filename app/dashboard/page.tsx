@@ -1,6 +1,7 @@
 import "@/lib/orpc/server";
 import { client } from "@/lib/orpc/client";
 import { EnhancedDashboard } from "./_components/enhanced-dashboard";
+import { DashboardHeader } from "./_components/dashboard-header";
 
 const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC with proper error handling
@@ -87,13 +88,8 @@ const DashboardOverviewPage = async () => {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard Overview</h1>
-        <p className="text-muted-foreground">
-          Executive KPI monitoring and team performance analytics
-        </p>
-      </div>
+      {/* Page Header with Date Range Filter */}
+      <DashboardHeader />
 
       {/* Enhanced Dashboard with All Components */}
       <EnhancedDashboard

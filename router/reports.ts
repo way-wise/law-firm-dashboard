@@ -12,6 +12,8 @@ import {
 import {
   endOfWeek,
   endOfMonth,
+  endOfDay,
+  eachDayOfInterval,
   eachWeekOfInterval,
   eachMonthOfInterval,
   format,
@@ -258,7 +260,31 @@ export const generateReport = authorized
     // ========== TIME PERIOD DATA ==========
     const timePeriodData: TimePeriodDataType[] = [];
 
-    if (groupBy === "week") {
+    if (groupBy === "day") {
+      const days = eachDayOfInterval({ start: startDate, end: endDate });
+      days.forEach((dayStart) => {
+        const dayEnd = endOfDay(dayStart);
+        const periodMatters = matters.filter(
+          (m) => m.createdAt >= dayStart && m.createdAt <= dayEnd
+        );
+        const periodCompleted = matters.filter(
+          (m) => m.closedAt && m.closedAt >= dayStart && m.closedAt <= dayEnd
+        );
+        const periodHours = periodMatters.reduce(
+          (sum, m) => sum + (m.totalHours || 0),
+          0
+        );
+
+        timePeriodData.push({
+          period: format(dayStart, "MMM d, yyyy"),
+          startDate: dayStart,
+          endDate: dayEnd,
+          newMatters: periodMatters.length,
+          completedMatters: periodCompleted.length,
+          totalHours: periodHours,
+        });
+      });
+    } else if (groupBy === "week") {
       const weeks = eachWeekOfInterval(
         { start: startDate, end: endDate },
         { weekStartsOn: 1 }

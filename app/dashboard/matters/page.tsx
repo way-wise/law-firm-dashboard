@@ -26,7 +26,7 @@ const MattersPage = async ({
     client.team.get({ active: true }),
   ]);
 
-  // Extract unique statuses from matterTypes
+  // Extract unique statuses from matterTypes (all available workflow stages)
   const allStatuses = matterTypes.flatMap(mt => mt.matterStatuses || []);
   const uniqueStatuses = Array.from(new Map(allStatuses.map(s => [s.docketwiseId, s])).values());
 

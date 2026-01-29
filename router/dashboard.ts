@@ -122,6 +122,12 @@ const typeDistributionSchema = z.object({
   count: z.number(),
 });
 
+// Dashboard stats input schema
+const dashboardStatsInputSchema = z.object({
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+});
+
 // Get Dashboard Stats
 export const getDashboardStats = authorized
   .route({
@@ -130,8 +136,13 @@ export const getDashboardStats = authorized
     summary: "Get dashboard statistics",
     tags: ["Dashboard"],
   })
+  .input(dashboardStatsInputSchema)
   .output(dashboardStatsSchema)
-  .handler(async ({ context }) => {
+  .handler(async ({ input, context }) => {
+    // Parse date range for filtering time-based metrics
+    const dateFrom = input.dateFrom ? new Date(input.dateFrom) : null;
+    const dateTo = input.dateTo ? new Date(input.dateTo) : null;
+    
     // === EXECUTIVE KPI CALCULATIONS ===
     
     // Basic counts
@@ -179,6 +190,7 @@ export const getDashboardStats = authorized
         select: {
           id: true,
           status: true,
+          statusForFiling: true,
           closedAt: true,
           estimatedDeadline: true,
           actualDeadline: true,
@@ -239,11 +251,14 @@ export const getDashboardStats = authorized
     // 1. Active Matters Count (simple count)
     const activeMattersCount = activeMatters.length;
     
-    // 2. New Matters This Month
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // 2. New Matters (filtered by date range if provided, otherwise this month)
+    const filterStartDate = dateFrom || new Date(now.getFullYear(), now.getMonth(), 1);
+    const filterEndDate = dateTo || now;
     const newMattersThisMonth = allMatters.filter(m => {
       const createdDate = m.docketwiseCreatedAt || m.createdAt;
-      return createdDate && new Date(createdDate) >= startOfMonth;
+      if (!createdDate) return false;
+      const date = new Date(createdDate);
+      return date >= filterStartDate && date <= filterEndDate;
     }).length;
     
     // 3. New Matters Last Month (for growth calculation)
@@ -268,8 +283,12 @@ export const getDashboardStats = authorized
       return daysUntil <= 7; // includes overdue (negative) and upcoming
     }).length;
     
-    // 5. RFE Frequency (count of RFEs)
-    const rfeFrequency = allMatters.reduce((sum, m) => sum + (m.rfeCount || 0), 0);
+    // 5. RFE Frequency (count of matters with "Request for Evidence Received" statusForFiling)
+    // Note: statusForFiling is the Docketwise "Status For Filing" column where RFE status is stored
+    const rfeFrequency = allMatters.filter(m => {
+      const statusForFiling = (m.statusForFiling || "").toLowerCase();
+      return statusForFiling === "request for evidence received";
+    }).length;
     
     // 6. Weighted Active Matters (complexity weighted)
     const weightedActiveMatters = activeMatters.reduce((total, matter) => {
@@ -466,7 +485,7 @@ export const getDashboardStats = authorized
       .filter(m => {
         if (!m.closedAt) return false;
         const closedDate = new Date(m.closedAt);
-        return closedDate >= startOfMonth;
+        return closedDate >= filterStartDate;
       })
       .reduce((sum, m) => {
         if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
@@ -494,7 +513,7 @@ export const getDashboardStats = authorized
     const thisMonthOverdue = allMatters.filter(m => {
       if (!m.estimatedDeadline) return false;
       const deadline = new Date(m.estimatedDeadline);
-      return deadline < now && deadline >= startOfMonth;
+      return deadline < now && deadline >= filterStartDate;
     }).length;
 
     const lastMonthOverdue = allMatters.filter(m => {
