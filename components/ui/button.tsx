@@ -62,7 +62,7 @@ function Button({
     >
       {isLoading ? (
         <>
-          <Spinner className="stroke-white" />
+          <Spinner className="dark:stroke-white" />
           {children}
         </>
       ) : (
