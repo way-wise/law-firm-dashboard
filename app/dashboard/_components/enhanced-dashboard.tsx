@@ -64,6 +64,24 @@ interface TeamMemberData {
   completedCount: number;
 }
 
+interface MonthlyTrend {
+  month: string;
+  year: number;
+  newMatters: number;
+  approved: number;
+  rfe: number;
+}
+
+interface StatusCategory {
+  category: string;
+  count: number;
+  statuses: Array<{
+    statusId: number;
+    statusName: string;
+    matterCount: number;
+  }>;
+}
+
 interface EnhancedDashboardProps {
   stats: DashboardStats;
   recentMatters: RecentMatter[];
@@ -73,6 +91,8 @@ interface EnhancedDashboardProps {
     byStatus: Array<{ status: string; count: number }>;
   };
   teamMembers: TeamMemberData[];
+  monthlyTrends: MonthlyTrend[];
+  statusByCategory: StatusCategory[];
 }
 
 function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
@@ -266,16 +286,20 @@ export function EnhancedDashboard({
   recentMatters,
   distribution,
   teamMembers,
+  monthlyTrends,
+  statusByCategory,
 }: EnhancedDashboardProps) {
-  // Generate adjudication trends data (New Matters, Approved, Denied/RFE)
-  const adjudicationData = [
-    { month: 'Jul', newMatters: 18, approved: 15, rfe: 2 },
-    { month: 'Aug', newMatters: 22, approved: 19, rfe: 1 },
-    { month: 'Sep', newMatters: 24, approved: 20, rfe: 2 },
-    { month: 'Oct', newMatters: 28, approved: 25, rfe: 1 },
-    { month: 'Nov', newMatters: 26, approved: 23, rfe: 1 },
-    { month: 'Dec', newMatters: 24, approved: 22, rfe: 2 },
-  ];
+  // Use real monthly trends data from API (or fallback to empty if not available)
+  const adjudicationData = monthlyTrends.length > 0 
+    ? monthlyTrends.map(t => ({
+        month: t.month,
+        newMatters: t.newMatters,
+        approved: t.approved,
+        rfe: t.rfe,
+      }))
+    : [
+        { month: 'N/A', newMatters: 0, approved: 0, rfe: 0 },
+      ];
 
   // Transform team members for throughput chart
   const teamThroughput = teamMembers.slice(0, 5).map(member => ({
@@ -299,8 +323,8 @@ export function EnhancedDashboard({
       {/* Row 2: Secondary KPI Cards */}
       <SecondaryKPICards stats={stats} />
 
-      {/* Row 3: Workflow Stage Cards */}
-      <WorkflowStageCards distribution={distribution} />
+      {/* Row 3: Workflow Stage Cards - using real status categories */}
+      <WorkflowStageCards distribution={distribution} statusByCategory={statusByCategory} />
 
       {/* Row 4: In-House Team Cards */}
       <TeamPerformanceCards members={teamPerformanceData} title="In-House Team" />

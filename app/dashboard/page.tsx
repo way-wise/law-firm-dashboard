@@ -5,7 +5,7 @@ import { EnhancedDashboard } from "./_components/enhanced-dashboard";
 const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC with proper error handling
   // Fetch dashboard data
-  const [stats, , recentMatters, distribution] = await Promise.all([
+  const [stats, assigneeStats, recentMatters, distribution, monthlyTrends, statusByCategory] = await Promise.all([
     client.dashboard.getStats({}).catch(() => ({
       totalContacts: 0,
       totalMatters: 0,
@@ -57,10 +57,9 @@ const DashboardOverviewPage = async () => {
       byComplexity: [],
       byStatus: [],
     })),
+    client.dashboard.getMonthlyTrends({ months: 6 }).catch(() => []),
+    client.dashboard.getStatusByCategory({}).catch(() => []),
   ]);
-
-  // Fetch team data separately
-  const teamData = await client.team.get({ active: true }).catch(() => ({ data: [] }));
 
   // Calculate days until deadline for recent matters
   const now = new Date();
@@ -76,19 +75,15 @@ const DashboardOverviewPage = async () => {
     };
   });
 
-  // Transform team data for dashboard
-  const teamMembers = (teamData.data || []).map((member: { id: number; first_name: string | null; last_name: string | null; email: string; role: string | null }, idx: number) => {
-    return {
-      id: member.id,
-      name: member.first_name && member.last_name 
-        ? `${member.first_name} ${member.last_name}` 
-        : member.email?.split('@')[0] || 'Unknown',
-      email: member.email,
-      role: member.role || 'Paralegal',
-      activeMatters: (idx % 5) + 1, // Placeholder - ideally from matter counts
-      completedCount: (idx % 10) + 5, // Placeholder - ideally from matter counts
-    };
-  });
+  // Transform assigneeStats to team members format - REAL DATA from database
+  const teamMembers = assigneeStats.map((member) => ({
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    role: 'Paralegal',
+    activeMatters: member.activeMatters, // Real count from assigneeStats
+    completedCount: member.completedCount, // Real count from assigneeStats
+  }));
 
   return (
     <div className="space-y-6">
@@ -106,6 +101,8 @@ const DashboardOverviewPage = async () => {
         recentMatters={mattersWithRisk}
         distribution={distribution}
         teamMembers={teamMembers}
+        monthlyTrends={monthlyTrends}
+        statusByCategory={statusByCategory}
       />
     </div>
   );

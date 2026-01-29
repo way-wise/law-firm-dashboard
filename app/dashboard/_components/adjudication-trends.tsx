@@ -37,7 +37,7 @@ export function AdjudicationTrends({ data }: AdjudicationTrendsProps) {
             </div>
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-sm bg-red-500" />
-              <span className="text-muted-foreground">Denied</span>
+              <span className="text-muted-foreground">RFE</span>
             </div>
           </div>
         </div>

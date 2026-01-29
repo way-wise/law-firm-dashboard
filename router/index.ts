@@ -73,6 +73,9 @@ import {
   getMatterStatusDistribution,
   getMatterTypeDistribution,
   getMatterDistribution,
+  getMonthlyTrends,
+  getStatusDistribution,
+  getMatterStatusesByType,
 } from "./dashboard";
 import { generateReport } from "./reports";
 
@@ -155,6 +158,9 @@ export const router = {
     getStatusDistribution: getMatterStatusDistribution,
     getTypeDistribution: getMatterTypeDistribution,
     getDistribution: getMatterDistribution,
+    getMonthlyTrends: getMonthlyTrends,
+    getStatusByCategory: getStatusDistribution,
+    getMatterStatusesByType: getMatterStatusesByType,
   },
   reports: {
     generate: generateReport,

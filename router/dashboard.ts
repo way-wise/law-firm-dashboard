@@ -188,6 +188,7 @@ export const getDashboardStats = authorized
           totalHours: true,
           flatFee: true,
           assignees: true,
+          docketwiseUserIds: true,
           teamId: true,
           matterTypeId: true,
           rfeCount: true,
@@ -341,7 +342,39 @@ export const getDashboardStats = authorized
       return daysUntil > 0 && daysUntil <= 7;
     }).length;
 
-    const unassignedMatters = allMatters.filter(m => !m.teamId).length;
+    // Unassigned matters - fetch from realtime API which has actual assignee data
+    // Database fields (assignees, docketwiseUserIds, teamId) are often empty
+    const realtimeResult = await fetchMattersRealtime({
+      page: 1,
+      perPage: 200,
+      userId: context.user.id,
+    });
+    
+    const unassignedMatters = realtimeResult.data.filter(m => {
+      // Check all possible assignee sources from realtime data
+      const hasAssigneeObj = m.assignee && m.assignee.id;
+      const hasTeamId = m.teamId !== null && m.teamId !== undefined;
+      
+      // Parse docketwiseUserIds - could be JSON array or comma-separated
+      let hasUserIds = false;
+      const userIdsStr = m.docketwiseUserIds || "";
+      if (userIdsStr.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(userIdsStr);
+          hasUserIds = Array.isArray(parsed) && parsed.length > 0;
+        } catch { hasUserIds = false; }
+      } else if (userIdsStr.trim()) {
+        hasUserIds = userIdsStr.split(',').some(id => !isNaN(parseInt(id.trim())));
+      }
+      
+      const hasAssigneesStr = m.assignees && m.assignees.trim() !== '';
+      
+      return !hasAssigneeObj && !hasTeamId && !hasUserIds && !hasAssigneesStr;
+    }).length;
+    
+    // Scale unassigned count to total matters (we only fetched 200)
+    const unassignedRatio = realtimeResult.data.length > 0 ? unassignedMatters / realtimeResult.data.length : 0;
+    const scaledUnassignedMatters = Math.round(totalMatters * unassignedRatio);
 
     const overloadedParalegals = paralegals.filter(paralegal => {
       const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
@@ -421,10 +454,58 @@ export const getDashboardStats = authorized
       return sum + (baseHours * complexity);
     }, 0);
 
-    // Calculate trends (placeholder - should calculate from historical data)
-    const mattersTrend = undefined; // TODO: Calculate from previous period
-    const revenueTrend = undefined; // TODO: Calculate from previous period  
-    const deadlineMissTrend = undefined; // TODO: Calculate from last 30 days
+    // Calculate real period-over-period trends
+    
+    // Matters trend: compare this month vs last month new matters
+    const mattersTrend = newMattersLastMonth > 0 
+      ? Math.round(((newMattersThisMonth - newMattersLastMonth) / newMattersLastMonth) * 100)
+      : newMattersThisMonth > 0 ? 100 : 0;
+
+    // Revenue trend: compare this month's closed matters revenue vs last month
+    const thisMonthClosedRevenue = allMatters
+      .filter(m => {
+        if (!m.closedAt) return false;
+        const closedDate = new Date(m.closedAt);
+        return closedDate >= startOfMonth;
+      })
+      .reduce((sum, m) => {
+        if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
+        const matterType = matterTypeMap.get(m.matterTypeId || 0);
+        return sum + (matterType?.flatFee || 0);
+      }, 0);
+
+    const lastMonthClosedRevenue = allMatters
+      .filter(m => {
+        if (!m.closedAt) return false;
+        const closedDate = new Date(m.closedAt);
+        return closedDate >= startOfLastMonth && closedDate <= endOfLastMonth;
+      })
+      .reduce((sum, m) => {
+        if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
+        const matterType = matterTypeMap.get(m.matterTypeId || 0);
+        return sum + (matterType?.flatFee || 0);
+      }, 0);
+
+    const revenueTrend = lastMonthClosedRevenue > 0
+      ? Math.round(((thisMonthClosedRevenue - lastMonthClosedRevenue) / lastMonthClosedRevenue) * 100)
+      : thisMonthClosedRevenue > 0 ? 100 : 0;
+
+    // Deadline miss trend: compare overdue matters this month vs last month
+    const thisMonthOverdue = allMatters.filter(m => {
+      if (!m.estimatedDeadline) return false;
+      const deadline = new Date(m.estimatedDeadline);
+      return deadline < now && deadline >= startOfMonth;
+    }).length;
+
+    const lastMonthOverdue = allMatters.filter(m => {
+      if (!m.estimatedDeadline) return false;
+      const deadline = new Date(m.estimatedDeadline);
+      return deadline >= startOfLastMonth && deadline <= endOfLastMonth && deadline < now;
+    }).length;
+
+    const deadlineMissTrend = lastMonthOverdue > 0
+      ? Math.round(((thisMonthOverdue - lastMonthOverdue) / lastMonthOverdue) * 100)
+      : thisMonthOverdue > 0 ? 100 : 0;
 
     // Data Quality Metrics
     const mattersWithoutPricing = allMatters.filter(m => {
@@ -480,7 +561,7 @@ export const getDashboardStats = authorized
       // Risk Command Center
       overdueMatters,
       atRiskMatters,
-      unassignedMatters,
+      unassignedMatters: scaledUnassignedMatters,
       overloadedParalegals,
 
       // Financial metrics
@@ -541,40 +622,30 @@ export const getAssigneeStats = authorized
       },
     });
 
-    // Get matter types for estimated days
-    const matterTypes = await prisma.matterTypes.findMany({
-      select: {
-        docketwiseId: true,
-        estimatedDays: true,
-      },
-    });
-    const matterTypeEstDaysMap = new Map<number, number>();
-    for (const mt of matterTypes) {
-      if (mt.estimatedDays) {
-        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+    // Build name-to-id map for matching by assignee name
+    const nameToIdMap = new Map<string, number>();
+    for (const member of teamMembers) {
+      const fullName = member.fullName || `${member.firstName || ""} ${member.lastName || ""}`.trim();
+      if (fullName) {
+        nameToIdMap.set(fullName.toLowerCase(), member.docketwiseId);
+        if (member.firstName) {
+          nameToIdMap.set(member.firstName.toLowerCase(), member.docketwiseId);
+        }
+      }
+      if (member.email) {
+        nameToIdMap.set(member.email.toLowerCase(), member.docketwiseId);
       }
     }
 
-    // Get all matters with assignees for this user
-    const matters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        docketwiseUserIds: { not: null },
-        archived: false,
-        discardedAt: null,
-      },
-      select: {
-        assignees: true,
-        docketwiseUserIds: true,
-        status: true,
-        statusForFiling: true,
-        closedAt: true,
-        docketwiseCreatedAt: true,
-        estimatedDeadline: true,
-        actualDeadline: true,
-        matterTypeId: true,
-      },
+    // Fetch matters from Docketwise API (has real assignee data)
+    // Fetch first 500 matters to get a good sample for stats
+    const result = await fetchMattersRealtime({
+      page: 1,
+      perPage: 200,
+      userId: context.user.id,
     });
+    
+    const matters = result.data;
 
     // Calculate stats per assignee
     const assigneeStats = new Map<number, {
@@ -598,10 +669,56 @@ export const getAssigneeStats = authorized
       });
     }
 
-    // Process matters
+    // Track unassigned matters count
+    let unassignedCount = 0;
+
+    // Process matters using realtime data which has assignee info
     const now = new Date();
     for (const matter of matters) {
-      const userIds = matter.docketwiseUserIds?.split(',').map(id => parseInt(id.trim())) || [];
+      // Get user IDs from docketwiseUserIds (comma-separated string from API)
+      const userIdsStr = matter.docketwiseUserIds || "";
+      let userIds: number[] = [];
+      
+      // Parse docketwiseUserIds - could be JSON array or comma-separated
+      if (userIdsStr.startsWith('[')) {
+        try {
+          userIds = JSON.parse(userIdsStr).filter((id: number) => !isNaN(id));
+        } catch {
+          userIds = [];
+        }
+      } else if (userIdsStr) {
+        userIds = userIdsStr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      }
+      
+      // Also include teamId if present
+      if (matter.teamId && !userIds.includes(matter.teamId)) {
+        userIds.push(matter.teamId);
+      }
+      
+      // Also include assignee.id if present
+      if (matter.assignee?.id && !userIds.includes(matter.assignee.id)) {
+        userIds.push(matter.assignee.id);
+      }
+      
+      // Fallback: match by assignees string (name matching)
+      if (userIds.length === 0 && matter.assignees) {
+        const assigneeNames = matter.assignees.split(',').map(n => n.trim());
+        for (const name of assigneeNames) {
+          let matchedId = nameToIdMap.get(name.toLowerCase());
+          if (!matchedId) {
+            const firstName = name.split(' ')[0].toLowerCase();
+            matchedId = nameToIdMap.get(firstName);
+          }
+          if (matchedId && !userIds.includes(matchedId)) {
+            userIds.push(matchedId);
+          }
+        }
+      }
+      
+      // Track unassigned
+      if (userIds.length === 0) {
+        unassignedCount++;
+      }
       
       for (const userId of userIds) {
         const stats = assigneeStats.get(userId);
@@ -610,23 +727,24 @@ export const getAssigneeStats = authorized
         stats.total++;
         
         // Check if completed
-        const isCompleted = matter.closedAt || (matter.status || "").toLowerCase().includes("closed");
+        const isCompleted = matter.closedAt || (matter.status || "").toLowerCase().includes("closed") || (matter.status || "").toLowerCase().includes("approved");
         if (isCompleted) {
           stats.completed++;
         }
 
-        // Check if overdue
-        if (matter.estimatedDeadline && !isCompleted) {
-          const deadlineDate = new Date(matter.estimatedDeadline);
+        // Check if overdue using calculatedDeadline or estimatedDeadline
+        const deadline = matter.calculatedDeadline || matter.estimatedDeadline;
+        if (deadline && !isCompleted) {
+          const deadlineDate = new Date(deadline);
           if (deadlineDate < now) {
             stats.overdue++;
           }
         }
 
         // Check if completed on time
-        if (isCompleted && matter.estimatedDeadline) {
-          const completionDate = matter.actualDeadline ? new Date(matter.actualDeadline) : now;
-          const deadlineDate = new Date(matter.estimatedDeadline);
+        if (isCompleted && deadline) {
+          const completionDate = matter.closedAt ? new Date(matter.closedAt) : now;
+          const deadlineDate = new Date(deadline);
           if (completionDate <= deadlineDate) {
             stats.onTime++;
           }
@@ -636,10 +754,8 @@ export const getAssigneeStats = authorized
         if (matter.docketwiseCreatedAt) {
           const createdDate = new Date(matter.docketwiseCreatedAt);
           if (createdDate.getFullYear() > 1970) {
-            const daysOpen = isCompleted
-              ? matter.closedAt
-                ? Math.ceil((new Date(matter.closedAt).getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
-                : Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
+            const daysOpen = isCompleted && matter.closedAt
+              ? Math.ceil((new Date(matter.closedAt).getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24))
               : Math.ceil((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
             
             stats.totalDaysOpen += daysOpen;
@@ -650,6 +766,8 @@ export const getAssigneeStats = authorized
         }
       }
     }
+    
+    console.log(`[ASSIGNEE-STATS] Processed ${matters.length} matters, ${unassignedCount} unassigned`);
 
     // Map team members with their detailed stats
     return teamMembers
@@ -705,7 +823,8 @@ export const getAssigneeStats = authorized
           activeMatters,
         };
       })
-      .filter((member) => member.matterCount > 0); // Only return members with matters
+      .sort((a, b) => b.matterCount - a.matterCount) // Sort by matter count descending
+      .slice(0, 10); // Limit to top 10 team members
   });
 
 // Get Matter Distribution for Charts
@@ -982,4 +1101,282 @@ export const getMatterTypeDistribution = authorized
       type: group.matterType || "Unknown",
       count: group._count,
     }));
+  });
+
+// Monthly trends schema for adjudication chart
+const monthlyTrendSchema = z.object({
+  month: z.string(), // "Jan", "Feb", etc.
+  year: z.number(),
+  newMatters: z.number(),
+  approved: z.number(), // Closed/completed matters
+  rfe: z.number(), // Matters with RFE status or rfeCount > 0
+});
+
+// Get Monthly Trends for Adjudication Chart
+export const getMonthlyTrends = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/monthly-trends",
+    summary: "Get monthly trends for adjudication chart (new matters, approved, RFE)",
+    tags: ["Dashboard"],
+  })
+  .input(z.object({
+    months: z.number().optional().default(6), // How many months to look back
+  }))
+  .output(z.array(monthlyTrendSchema))
+  .handler(async ({ input, context }) => {
+    const now = new Date();
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    // Get all matters for this user
+    const allMatters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+      },
+      select: {
+        docketwiseCreatedAt: true,
+        createdAt: true,
+        closedAt: true,
+        status: true,
+        statusForFiling: true,
+        rfeCount: true,
+      },
+    });
+
+    // Calculate trends for each month
+    const trends: Array<{ month: string; year: number; newMatters: number; approved: number; rfe: number }> = [];
+    
+    for (let i = input.months - 1; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      const monthName = monthNames[monthDate.getMonth()];
+      const year = monthDate.getFullYear();
+
+      // New matters created in this month
+      const newMatters = allMatters.filter(m => {
+        const createdDate = m.docketwiseCreatedAt || m.createdAt;
+        if (!createdDate) return false;
+        const date = new Date(createdDate);
+        return date >= monthDate && date <= monthEnd;
+      }).length;
+
+      // Approved/Closed matters in this month
+      const approved = allMatters.filter(m => {
+        if (!m.closedAt) return false;
+        const closedDate = new Date(m.closedAt);
+        return closedDate >= monthDate && closedDate <= monthEnd;
+      }).length;
+
+      // RFE count - sum of rfeCount for matters created in this month
+      // Plus count matters with RFE in status that were created this month
+      const rfe = allMatters.reduce((count, m) => {
+        const createdDate = m.docketwiseCreatedAt || m.createdAt;
+        if (!createdDate) return count;
+        const date = new Date(createdDate);
+        if (date < monthDate || date > monthEnd) return count;
+        
+        // Add rfeCount if present
+        if (m.rfeCount && m.rfeCount > 0) {
+          return count + m.rfeCount;
+        }
+        
+        // Or count as 1 if status contains RFE
+        if ((m.status && m.status.toLowerCase().includes('rfe')) ||
+            (m.statusForFiling && m.statusForFiling.toLowerCase().includes('rfe'))) {
+          return count + 1;
+        }
+        
+        return count;
+      }, 0);
+
+      trends.push({ month: monthName, year, newMatters, approved, rfe });
+    }
+
+    return trends;
+  });
+
+// Status category schema for workflow tracking
+const statusCategorySchema = z.object({
+  category: z.string(), // "approved", "rfe", "denied", "pending", "interview", "filed", "other"
+  count: z.number(),
+  statuses: z.array(z.object({
+    statusId: z.number(),
+    statusName: z.string(),
+    matterCount: z.number(),
+  })),
+});
+
+// Define status category keywords for classification
+const STATUS_CATEGORIES = {
+  approved: ['approved', 'granted', 'card received', 'visa granted', 'case approved', 'immigrant visa approved'],
+  denied: ['denied', 'case denied', 'rejected'],
+  rfe: ['request for evidence', 'rfe received', 'rfe filed', 'evidence'],
+  interview: ['interview', 'biometrics', 'oath ceremony'],
+  filed: ['filed', 'submitted', 'case filed'],
+  pending: ['pending', 'drafting', 'preparing', 'waiting', 'processing'],
+  closed: ['closed'],
+};
+
+// Categorize a status name
+function categorizeStatus(statusName: string): string {
+  const lowerName = statusName.toLowerCase();
+  for (const [category, keywords] of Object.entries(STATUS_CATEGORIES)) {
+    if (keywords.some(keyword => lowerName.includes(keyword))) {
+      return category;
+    }
+  }
+  return 'other';
+}
+
+// Get Status Distribution by Category
+export const getStatusDistribution = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/status-distribution",
+    summary: "Get matter distribution by status category using matterStatuses table",
+    tags: ["Dashboard"],
+  })
+  .output(z.array(statusCategorySchema))
+  .handler(async ({ context }) => {
+    // Get all matters with their status IDs
+    const matters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+      },
+      select: {
+        statusId: true,
+        status: true,
+      },
+    });
+
+    // Get all matter statuses for reference
+    const allStatuses = await prisma.matterStatuses.findMany({
+      select: {
+        docketwiseId: true,
+        name: true,
+      },
+    });
+
+    // Create a map of statusId -> statusName
+    const statusMap = new Map<number, string>();
+    for (const status of allStatuses) {
+      statusMap.set(status.docketwiseId, status.name);
+    }
+
+    // Count matters by status
+    const statusCounts = new Map<number, { name: string; count: number }>();
+    
+    for (const matter of matters) {
+      if (matter.statusId) {
+        const existing = statusCounts.get(matter.statusId);
+        const statusName = statusMap.get(matter.statusId) || matter.status || 'Unknown';
+        if (existing) {
+          existing.count++;
+        } else {
+          statusCounts.set(matter.statusId, { name: statusName, count: 1 });
+        }
+      } else if (matter.status) {
+        // Fallback to status string if no statusId - use string as key directly
+        // We'll use a negative hash to avoid collision with real IDs
+        let hash = 0;
+        for (let i = 0; i < matter.status.length; i++) {
+          hash = ((hash << 5) - hash) + matter.status.charCodeAt(i);
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        const fakeId = -Math.abs(hash || 1);
+        const existing = statusCounts.get(fakeId);
+        if (existing) {
+          existing.count++;
+        } else {
+          statusCounts.set(fakeId, { name: matter.status, count: 1 });
+        }
+      }
+    }
+
+    // Group by category
+    const categoryGroups = new Map<string, { count: number; statuses: Array<{ statusId: number; statusName: string; matterCount: number }> }>();
+    
+    for (const [statusId, { name, count }] of statusCounts) {
+      const category = categorizeStatus(name);
+      const existing = categoryGroups.get(category);
+      if (existing) {
+        existing.count += count;
+        existing.statuses.push({ statusId, statusName: name, matterCount: count });
+      } else {
+        categoryGroups.set(category, {
+          count,
+          statuses: [{ statusId, statusName: name, matterCount: count }],
+        });
+      }
+    }
+
+    // Convert to array and sort by count
+    return Array.from(categoryGroups.entries())
+      .map(([category, data]) => ({
+        category,
+        count: data.count,
+        statuses: data.statuses.sort((a, b) => b.matterCount - a.matterCount),
+      }))
+      .sort((a, b) => b.count - a.count);
+  });
+
+// Get All Matter Statuses with their Matter Types (for reference/debugging)
+export const getMatterStatusesByType = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/matter-statuses-by-type",
+    summary: "Get all matter statuses grouped by matter type",
+    tags: ["Dashboard"],
+  })
+  .output(z.array(z.object({
+    matterTypeId: z.number(),
+    matterTypeName: z.string(),
+    statuses: z.array(z.object({
+      id: z.number(),
+      name: z.string(),
+      category: z.string(),
+      matterCount: z.number(),
+    })),
+  })))
+  .handler(async ({ context }) => {
+    // Get all matter types with their statuses
+    const matterTypes = await prisma.matterTypes.findMany({
+      include: {
+        matterStatuses: true,
+      },
+    });
+
+    // Get matter counts by statusId for this user
+    const matterCounts = await prisma.matters.groupBy({
+      by: ['statusId'],
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+        statusId: { not: null },
+      },
+      _count: true,
+    });
+
+    const countMap = new Map<number, number>();
+    for (const item of matterCounts) {
+      if (item.statusId) {
+        countMap.set(item.statusId, item._count);
+      }
+    }
+
+    return matterTypes.map(mt => ({
+      matterTypeId: mt.docketwiseId,
+      matterTypeName: mt.name,
+      statuses: mt.matterStatuses.map(status => ({
+        id: status.docketwiseId,
+        name: status.name,
+        category: categorizeStatus(status.name),
+        matterCount: countMap.get(status.docketwiseId) || 0,
+      })),
+    })).filter(mt => mt.statuses.length > 0); // Only return types with statuses
   });

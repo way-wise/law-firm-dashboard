@@ -1,57 +1,125 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
-import { FileEdit, Send, AlertCircle, Clock } from "lucide-react";
+import { FileEdit, Send, AlertCircle, Clock, CheckCircle, XCircle, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface StatusCategory {
+  category: string;
+  count: number;
+  statuses: Array<{
+    statusId: number;
+    statusName: string;
+    matterCount: number;
+  }>;
+}
 
 interface WorkflowStageCardsProps {
   distribution: {
     byStatus: Array<{ status: string; count: number }>;
   };
+  statusByCategory?: StatusCategory[];
 }
 
-const stageConfig = [
-  { 
-    key: "drafting",
-    label: "Drafting", 
+// Map category names to display config
+const categoryConfig: Record<string, { 
+  label: string; 
+  icon: typeof FileEdit;
+  iconBg: string;
+  progressColor: string;
+}> = {
+  pending: { 
+    label: "Pending/Drafting", 
     icon: FileEdit,
     iconBg: "bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400",
     progressColor: "bg-amber-500",
-    match: (s: string) => s.toLowerCase().includes('draft')
   },
-  { 
-    key: "rfe",
-    label: "RFEs", 
+  rfe: { 
+    label: "RFE", 
     icon: AlertCircle,
     iconBg: "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400",
     progressColor: "bg-red-500",
-    match: (s: string) => s.toLowerCase().includes('rfe')
   },
-  { 
-    key: "filed",
+  filed: { 
     label: "Filed", 
     icon: Send,
+    iconBg: "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
+    progressColor: "bg-blue-500",
+  },
+  interview: { 
+    label: "Interview", 
+    icon: Calendar,
+    iconBg: "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
+    progressColor: "bg-purple-500",
+  },
+  approved: { 
+    label: "Approved", 
+    icon: CheckCircle,
     iconBg: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
     progressColor: "bg-emerald-500",
-    match: (s: string) => s.toLowerCase().includes('filed') || s.toLowerCase().includes('submitted')
   },
-  { 
-    key: "active",
-    label: "Active (Unfiled)", 
+  denied: { 
+    label: "Denied", 
+    icon: XCircle,
+    iconBg: "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400",
+    progressColor: "bg-red-500",
+  },
+  closed: { 
+    label: "Closed", 
+    icon: CheckCircle,
+    iconBg: "bg-slate-100 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400",
+    progressColor: "bg-slate-500",
+  },
+  other: { 
+    label: "Other", 
     icon: Clock,
     iconBg: "bg-primary/10 text-primary",
     progressColor: "bg-primary",
-    match: (s: string) => s.toLowerCase().includes('pending') || s.toLowerCase().includes('active') || s.toLowerCase().includes('review')
   },
-];
+};
 
-export function WorkflowStageCards({ distribution }: WorkflowStageCardsProps) {
-  const stages = stageConfig.map(config => ({
-    ...config,
-    count: distribution.byStatus
-      .filter(s => config.match(s.status))
-      .reduce((sum, s) => sum + s.count, 0)
-  }));
+// Priority order for displaying categories
+const categoryPriority = ['pending', 'filed', 'rfe', 'interview', 'approved', 'denied', 'closed', 'other'];
+
+export function WorkflowStageCards({ distribution, statusByCategory }: WorkflowStageCardsProps) {
+  // Use statusByCategory if available (real data from matterStatuses table)
+  // Otherwise fall back to distribution.byStatus parsing
+  let stages: Array<{ key: string; label: string; icon: typeof FileEdit; iconBg: string; progressColor: string; count: number }>;
+  
+  if (statusByCategory && statusByCategory.length > 0) {
+    // Use real categorized data from API
+    stages = categoryPriority
+      .map(category => {
+        const data = statusByCategory.find(s => s.category === category);
+        const config = categoryConfig[category] || categoryConfig.other;
+        return {
+          key: category,
+          ...config,
+          count: data?.count || 0,
+        };
+      })
+      .filter(s => s.count > 0) // Only show categories with matters
+      .slice(0, 4); // Show top 4 categories
+  } else {
+    // Fallback to old string matching logic
+    const stageConfig = [
+      { key: "pending", match: (s: string) => s.toLowerCase().includes('draft') || s.toLowerCase().includes('pending') },
+      { key: "rfe", match: (s: string) => s.toLowerCase().includes('rfe') },
+      { key: "filed", match: (s: string) => s.toLowerCase().includes('filed') || s.toLowerCase().includes('submitted') },
+      { key: "other", match: () => true },
+    ];
+    
+    stages = stageConfig.map(config => {
+      const categoryConf = categoryConfig[config.key] || categoryConfig.other;
+      return {
+        key: config.key,
+        ...categoryConf,
+        count: distribution.byStatus
+          .filter(s => config.match(s.status))
+          .reduce((sum, s) => sum + s.count, 0)
+      };
+    });
+  }
 
   // Calculate total for percentage
   const total = stages.reduce((sum, s) => sum + s.count, 0) || 1;

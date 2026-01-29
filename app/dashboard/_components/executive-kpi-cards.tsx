@@ -319,6 +319,8 @@ interface ExecutiveKPICardsProps {
     avgCycleTime?: number;
     totalRevenue?: number;
     overdueMatters?: number;
+    mattersTrend?: number | null;
+    revenueTrend?: number | null;
   };
 }
 
@@ -326,13 +328,14 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
   const activeCount = stats?.activeMattersCount ?? 0;
   const newMatters = stats?.newMattersThisMonth ?? 0;
   const rfeFrequency = stats?.rfeFrequency ?? 0;
-  const growthText = stats?.newMattersGrowth ?? "+0 from last month";
-  const complianceRate = stats?.deadlineComplianceRate ?? 94;
+  const complianceRate = stats?.deadlineComplianceRate ?? 0;
+  const mattersTrend = stats?.mattersTrend ?? 0;
   
-  // Extract growth number from text like "+5 from last month"
-  const growthMatch = growthText.match(/([+-]?\d+)/);
-  const growthNumber = growthMatch ? parseInt(growthMatch[1]) : 0;
-  const changeType = growthNumber >= 0 ? "positive" : "negative";
+  // Format trend for display
+  const formatTrend = (trend: number) => {
+    if (trend === 0) return "No change";
+    return `${trend >= 0 ? '+' : ''}${trend}% vs last month`;
+  };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -340,8 +343,8 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
       <KPICard
         label="New Matters (MTD)"
         value={newMatters}
-        change={`${growthNumber >= 0 ? '+' : ''}${growthNumber}% vs last period`}
-        changeType={changeType}
+        change={formatTrend(mattersTrend)}
+        changeType={mattersTrend >= 0 ? "positive" : "negative"}
         icon="trending"
         chartType="area"
         chartData={[28, 35, 32, 40, 38, 45, newMatters > 0 ? newMatters : 50]}
@@ -350,10 +353,8 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
 
       {/* BAR CHART - shows volume comparison across periods */}
       <KPICard
-        label="Total Caseload"
+        label="Total Matters"
         value={activeCount}
-        change="+3% vs last period"
-        changeType="positive"
         icon="file"
         chartType="bar"
         chartData={[4500, 5200, 4800, 6000, 5500, 6200, activeCount > 0 ? activeCount : 6800]}
@@ -364,8 +365,6 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
       <KPICard
         label="On-Time Rate"
         value={complianceRate}
-        change="+2% vs last period"
-        changeType="positive"
         icon="check"
         chartType="donut"
         chartColor="emerald"
@@ -376,8 +375,6 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
       <KPICard
         label="RFE Frequency"
         value={rfeFrequency}
-        change="-15% vs last period"
-        changeType="positive"
         icon="alert"
         chartType="dots"
         chartColor="orange"
@@ -394,14 +391,22 @@ interface SecondaryKPICardsProps {
     avgCycleTime?: number;
     totalRevenue?: number;
     unassignedMatters?: number;
+    revenueTrend?: number | null;
   };
 }
 
 export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
   const overdue = stats?.overdueMatters ?? 0;
-  const avgCycle = stats?.avgCycleTime ?? 18;
+  const avgCycle = Math.round(stats?.avgCycleTime ?? 0);
   const revenue = stats?.totalRevenue ?? 0;
   const unassigned = stats?.unassignedMatters ?? 0;
+  const revenueTrend = stats?.revenueTrend ?? 0;
+
+  // Format trend for display
+  const formatTrend = (trend: number) => {
+    if (trend === 0) return "No change";
+    return `${trend >= 0 ? '+' : ''}${trend}% vs last month`;
+  };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -414,24 +419,22 @@ export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
         chartColor="orange"
       />
 
-      {/* SPARKLINE - shows cycle time trend */}
+      {/* SPARKLINE - shows cycle time (no trend comparison available) */}
       <KPICard
         label="Avg Days to File"
         value={avgCycle}
-        change="-2 days"
-        changeType="positive"
         icon="clock"
         chartType="sparkline"
-        chartData={[24, 22, 23, 20, 19, 18, avgCycle]}
+        chartData={[24, 22, 23, 20, 19, 18, avgCycle > 0 ? avgCycle : 18]}
         chartColor="primary"
       />
 
-      {/* AREA - filled area shows revenue growth beautifully */}
+      {/* AREA - filled area shows revenue with real trend */}
       <KPICard
         label="Est. Revenue"
         value={revenue}
-        change="+8% MTD"
-        changeType="positive"
+        change={formatTrend(revenueTrend)}
+        changeType={revenueTrend >= 0 ? "positive" : "negative"}
         icon="dollar"
         chartType="area"
         chartData={[45000, 52000, 48000, 55000, 60000, 58000, revenue || 62000]}
