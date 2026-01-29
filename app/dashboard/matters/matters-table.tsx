@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, Pencil, Plus, RefreshCw, Trash, Clock } from "lucide-react";
+import { Eye, Pencil, Plus, RefreshCw, Trash, Clock, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useMounted } from "@/hooks/use-mounted";
@@ -530,8 +530,13 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
     <>
       <div className="flex flex-col gap-6">
         {/* Page Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold">Matters</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" onClick={() => router.back()}>
+              <ArrowLeft />
+            </Button>
+            <h1 className="text-2xl font-semibold">Matters</h1>
+          </div>
           <div className="flex items-center gap-4">
             <Button
               variant="outline"

@@ -72,6 +72,12 @@ const assigneeStatsSchema = z.object({
   overdueCount: z.number(),
   onTimeRate: z.number(),
   avgDaysOpen: z.number(),
+  performanceIndex: z.number(), // 0-100 score
+  rfeRate: z.number(),
+  revisionRate: z.number(),
+  utilization: z.number(),
+  avgCycleTime: z.number(),
+  activeMatters: z.number(),
 });
 
 // Recent matters schema for dashboard
@@ -612,6 +618,25 @@ export const getAssigneeStats = authorized
         const onTimeRate = stats.total > 0 ? Math.round((stats.onTime / stats.total) * 100) : 0;
         const avgDaysOpen = stats.openCount > 0 ? Math.round(stats.totalDaysOpen / stats.openCount) : 0;
 
+        // Calculate additional performance metrics
+        const activeMatters = stats.total - stats.completed;
+        const avgCycleTime = stats.completed > 0 ? Math.round(stats.totalDaysOpen / stats.completed) : 0;
+        
+        // Quality metrics from matter data (would need to query separately for real data)
+        const rfeRate = 0; // Placeholder - needs matter.rfeCount
+        const revisionRate = 0; // Placeholder - needs matter.revisionCount
+        
+        // Utilization (estimated based on active matters)
+        const utilization = activeMatters > 0 ? Math.min(100, (activeMatters / 50) * 100) : 0;
+        
+        // Performance Index calculation
+        const performanceIndex = Math.round(
+          (onTimeRate * 0.4) + 
+          (Math.max(0, 100 - avgDaysOpen) * 0.3) +
+          (Math.min(utilization, 85) * 0.2) +
+          (Math.max(0, 100 - rfeRate * 10) * 0.1)
+        );
+
         return {
           id: member.docketwiseId,
           name:
@@ -624,9 +649,97 @@ export const getAssigneeStats = authorized
           overdueCount: stats.overdue,
           onTimeRate,
           avgDaysOpen,
+          performanceIndex,
+          rfeRate,
+          revisionRate,
+          utilization,
+          avgCycleTime,
+          activeMatters,
         };
       })
       .filter((member) => member.matterCount > 0); // Only return members with matters
+  });
+
+// Get Matter Distribution for Charts
+export const getMatterDistribution = authorized
+  .route({
+    method: "GET",
+    path: "/dashboard/distribution",
+    summary: "Get matter distribution by type, complexity, and status",
+    tags: ["Dashboard"],
+  })
+  .output(z.object({
+    byType: z.array(z.object({ type: z.string(), count: z.number() })),
+    byComplexity: z.array(z.object({ level: z.string(), count: z.number() })),
+    byStatus: z.array(z.object({ status: z.string(), count: z.number() })),
+  }))
+  .handler(async ({ context }) => {
+    const matters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+      },
+      select: {
+        matterType: true,
+        matterTypeId: true,
+        status: true,
+      },
+    });
+
+    // Get matter types with complexity
+    const matterTypes = await prisma.matterTypes.findMany({
+      select: {
+        docketwiseId: true,
+        name: true,
+        complexityWeight: true,
+      },
+    });
+    const matterTypeComplexityMap = new Map(
+      matterTypes.map(mt => [mt.docketwiseId, { name: mt.name, complexity: mt.complexityWeight }])
+    );
+
+    // By Type
+    const typeCount = new Map<string, number>();
+    for (const matter of matters) {
+      const type = matter.matterType || "Unknown";
+      typeCount.set(type, (typeCount.get(type) || 0) + 1);
+    }
+    const byType = Array.from(typeCount.entries())
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5); // Top 5
+
+    // By Complexity
+    const complexityCount = new Map<string, number>();
+    for (const matter of matters) {
+      const typeInfo = matterTypeComplexityMap.get(matter.matterTypeId || 0);
+      let level = "Simple";
+      if (typeInfo) {
+        if (typeInfo.complexity >= 3) level = "Complex";
+        else if (typeInfo.complexity >= 2) level = "Medium";
+      }
+      complexityCount.set(level, (complexityCount.get(level) || 0) + 1);
+    }
+    const byComplexity = Array.from(complexityCount.entries())
+      .map(([level, count]) => ({ level, count }));
+
+    // By Status
+    const statusCount = new Map<string, number>();
+    for (const matter of matters) {
+      const status = matter.status || "Unknown";
+      statusCount.set(status, (statusCount.get(status) || 0) + 1);
+    }
+    const byStatus = Array.from(statusCount.entries())
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5); // Top 5
+
+    return {
+      byType,
+      byComplexity,
+      byStatus,
+    };
   });
 
 // Get Recent Matters

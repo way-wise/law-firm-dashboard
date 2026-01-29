@@ -22,11 +22,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, Pencil, RefreshCw, Search, Loader2 } from "lucide-react";
+import { Eye, Pencil, Search, Loader2, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { useDebounceCallback } from "usehooks-ts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/orpc/client";
+import { useRouter } from "@bprogress/next";
 
 interface MatterType {
   id: string;
@@ -66,6 +67,7 @@ interface MatterTypesTableProps {
 }
 
 const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) => {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [editingType, setEditingType] = useState<MatterType | null>(null);
@@ -81,14 +83,6 @@ const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) =>
   const [formData, setFormData] = useState({
     estimatedDays: "",
     categoryId: "",
-  });
-
-  // Sync mutation
-  const syncMutation = useMutation({
-    mutationFn: () => client.matterTypes.sync(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["matterTypes"] });
-    },
   });
 
   // Update mutation
@@ -206,23 +200,17 @@ const MatterTypesTable = ({ matterTypes, categories }: MatterTypesTableProps) =>
       <div className="flex flex-col gap-6">
         {/* Page Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Matter Types</h1>
-            <p className="text-muted-foreground">
-              Immigration matter types synced from Docketwise
-            </p>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" onClick={() => router.back()}>
+              <ArrowLeft />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Matter Types</h1>
+              <p className="text-muted-foreground">
+                Immigration matter types synced from Docketwise
+              </p>
+            </div>
           </div>
-          <Button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-          >
-            {syncMutation.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            Sync from Docketwise
-          </Button>
         </div>
 
         {/* Card with search and table */}

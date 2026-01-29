@@ -16,12 +16,8 @@ export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
         </p>
       </div>
 
-      <Tabs defaultValue={defaultTab || "platform"} className="w-full">
+      <Tabs defaultValue={defaultTab || "integrations"} className="w-full">
         <TabsList>
-          <TabsTrigger value="platform">
-            <Settings className="h-4 w-4" />
-            Platform
-          </TabsTrigger>
           <TabsTrigger value="integrations">
             <Plug className="h-4 w-4" />
             Integrations
@@ -30,11 +26,11 @@ export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
             <Bell className="h-4 w-4" />
             Notifications
           </TabsTrigger>
+          <TabsTrigger value="platform">
+            <Settings className="h-4 w-4" />
+            Platform
+          </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="platform">
-          <PlatformTab />
-        </TabsContent>
 
         <TabsContent value="integrations">
           <IntegrationsTab />
@@ -42,6 +38,10 @@ export default function SettingsTabs({ defaultTab }: { defaultTab?: string }) {
 
         <TabsContent value="notifications">
           <NotificationsTab />
+        </TabsContent>
+
+        <TabsContent value="platform">
+          <PlatformTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -15,9 +15,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/orpc/client";
+import { useRouter } from "@bprogress/next";
 
 interface Category {
   id: string;
@@ -29,6 +30,7 @@ interface Category {
 }
 
 export default function CategoriesPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -111,11 +113,16 @@ export default function CategoriesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Categories</h1>
-          <p className="text-muted-foreground">
-            Manage immigration case categories for matter types
-          </p>
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => router.back()}>
+            <ArrowLeft />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Categories</h1>
+            <p className="text-muted-foreground">
+              Manage immigration case categories for matter types
+            </p>
+          </div>
         </div>
         <Button onClick={() => setIsCreateOpen(true)}>
           <Plus />
