@@ -16,6 +16,11 @@ const dashboardStatsSchema = z.object({
   editedMatters: z.number(),
 
   // Executive KPIs (Top Row)
+  activeMattersCount: z.number(), // Simple count of active (non-closed) matters
+  newMattersThisMonth: z.number(), // Matters created this month
+  criticalMatters: z.number(), // Matters with deadline close or passed
+  rfeFrequency: z.number(), // RFE count this period
+  newMattersGrowth: z.string().optional(), // Growth text like "+5 from last month"
   weightedActiveMatters: z.number(), // Active matters weighted by complexity
   revenueAtRisk: z.number(), // Revenue from matters due in next 14 days
   deadlineComplianceRate: z.number(), // Percentage of matters completed on time
@@ -225,15 +230,53 @@ export const getDashboardStats = authorized
 
     // === EXECUTIVE KPI CALCULATIONS ===
     
-    // 1. Weighted Active Matters
-    const weightedActiveMatters = allMatters
-      .filter(matter => !matter.closedAt && !(matter.status || "").toLowerCase().includes("closed"))
-      .reduce((total, matter) => {
-        const complexity = matterTypeMap.get(matter.matterTypeId || 0)?.complexityWeight || 1;
-        return total + complexity;
-      }, 0);
+    // Filter active matters (non-closed)
+    const activeMatters = allMatters.filter(
+      matter => !matter.closedAt && !(matter.status || "").toLowerCase().includes("closed")
+    );
+    
+    // 1. Active Matters Count (simple count)
+    const activeMattersCount = activeMatters.length;
+    
+    // 2. New Matters This Month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const newMattersThisMonth = allMatters.filter(m => {
+      const createdDate = m.docketwiseCreatedAt || m.createdAt;
+      return createdDate && new Date(createdDate) >= startOfMonth;
+    }).length;
+    
+    // 3. New Matters Last Month (for growth calculation)
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const newMattersLastMonth = allMatters.filter(m => {
+      const createdDate = m.docketwiseCreatedAt || m.createdAt;
+      if (!createdDate) return false;
+      const date = new Date(createdDate);
+      return date >= startOfLastMonth && date <= endOfLastMonth;
+    }).length;
+    
+    const growthDiff = newMattersThisMonth - newMattersLastMonth;
+    const newMattersGrowth = growthDiff >= 0 
+      ? `+${growthDiff} from last month` 
+      : `${growthDiff} from last month`;
+    
+    // 4. Critical Matters (deadline within 7 days or passed)
+    const criticalMatters = allMatters.filter(m => {
+      if (!m.estimatedDeadline) return false;
+      const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return daysUntil <= 7; // includes overdue (negative) and upcoming
+    }).length;
+    
+    // 5. RFE Frequency (count of RFEs)
+    const rfeFrequency = allMatters.reduce((sum, m) => sum + (m.rfeCount || 0), 0);
+    
+    // 6. Weighted Active Matters (complexity weighted)
+    const weightedActiveMatters = activeMatters.reduce((total, matter) => {
+      const complexity = matterTypeMap.get(matter.matterTypeId || 0)?.complexityWeight || 1;
+      return total + complexity;
+    }, 0);
 
-    // 2. Revenue at Risk (matters due in next 14 days)
+    // 7. Revenue at Risk (matters due in next 14 days)
     const next14Days = new Date();
     next14Days.setDate(next14Days.getDate() + 14);
     
@@ -423,6 +466,11 @@ export const getDashboardStats = authorized
       editedMatters,
 
       // Executive KPIs (Top Row)
+      activeMattersCount,
+      newMattersThisMonth,
+      criticalMatters,
+      rfeFrequency,
+      newMattersGrowth,
       weightedActiveMatters,
       revenueAtRisk,
       deadlineComplianceRate,

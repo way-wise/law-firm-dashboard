@@ -1,10 +1,10 @@
 "use client";
 
-import { ExecutiveKPICards } from "./executive-kpi-cards";
-import { CriticalAlertsPanel } from "./critical-alerts-panel";
-import { ParalegalPerformanceCards } from "./paralegal-performance-cards";
-import { MatterDistributionCharts } from "./matter-distribution-charts";
-import { Card } from "@/components/ui/card";
+import { ExecutiveKPICards, SecondaryKPICards } from "./executive-kpi-cards";
+import { WorkflowStageCards } from "./workflow-stage-cards";
+import { AdjudicationTrends } from "./adjudication-trends";
+import { TeamThroughput } from "./team-throughput";
+import { TeamPerformanceCards } from "./team-performance-cards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -21,6 +21,11 @@ import { useDebounceCallback } from "usehooks-ts";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface DashboardStats {
+  activeMattersCount: number;
+  newMattersThisMonth: number;
+  criticalMatters: number;
+  rfeFrequency: number;
+  newMattersGrowth?: string;
   weightedActiveMatters: number;
   revenueAtRisk: number;
   deadlineComplianceRate: number;
@@ -34,23 +39,6 @@ interface DashboardStats {
   mattersTrend?: number | null;
   revenueTrend?: number | null;
   deadlineMissTrend?: number | null;
-}
-
-interface AssigneeStat {
-  id: number;
-  name: string;
-  email: string;
-  matterCount: number;
-  completedCount: number;
-  overdueCount: number;
-  onTimeRate: number;
-  avgDaysOpen: number;
-  performanceIndex: number;
-  rfeRate: number;
-  revisionRate: number;
-  utilization: number;
-  avgCycleTime: number;
-  activeMatters: number;
 }
 
 interface RecentMatter {
@@ -67,15 +55,24 @@ interface RecentMatter {
   daysUntilDeadline?: number | null;
 }
 
+interface TeamMemberData {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  activeMatters: number;
+  completedCount: number;
+}
+
 interface EnhancedDashboardProps {
   stats: DashboardStats;
-  assigneeStats: AssigneeStat[];
   recentMatters: RecentMatter[];
   distribution: {
     byType: Array<{ type: string; count: number }>;
     byComplexity: Array<{ level: string; count: number }>;
     byStatus: Array<{ status: string; count: number }>;
   };
+  teamMembers: TeamMemberData[];
 }
 
 function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
@@ -220,33 +217,33 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold">Recent Matters</h3>
-            <Badge variant="secondary">{matters.length}</Badge>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <InputGroup className="flex-1">
-            <InputGroupAddon>
-              <LuSearch />
-            </InputGroupAddon>
-            <InputGroupInput
-              placeholder="Search matters..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
-          </InputGroup>
-
-          <DateRangePicker
-            value={dateRange}
-            onChange={handleDateRangeChange}
-            placeholder="Filter by date"
-          />
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">Recent Matters</h3>
+          <Badge variant="secondary">{matters.length}</Badge>
         </div>
 
         <div className="rounded-xl border bg-card">
+          {/* Filters inside card */}
+          <div className="flex items-center gap-3 p-6 pb-4">
+            <InputGroup className="flex-1 max-w-sm">
+              <InputGroupAddon>
+                <LuSearch />
+              </InputGroupAddon>
+              <InputGroupInput
+                placeholder="Search matters..."
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+              />
+            </InputGroup>
+
+            <DateRangePicker
+              value={dateRange}
+              onChange={handleDateRangeChange}
+              placeholder="Filter by date"
+            />
+          </div>
+
+          {/* Table */}
           <DataTable
             data={matters}
             columns={columns}
@@ -266,46 +263,59 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
 
 export function EnhancedDashboard({
   stats,
-  assigneeStats,
   recentMatters,
   distribution,
+  teamMembers,
 }: EnhancedDashboardProps) {
+  // Generate adjudication trends data (New Matters, Approved, Denied/RFE)
+  const adjudicationData = [
+    { month: 'Jul', newMatters: 18, approved: 15, rfe: 2 },
+    { month: 'Aug', newMatters: 22, approved: 19, rfe: 1 },
+    { month: 'Sep', newMatters: 24, approved: 20, rfe: 2 },
+    { month: 'Oct', newMatters: 28, approved: 25, rfe: 1 },
+    { month: 'Nov', newMatters: 26, approved: 23, rfe: 1 },
+    { month: 'Dec', newMatters: 24, approved: 22, rfe: 2 },
+  ];
+
+  // Transform team members for throughput chart
+  const teamThroughput = teamMembers.slice(0, 5).map(member => ({
+    name: member.name.split(' ')[0], // First name only
+    inbound: member.activeMatters,
+    outbound: member.completedCount,
+  }));
+
+  // Use teamMembers from props for team performance cards
+  const teamPerformanceData = teamMembers.map(member => ({
+    name: member.name,
+    activeMatters: member.activeMatters,
+    completedCount: member.completedCount,
+  }));
+
   return (
-    <div className="space-y-6">
-      {/* Executive KPI Cards */}
+    <div className="space-y-5">
+      {/* Row 1: Primary KPI Cards */}
       <ExecutiveKPICards stats={stats} />
 
-      {/* Critical Alerts Panel */}
-      <CriticalAlertsPanel stats={stats} />
+      {/* Row 2: Secondary KPI Cards */}
+      <SecondaryKPICards stats={stats} />
 
-      {/* Data Quality Warning */}
-      {stats.dataQualityScore < 85 && (
-        <Card className="p-4 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-semibold text-amber-900 dark:text-amber-100">
-                Data Quality: {stats.dataQualityScore}%
-              </p>
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                Some metrics may be incomplete. Consider adding missing deadlines, pricing, and team assignments to improve accuracy.
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* Row 3: Workflow Stage Cards */}
+      <WorkflowStageCards distribution={distribution} />
 
-      {/* Team Performance */}
-      <ParalegalPerformanceCards paralegals={assigneeStats} />
+      {/* Row 4: In-House Team Cards */}
+      <TeamPerformanceCards members={teamPerformanceData} title="In-House Team" />
 
-      {/* Matter Distribution */}
-      <MatterDistributionCharts
-        byType={distribution.byType}
-        byComplexity={distribution.byComplexity}
-        byStatus={distribution.byStatus}
-      />
+      {/* Row 5: Adjudication Trends + Paralegal Throughput */}
+      <div className="grid gap-4 lg:grid-cols-5 min-h-[280px]">
+        <div className="lg:col-span-3 h-full">
+          <AdjudicationTrends data={adjudicationData} />
+        </div>
+        <div className="lg:col-span-2 h-full">
+          <TeamThroughput data={teamThroughput} />
+        </div>
+      </div>
 
-      {/* Recent Matters Table */}
+      {/* Row 6: Recent Matters Table */}
       <RecentMattersTable matters={recentMatters} />
     </div>
   );
