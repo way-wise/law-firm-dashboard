@@ -21,9 +21,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MatterType } from "@/schema/customMatterSchema";
 import { format, formatDistanceToNow } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, Pencil, Plus, RefreshCw, Trash, Clock, ArrowLeft } from "lucide-react";
+import { Eye, Pencil, Plus, Trash, Clock, ArrowLeft, Mail, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMounted } from "@/hooks/use-mounted";
 import { useRouter } from "@bprogress/next";
 import { useSearchParams } from "next/navigation";
@@ -129,7 +129,19 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteMatter, setDeleteMatter] = useState<MatterType | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [sendingEmailForMatter, setSendingEmailForMatter] = useState<string | null>(null);
+  
+  // Auto-open VIEW drawer if matterId is in URL (from email links)
+  useEffect(() => {
+    const matterId = searchParams.get("matterId");
+    if (matterId && matters.data.length > 0) {
+      const matter = matters.data.find(m => m.id === matterId);
+      if (matter && matter.docketwiseId) {
+        setViewMatterDocketwiseId(matter.docketwiseId);
+        setViewDrawerOpen(true);
+      }
+    }
+  }, [searchParams, matters.data]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const from = searchParams.get("dateFrom");
     const to = searchParams.get("dateTo");
@@ -182,24 +194,6 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
     setDeleteDialogOpen(true);
   };
 
-  const handleSyncMatters = async () => {
-    setIsSyncing(true);
-    try {
-      const result = await client.sync.syncMatters({});
-      if (result.success) {
-        toast.success(result.message || "Matters synced successfully");
-        router.refresh();
-      } else {
-        toast.error(result.message || "Failed to sync matters");
-      }
-    } catch (error) {
-      toast.error("Failed to sync matters");
-      console.error(error);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteMatter) return;
 
@@ -212,6 +206,23 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
     } catch (error) {
       console.error("Error deleting matter:", error);
       toast.error("Failed to delete matter");
+    }
+  };
+
+  const handleSendNotification = async (matter: MatterType) => {
+    try {
+      setSendingEmailForMatter(matter.id);
+      const result = await client.customMatters.sendNotification({ matterId: matter.id });
+      if (result.success) {
+        toast.success("Notification sent to all recipients");
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      console.error("Error sending notification:", error);
+      toast.error("Failed to send notification");
+    } finally {
+      setSendingEmailForMatter(null);
     }
   };
 
@@ -515,6 +526,19 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
           <Button
             variant="ghost"
             size="icon"
+            onClick={() => handleSendNotification(row.original)}
+            title="Send Email Notification"
+            disabled={sendingEmailForMatter === row.original.id}
+          >
+            {sendingEmailForMatter === row.original.id ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Mail className="size-4" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => handleDeleteClick(row.original)}
             title="Delete"
             className="text-destructive hover:text-destructive"
@@ -538,14 +562,6 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
             <h1 className="text-2xl font-semibold">Matters</h1>
           </div>
           <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              onClick={handleSyncMatters}
-              disabled={isSyncing}
-            >
-              <RefreshCw className={`${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Syncing..." : "Sync Matters"}
-            </Button>
             <Button asChild>
               <Link href="/dashboard/matters/new">
                 <Plus />
@@ -619,6 +635,21 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
                     isClearable
                   />
 
+                  <Select
+                    value={searchParams.get("activityStatus") || "all"}
+                    onValueChange={(value) => updateFilters("activityStatus", value)}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Activity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Activity</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="stale">Stale</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+
                   <DateRangePicker
                     value={dateRange}
                     onChange={handleDateRangeChange}
@@ -685,18 +716,44 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
       <MatterViewDrawer
         docketwiseId={viewMatterDocketwiseId}
         open={viewDrawerOpen}
-        onOpenChange={setViewDrawerOpen}
+        onOpenChange={(open) => {
+          setViewDrawerOpen(open);
+          // Remove matterId from URL when closing
+          if (!open) {
+            const newParams = new URLSearchParams(searchParams.toString());
+            if (newParams.has("matterId")) {
+              newParams.delete("matterId");
+              router.replace(`/dashboard/matters?${newParams.toString()}`);
+            }
+          }
+        }}
       />
 
       {/* Edit Drawer */}
       <EditMatterDrawer
         matter={editMatter}
         open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          // Remove matterId from URL when closing manually
+          if (!open) {
+            const newParams = new URLSearchParams(searchParams.toString());
+            if (newParams.has("matterId")) {
+              newParams.delete("matterId");
+              router.replace(`/dashboard/matters?${newParams.toString()}`);
+            }
+          }
+        }}
         onSuccess={() => {
           router.refresh();
           setEditDialogOpen(false);
           setEditMatter(null);
+          // Remove matterId from URL when closing
+          const newParams = new URLSearchParams(searchParams.toString());
+          if (newParams.has("matterId")) {
+            newParams.delete("matterId");
+            router.replace(`/dashboard/matters?${newParams.toString()}`);
+          }
         }}
         matterTypes={matterTypes}
         teams={teams}

@@ -1,6 +1,7 @@
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
-import { fetchMattersRealtime } from "@/lib/services/docketwise-matters";
+import { classifyStatus, isMatterOverdue } from "@/lib/status-classifier";
+import { categorizeStatus } from "@/lib/utils/status-categories";
 import * as z from "zod";
 
 // Enhanced dashboard stats schema - comprehensive KPIs
@@ -133,25 +134,77 @@ export const getDashboardStats = authorized
   .route({
     method: "GET",
     path: "/dashboard/stats",
-    summary: "Get dashboard statistics",
+    summary: "Get dashboard statistics from cache",
     tags: ["Dashboard"],
   })
   .input(dashboardStatsInputSchema)
   .output(dashboardStatsSchema)
-  .handler(async ({ input, context }) => {
-    // Parse date range for filtering time-based metrics
-    const dateFrom = input.dateFrom ? new Date(input.dateFrom) : null;
-    const dateTo = input.dateTo ? new Date(input.dateTo) : null;
+  .handler(async ({ context }) => {
+    // Try to get cached stats from database
+    const cachedStats = await prisma.dashboardStats.findUnique({
+      where: { userId: context.user.id },
+    });
+
+    // If cached stats exist, return them
+    if (cachedStats) {
+      return {
+        totalContacts: cachedStats.totalContacts,
+        totalMatters: cachedStats.totalMatters,
+        totalMatterTypes: cachedStats.totalMatterTypes,
+        teamMembers: cachedStats.teamMembers,
+        categories: cachedStats.categories,
+        activeTeamMembers: cachedStats.activeTeamMembers,
+        matterTypesWithWorkflow: cachedStats.matterTypesWithWorkflow,
+        editedMatters: cachedStats.editedMatters,
+        activeMattersCount: cachedStats.activeMattersCount,
+        newMattersThisMonth: cachedStats.newMattersThisMonth,
+        criticalMatters: cachedStats.criticalMatters,
+        rfeFrequency: cachedStats.rfeFrequency,
+        newMattersGrowth: cachedStats.newMattersGrowth || "+0 from last month",
+        weightedActiveMatters: cachedStats.weightedActiveMatters,
+        revenueAtRisk: cachedStats.revenueAtRisk,
+        deadlineComplianceRate: cachedStats.deadlineComplianceRate,
+        avgCycleTime: cachedStats.avgCycleTime,
+        paralegalUtilization: cachedStats.paralegalUtilization,
+        overdueMatters: cachedStats.overdueMatters,
+        atRiskMatters: cachedStats.atRiskMatters,
+        unassignedMatters: cachedStats.unassignedMatters,
+        overloadedParalegals: cachedStats.overloadedParalegals,
+        totalRevenue: cachedStats.totalRevenue,
+        pendingRevenue: cachedStats.pendingRevenue,
+        collectedRevenue: cachedStats.collectedRevenue,
+        averageMatterValue: cachedStats.averageMatterValue,
+        matterVelocity: cachedStats.matterVelocity,
+        onTimeRate: cachedStats.onTimeRate,
+        teamUtilization: cachedStats.teamUtilization,
+        avgRfeRate: cachedStats.avgRfeRate,
+        totalReworkCount: cachedStats.totalReworkCount,
+        qualityScore: cachedStats.qualityScore,
+        totalAvailableHours: cachedStats.totalAvailableHours,
+        totalAssignedHours: cachedStats.totalAssignedHours,
+        totalBillableHours: cachedStats.totalBillableHours,
+        mattersTrend: cachedStats.mattersTrend ?? undefined,
+        revenueTrend: cachedStats.revenueTrend ?? undefined,
+        deadlineMissTrend: cachedStats.deadlineMissTrend ?? undefined,
+        mattersWithoutPricing: cachedStats.mattersWithoutPricing,
+        mattersWithoutDeadline: cachedStats.mattersWithoutDeadline,
+        mattersWithoutMatterType: cachedStats.mattersWithoutMatterType,
+        dataQualityScore: cachedStats.dataQualityScore,
+      };
+    }
+
+    // If no cached stats, return defaults (user should sync stats)
+    console.log("[DASHBOARD] No cached stats found, returning defaults");
     
-    // === EXECUTIVE KPI CALCULATIONS ===
+    // === FALLBACK: Return default values ===
     
     // Basic counts
     const totalContacts = await prisma.contacts.count();
     const totalMatters = await prisma.matters.count({
       where: { 
         userId: context.user.id,
-        archived: false,
         discardedAt: null,
+        // DO NOT filter by archived - total means ALL matters
       },
     });
     const categories = await prisma.categories.count();
@@ -251,14 +304,13 @@ export const getDashboardStats = authorized
     // 1. Active Matters Count (simple count)
     const activeMattersCount = activeMatters.length;
     
-    // 2. New Matters (filtered by date range if provided, otherwise this month)
-    const filterStartDate = dateFrom || new Date(now.getFullYear(), now.getMonth(), 1);
-    const filterEndDate = dateTo || now;
+    // 2. New Matters This Month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const newMattersThisMonth = allMatters.filter(m => {
       const createdDate = m.docketwiseCreatedAt || m.createdAt;
       if (!createdDate) return false;
       const date = new Date(createdDate);
-      return date >= filterStartDate && date <= filterEndDate;
+      return date >= startOfMonth;
     }).length;
     
     // 3. New Matters Last Month (for growth calculation)
@@ -283,11 +335,16 @@ export const getDashboardStats = authorized
       return daysUntil <= 7; // includes overdue (negative) and upcoming
     }).length;
     
-    // 5. RFE Frequency (count of matters with "Request for Evidence Received" statusForFiling)
+    // 5. RFE Frequency (count of matters with RFE in status or statusForFiling)
     // Note: statusForFiling is the Docketwise "Status For Filing" column where RFE status is stored
     const rfeFrequency = allMatters.filter(m => {
       const statusForFiling = (m.statusForFiling || "").toLowerCase();
-      return statusForFiling === "request for evidence received";
+      const status = (m.status || "").toLowerCase();
+      // Match any variation of RFE status
+      return statusForFiling.includes("request for evidence") || 
+             statusForFiling.includes("rfe") ||
+             status.includes("request for evidence") ||
+             status.includes("rfe");
     }).length;
     
     // 6. Weighted Active Matters (complexity weighted)
@@ -361,39 +418,32 @@ export const getDashboardStats = authorized
       return daysUntil > 0 && daysUntil <= 7;
     }).length;
 
-    // Unassigned matters - fetch from realtime API which has actual assignee data
-    // Database fields (assignees, docketwiseUserIds, teamId) are often empty
-    const realtimeResult = await fetchMattersRealtime({
-      page: 1,
-      perPage: 200,
-      userId: context.user.id,
-    });
-    
-    const unassignedMatters = realtimeResult.data.filter(m => {
-      // Check all possible assignee sources from realtime data
-      const hasAssigneeObj = m.assignee && m.assignee.id;
+    // Unassigned matters - only count active matters without any assignee
+    const unassignedMatters = activeMatters.filter(m => {
+      // Must have no team assignment
       const hasTeamId = m.teamId !== null && m.teamId !== undefined;
+      if (hasTeamId) return false;
       
-      // Parse docketwiseUserIds - could be JSON array or comma-separated
-      let hasUserIds = false;
+      // Must have no assignees string
+      const hasAssigneesStr = m.assignees && m.assignees.trim() !== '';
+      if (hasAssigneesStr) return false;
+      
+      // Must have no user IDs
       const userIdsStr = m.docketwiseUserIds || "";
-      if (userIdsStr.startsWith('[')) {
-        try {
-          const parsed = JSON.parse(userIdsStr);
-          hasUserIds = Array.isArray(parsed) && parsed.length > 0;
-        } catch { hasUserIds = false; }
-      } else if (userIdsStr.trim()) {
-        hasUserIds = userIdsStr.split(',').some(id => !isNaN(parseInt(id.trim())));
+      if (userIdsStr.trim()) {
+        if (userIdsStr.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(userIdsStr);
+            if (Array.isArray(parsed) && parsed.length > 0) return false;
+          } catch { /* continue */ }
+        } else {
+          const hasUserIds = userIdsStr.split(',').some((id: string) => !isNaN(parseInt(id.trim())));
+          if (hasUserIds) return false;
+        }
       }
       
-      const hasAssigneesStr = m.assignees && m.assignees.trim() !== '';
-      
-      return !hasAssigneeObj && !hasTeamId && !hasUserIds && !hasAssigneesStr;
+      return true;
     }).length;
-    
-    // Scale unassigned count to total matters (we only fetched 200)
-    const unassignedRatio = realtimeResult.data.length > 0 ? unassignedMatters / realtimeResult.data.length : 0;
-    const scaledUnassignedMatters = Math.round(totalMatters * unassignedRatio);
 
     const overloadedParalegals = paralegals.filter(paralegal => {
       const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
@@ -485,7 +535,7 @@ export const getDashboardStats = authorized
       .filter(m => {
         if (!m.closedAt) return false;
         const closedDate = new Date(m.closedAt);
-        return closedDate >= filterStartDate;
+        return closedDate >= startOfMonth;
       })
       .reduce((sum, m) => {
         if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
@@ -513,7 +563,7 @@ export const getDashboardStats = authorized
     const thisMonthOverdue = allMatters.filter(m => {
       if (!m.estimatedDeadline) return false;
       const deadline = new Date(m.estimatedDeadline);
-      return deadline < now && deadline >= filterStartDate;
+      return deadline < now && deadline >= startOfMonth;
     }).length;
 
     const lastMonthOverdue = allMatters.filter(m => {
@@ -580,7 +630,7 @@ export const getDashboardStats = authorized
       // Risk Command Center
       overdueMatters,
       atRiskMatters,
-      unassignedMatters: scaledUnassignedMatters,
+      unassignedMatters,
       overloadedParalegals,
 
       // Financial metrics
@@ -656,15 +706,26 @@ export const getAssigneeStats = authorized
       }
     }
 
-    // Fetch matters from Docketwise API (has real assignee data)
-    // Fetch first 500 matters to get a good sample for stats
-    const result = await fetchMattersRealtime({
-      page: 1,
-      perPage: 200,
-      userId: context.user.id,
+    // Fetch matters from DATABASE (no API calls!)
+    const matters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+      },
+      select: {
+        id: true,
+        assignees: true,
+        docketwiseUserIds: true,
+        teamId: true,
+        closedAt: true,
+        estimatedDeadline: true,
+        actualDeadline: true,
+        docketwiseCreatedAt: true,
+        createdAt: true,
+        status: true,
+      },
     });
-    
-    const matters = result.data;
 
     // Calculate stats per assignee
     const assigneeStats = new Map<number, {
@@ -714,11 +775,6 @@ export const getAssigneeStats = authorized
         userIds.push(matter.teamId);
       }
       
-      // Also include assignee.id if present
-      if (matter.assignee?.id && !userIds.includes(matter.assignee.id)) {
-        userIds.push(matter.assignee.id);
-      }
-      
       // Fallback: match by assignees string (name matching)
       if (userIds.length === 0 && matter.assignees) {
         const assigneeNames = matter.assignees.split(',').map(n => n.trim());
@@ -745,22 +801,21 @@ export const getAssigneeStats = authorized
 
         stats.total++;
         
-        // Check if completed
-        const isCompleted = matter.closedAt || (matter.status || "").toLowerCase().includes("closed") || (matter.status || "").toLowerCase().includes("approved");
+        // Use status classifier for accurate completion check
+        const classification = classifyStatus(matter.status);
+        const isCompleted = classification.isCompleted || matter.closedAt;
+        
         if (isCompleted) {
           stats.completed++;
         }
 
-        // Check if overdue using calculatedDeadline or estimatedDeadline
-        const deadline = matter.calculatedDeadline || matter.estimatedDeadline;
-        if (deadline && !isCompleted) {
-          const deadlineDate = new Date(deadline);
-          if (deadlineDate < now) {
-            stats.overdue++;
-          }
+        // Check if overdue using status classifier (excludes closed/filed/approved)
+        if (isMatterOverdue(matter.estimatedDeadline, matter.status)) {
+          stats.overdue++;
         }
 
         // Check if completed on time
+        const deadline = matter.estimatedDeadline;
         if (isCompleted && deadline) {
           const completionDate = matter.closedAt ? new Date(matter.closedAt) : now;
           const deadlineDate = new Date(deadline);
@@ -943,11 +998,34 @@ export const getRecentMatters = authorized
   )
   .output(z.array(recentMatterSchema))
   .handler(async ({ input, context }) => {
-    // Fetch matters directly from Docketwise API with real-time data (first page only for dashboard)
-    const result = await fetchMattersRealtime({
-      page: 1,
-      perPage: input.limit,
-      userId: context.user.id,
+    // Fetch matters from DATABASE (no API calls!) - ordered by most recently updated
+    const matters = await prisma.matters.findMany({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+      },
+      orderBy: {
+        docketwiseUpdatedAt: 'desc',
+      },
+      take: input.limit,
+      select: {
+        id: true,
+        docketwiseId: true,
+        title: true,
+        clientName: true,
+        matterType: true,
+        matterTypeId: true,
+        status: true,
+        statusForFiling: true,
+        assignees: true,
+        billingStatus: true,
+        estimatedDeadline: true,
+        docketwiseCreatedAt: true,
+        docketwiseUpdatedAt: true,
+        assignedDate: true,
+        updatedAt: true,
+      },
     });
 
     // Load matter types for deadline calculation
@@ -955,8 +1033,6 @@ export const getRecentMatters = authorized
       select: {
         docketwiseId: true,
         estimatedDays: true,
-        complexityWeight: true,
-        flatFee: true,
       },
     });
 
@@ -967,38 +1043,12 @@ export const getRecentMatters = authorized
       }
     }
 
-    // Fetch local database data for assignedDate and other local fields
-    const localMatters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        docketwiseId: {
-          in: result.data.map(m => m.docketwiseId)
-        }
-      },
-      select: {
-        docketwiseId: true,
-        assignedDate: true,
-        estimatedDeadline: true,
-        actualDeadline: true,
-        totalHours: true,
-        flatFee: true,
-      },
-    });
-
-    // Create a map for quick lookup
-    const localMattersMap = new Map(
-      localMatters.map(m => [m.docketwiseId, m])
-    );
-
     // Calculate deadlines and hours for dashboard matters
-    const mattersWithDeadlines = result.data.map((matter) => {
+    const mattersWithDeadlines = matters.map((matter) => {
       let calculatedDeadline: Date | null = null;
       let isPastEstimatedDeadline = false;
       let daysUntilDeadline: number | undefined;
       let totalHoursElapsed: number | undefined;
-
-      // Get local data for this matter
-      const localMatter = localMattersMap.get(matter.docketwiseId);
 
       // Calculate deadline from docketwiseCreatedAt + estimatedDays
       if (matter.docketwiseCreatedAt && matter.matterTypeId) {
@@ -1023,9 +1073,9 @@ export const getRecentMatters = authorized
         }
       }
 
-      // Calculate hours elapsed since assignment (from local database)
-      if (localMatter?.assignedDate) {
-        const assignedAt = new Date(localMatter.assignedDate);
+      // Calculate hours elapsed since assignment
+      if (matter.assignedDate) {
+        const assignedAt = new Date(matter.assignedDate);
         if (!isNaN(assignedAt.getTime()) && assignedAt.getFullYear() > 1970) {
           const now = new Date();
           totalHoursElapsed = Math.floor(
@@ -1044,7 +1094,7 @@ export const getRecentMatters = authorized
       }
 
       return {
-        id: matter.id as string,
+        id: matter.id,
         docketwiseId: matter.docketwiseId,
         title: matter.title,
         clientName: matter.clientName,
@@ -1054,9 +1104,9 @@ export const getRecentMatters = authorized
         statusForFiling: matter.statusForFiling,
         assignees: matter.assignees,
         billingStatus: matter.billingStatus,
-        estimatedDeadline: localMatter?.estimatedDeadline || matter.estimatedDeadline,
+        estimatedDeadline: estimatedDeadline,
         docketwiseCreatedAt: matter.docketwiseCreatedAt,
-        assignedDate: localMatter?.assignedDate,
+        assignedDate: matter.assignedDate,
         updatedAt: matter.updatedAt,
         calculatedDeadline,
         isPastEstimatedDeadline,
@@ -1226,28 +1276,6 @@ const statusCategorySchema = z.object({
     matterCount: z.number(),
   })),
 });
-
-// Define status category keywords for classification
-const STATUS_CATEGORIES = {
-  approved: ['approved', 'granted', 'card received', 'visa granted', 'case approved', 'immigrant visa approved'],
-  denied: ['denied', 'case denied', 'rejected'],
-  rfe: ['request for evidence', 'rfe received', 'rfe filed', 'evidence'],
-  interview: ['interview', 'biometrics', 'oath ceremony'],
-  filed: ['filed', 'submitted', 'case filed'],
-  pending: ['pending', 'drafting', 'preparing', 'waiting', 'processing'],
-  closed: ['closed'],
-};
-
-// Categorize a status name
-function categorizeStatus(statusName: string): string {
-  const lowerName = statusName.toLowerCase();
-  for (const [category, keywords] of Object.entries(STATUS_CATEGORIES)) {
-    if (keywords.some(keyword => lowerName.includes(keyword))) {
-      return category;
-    }
-  }
-  return 'other';
-}
 
 // Get Status Distribution by Category
 export const getStatusDistribution = authorized

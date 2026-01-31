@@ -7,7 +7,7 @@ export const revalidate = 60; // Revalidate every 60 seconds
 const MattersPage = async ({
   searchParams,
 }: PageProps<"/dashboard/matters">) => {
-  const { page, search, billingStatus, assignees, matterType, status, dateFrom, dateTo, isStale, hasDeadline } = await searchParams;
+  const { page, search, billingStatus, assignees, matterType, status, activityStatus, dateFrom, dateTo, isStale, hasDeadline } = await searchParams;
 
   const [matters, matterTypes, teams] = await Promise.all([
     client.customMatters.get({
@@ -17,6 +17,7 @@ const MattersPage = async ({
       assignees: typeof assignees === "string" ? assignees : undefined,
       matterType: typeof matterType === "string" ? matterType : undefined,
       status: typeof status === "string" ? status : undefined,
+      activityStatus: (activityStatus === "active" || activityStatus === "stale" || activityStatus === "archived") ? activityStatus : undefined,
       dateFrom: typeof dateFrom === "string" ? dateFrom : undefined,
       dateTo: typeof dateTo === "string" ? dateTo : undefined,
       isStale: isStale === "true" ? true : isStale === "false" ? false : undefined,

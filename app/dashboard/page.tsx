@@ -52,7 +52,7 @@ const DashboardOverviewPage = async () => {
       dataQualityScore: 100,
     })),
     client.dashboard.getAssigneeStats({}).catch(() => []),
-    client.dashboard.getRecentMatters({ limit: 20 }).catch(() => []),
+    client.dashboard.getRecentMatters({ limit: 15 }).catch(() => []),
     client.dashboard.getDistribution({}).catch(() => ({
       byType: [],
       byComplexity: [],

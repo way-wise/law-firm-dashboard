@@ -34,6 +34,7 @@ const POLLING_OPTIONS = [
 
 export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps) {
   const [pollingInterval, setPollingInterval] = useState<string>("720");
+  const [staleMeasurementDays, setStaleMeasurementDays] = useState<string>("10");
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -50,11 +51,12 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
       setIsLoading(true);
       const settings = await client.sync.getSettings({});
       setPollingInterval(settings.pollingInterval.toString());
+      setStaleMeasurementDays(settings.staleMeasurementDays.toString());
       setLastSyncAt(settings.lastSyncAt);
     } catch (error) {
       console.error("Error loading sync settings:", error);
       toast.error("Failed to load sync settings");
-      // Keep default 720 if loading fails
+      // Keep defaults if loading fails
     } finally {
       setIsLoading(false);
     }
@@ -65,6 +67,7 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
       setIsSaving(true);
       await client.sync.updateSettings({
         pollingInterval: parseInt(pollingInterval),
+        staleMeasurementDays: parseInt(staleMeasurementDays),
       });
       toast.success("Sync settings updated successfully");
       onOpenChange(false);
@@ -79,33 +82,37 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
   const handleManualSync = async () => {
     try {
       setIsSyncing(true);
-      toast.info("Sync started. This may take a few minutes for large datasets...");
+      toast.info("🔄 Starting sync...", { duration: 3000 });
       
-      // Add timeout to prevent infinite loading (10 minutes max for large datasets)
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("TIMEOUT")), 10 * 60 * 1000);
+      // Call unified sync but it will run in background
+      // We'll use status polling to show progress
+      client.sync.unified({}).then((result) => {
+        setLastSyncAt(new Date());
+        
+        // Show final completion toast
+        if (result.success) {
+          toast.success(
+            `🎉 Sync complete in ${(result.totalDuration / 1000 / 60).toFixed(1)} min`,
+            { duration: 6000 }
+          );
+        } else {
+          toast.warning("⚠️ Sync completed with some errors");
+        }
+      }).catch((error) => {
+        console.error("Sync error:", error);
+        if (error instanceof Error && error.message !== "TIMEOUT") {
+          toast.error("Sync failed: " + error.message);
+        }
       });
       
-      const result = await Promise.race([
-        client.sync.trigger({}),
-        timeoutPromise,
-      ]);
+      // Don't wait for sync to complete - let it run in background
+      // Status polling will show progress
+      toast.success("✅ Sync started in background", { duration: 4000 });
       
-      setLastSyncAt(new Date());
-      toast.success(
-        `Sync completed: ${result.recordsProcessed} records processed`
-      );
     } catch (error) {
       console.error("Error triggering sync:", error);
-      if (error instanceof Error && error.message === "TIMEOUT") {
-        // Sync likely completed on backend but response timed out
-        toast.warning("Sync is taking longer than expected. It may have completed - please refresh the page to check.");
-        setLastSyncAt(new Date()); // Assume it completed
-      } else {
-        const message = error instanceof Error ? error.message : "Failed to sync data";
-        toast.error(message);
-      }
-    } finally {
+      const message = error instanceof Error ? error.message : "Failed to start sync";
+      toast.error(message);
       setIsSyncing(false);
     }
   };
@@ -116,7 +123,7 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
         <DialogHeader>
           <DialogTitle>Sync Configuration</DialogTitle>
           <DialogDescription>
-            Configure how often reference data (users, contacts, matter types) is synced from Docketwise. Matter data is fetched in real-time.
+            Configure sync settings and trigger data synchronization from Docketwise.
           </DialogDescription>
         </DialogHeader>
 
@@ -141,13 +148,35 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                How often to sync reference data (users, contacts, types) from Docketwise
+                Automatic sync interval for reference data
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staleMeasurement">Stale Matter Measurement (Days)</Label>
+              <Select value={staleMeasurementDays} onValueChange={setStaleMeasurementDays}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select days" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">7 days</SelectItem>
+                  <SelectItem value="10">10 days</SelectItem>
+                  <SelectItem value="14">14 days</SelectItem>
+                  <SelectItem value="21">21 days</SelectItem>
+                  <SelectItem value="30">30 days</SelectItem>
+                  <SelectItem value="45">45 days</SelectItem>
+                  <SelectItem value="60">60 days</SelectItem>
+                  <SelectItem value="90">90 days</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Days before an active matter is marked as stale
               </p>
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Note:</span> Only reference data is synced. Matters are fetched in real-time with pagination, eliminating the need for full data sync.
+                <span className="font-medium">Note:</span> Full sync may take 20-60 minutes for large datasets. Progress is saved and can be resumed.
               </p>
             </div>
 
@@ -164,9 +193,9 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
 
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
-                <p className="text-sm font-medium">Manual Sync</p>
+                <p className="text-sm font-medium">Full Sync</p>
                 <p className="text-xs text-muted-foreground">
-                  Sync reference data now (2-5 min)
+                  Sync: Types → Teams → Contacts → Matters → Details
                 </p>
               </div>
               <Button

@@ -77,7 +77,10 @@ import {
   getStatusDistribution,
   getMatterStatusesByType,
 } from "./dashboard";
+import { syncDashboardStats } from "./syncDashboardStats";
 import { generateReport } from "./reports";
+import { sendMatterNotification } from "./sendMatterNotification";
+import { unifiedSync, getSyncStatus } from "./unifiedSync";
 
 export const router = {
   todos: {
@@ -110,6 +113,7 @@ export const router = {
     create: createCustomMatter,
     update: updateCustomMatter,
     delete: deleteCustomMatter,
+    sendNotification: sendMatterNotification,
   },
   docketwise: {
     getStatus: getConnectionStatus,
@@ -119,6 +123,8 @@ export const router = {
     updateSettings: updateSyncSettings,
     trigger: triggerManualSync,
     syncMatters: syncMattersRoute,
+    unified: unifiedSync,
+    getStatus: getSyncStatus,
   },
   notifications: {
     list: getNotifications,
@@ -153,6 +159,7 @@ export const router = {
   },
   dashboard: {
     getStats: getDashboardStats,
+    syncStats: syncDashboardStats,
     getAssigneeStats: getAssigneeStats,
     getRecentMatters: getRecentMatters,
     getStatusDistribution: getMatterStatusDistribution,

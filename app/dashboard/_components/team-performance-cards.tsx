@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { User } from "lucide-react";
 
@@ -36,9 +37,9 @@ export function TeamPerformanceCards({ members, title = "In-House Team" }: TeamP
       <div className="flex items-center gap-3">
         <User className="size-4 text-muted-foreground" />
         <h3 className="text-base font-semibold">{title}</h3>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400">
+        <Badge>
           {totalActive} active cases
-        </span>
+        </Badge>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

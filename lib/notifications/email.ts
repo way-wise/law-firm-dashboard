@@ -167,7 +167,7 @@ export async function sendDeadlineReminderEmail(data: DeadlineEmailData): Promis
       <a href="${data.matterUrl}" class="button">View Matter Details →</a>
     </div>
     <div class="footer">
-      <p>Law Firm Dashboard - Automated Deadline Notification</p>
+      <p>Dworsky Law Firm - Automated Deadline Notification</p>
       <p style="font-size: 12px; color: #9ca3af;">You received this email because you are assigned to this matter.</p>
     </div>
   </div>
@@ -193,7 +193,7 @@ Please ensure all necessary actions are completed before the deadline.
 View Matter Details: ${data.matterUrl}
 
 ---
-Law Firm Dashboard - Automated Deadline Notification
+Dworsky Law Firm - Automated Deadline Notification
     `.trim();
 
     const result = await transporter.sendMail({
@@ -256,15 +256,16 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1f2937; background-color: #f9fafb;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1f2937; background-color: #f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <!-- Header -->
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); border-radius: 12px; overflow: hidden;">
+          <!-- Logo & Header -->
           <tr>
-            <td style="padding: 32px 32px 24px 32px; border-bottom: 1px solid #e5e7eb;">
-              <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #111827;">
+            <td style="background: linear-gradient(135deg, #111827 0%, #1f2937 100%); padding: 32px; text-align: center;">
+              <img src="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/logo.png" alt="Law Firm Logo" style="height: 48px; margin-bottom: 16px;" />
+              <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">
                 ${style.icon} ${data.subject}
               </h1>
             </td>
@@ -309,28 +310,24 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
                       ` : ""}
                       ${data.workflowStage ? `
                       <tr>
-                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Workflow</td>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Workflow Stage</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.workflowStage}</td>
                       </tr>
                       ` : ""}
-                      ${data.deadlineDate ? `
                       <tr>
                         <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Deadline</td>
-                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.deadlineDate.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.deadlineDate ? data.deadlineDate.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : "-"}</td>
                       </tr>
-                      ` : ""}
                       ${data.paralegalAssigned ? `
                       <tr>
                         <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Assignee</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.paralegalAssigned}</td>
                       </tr>
                       ` : ""}
-                      ${data.billingStatus ? `
                       <tr>
                         <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Billing Status</td>
-                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.billingStatus.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">${data.billingStatus ? data.billingStatus.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()) : "-"}</td>
                       </tr>
-                      ` : ""}
                     </table>
                   </td>
                 </tr>
@@ -340,16 +337,29 @@ export async function sendNotificationEmail(data: NotificationEmailData): Promis
               <p style="margin: 0 0 24px 0; font-size: 16px; color: #374151;">${closing}</p>
               
               ${data.matterUrl ? `
-              <a href="${data.matterUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">View Matter Details</a>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="${data.matterUrl}" style="display: inline-block; background: linear-gradient(135deg, #111827 0%, #1f2937 100%); color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">View Matter Details →</a>
+                  </td>
+                </tr>
+              </table>
               ` : ""}
             </td>
           </tr>
           
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 32px; border-top: 1px solid #e5e7eb; background-color: #f9fafb; border-radius: 0 0 8px 8px;">
-              <p style="margin: 0; font-size: 13px; color: #6b7280; text-align: center;">Law Firm Dashboard</p>
-              <p style="margin: 4px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center;">You received this email because you are subscribed to notifications.</p>
+            <td style="padding: 32px; border-top: 2px solid #f3f4f6; background: linear-gradient(to bottom, #ffffff 0%, #f9fafb 100%);">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #111827;">Dworsky Law Firm</p>
+                    <p style="margin: 0; font-size: 13px; color: #6b7280;">Professional Case Management System</p>
+                    <p style="margin: 12px 0 0 0; font-size: 12px; color: #9ca3af;">You received this email because you are subscribed to matter notifications.</p>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
         </table>
@@ -379,7 +389,7 @@ ${data.matterUrl ? `\nView Matter Details: ${data.matterUrl}` : ""}
 ${closing}
 
 ---
-Law Firm Dashboard - Automated Notification
+Dworsky Law Firm - Automated Notification
     `.trim();
 
     const result = await transporter.sendMail({

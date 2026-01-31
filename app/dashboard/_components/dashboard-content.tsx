@@ -322,7 +322,7 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold">Recent Matters</h3>
-            <Badge variant="secondary">{matters.length}</Badge>
+            <Badge>{matters.length}</Badge>
           </div>
         </div>
 

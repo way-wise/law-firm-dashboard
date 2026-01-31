@@ -27,6 +27,7 @@ export const getSyncSettings = authorized
         data: {
           userId: context.user.id,
           pollingInterval: 720, // Default to 12 hours
+          staleMeasurementDays: 10, // Default to 10 days
           isEnabled: true,
         },
       });
@@ -40,20 +41,29 @@ export const updateSyncSettings = authorized
   .route({
     method: "PATCH",
     path: "/sync/settings",
-    summary: "Update polling interval",
+    summary: "Update sync settings including polling interval and stale measurement",
     tags: ["Sync"],
   })
   .input(updateSyncSettingsSchema)
   .output(syncSettingsSchema)
   .handler(async ({ input, context }) => {
+    const updateData: Record<string, unknown> = {};
+    
+    if (input.pollingInterval !== undefined) {
+      updateData.pollingInterval = input.pollingInterval;
+    }
+    
+    if (input.staleMeasurementDays !== undefined) {
+      updateData.staleMeasurementDays = input.staleMeasurementDays;
+    }
+
     const settings = await prisma.syncSettings.upsert({
       where: { userId: context.user.id },
-      update: {
-        pollingInterval: input.pollingInterval,
-      },
+      update: updateData,
       create: {
         userId: context.user.id,
-        pollingInterval: input.pollingInterval,
+        pollingInterval: input.pollingInterval || 720,
+        staleMeasurementDays: input.staleMeasurementDays || 10,
         isEnabled: true,
       },
     });

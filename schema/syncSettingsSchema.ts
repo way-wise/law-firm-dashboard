@@ -4,6 +4,7 @@ export const syncSettingsSchema = z.object({
   id: z.string(),
   userId: z.string(),
   pollingInterval: z.number().int().min(5).max(1440), // 5 min to 24 hours
+  staleMeasurementDays: z.number().int().min(1).max(365), // 1 day to 1 year
   lastSyncAt: z.date().nullable(),
   isEnabled: z.boolean(),
   createdAt: z.date(),
@@ -11,7 +12,8 @@ export const syncSettingsSchema = z.object({
 });
 
 export const updateSyncSettingsSchema = z.object({
-  pollingInterval: z.number().int().min(5).max(1440), // 5 min to 24 hours
+  pollingInterval: z.number().int().min(5).max(1440).optional(), // 5 min to 24 hours
+  staleMeasurementDays: z.number().int().min(1).max(365).optional(), // 1 day to 1 year
 });
 
 export const syncResultSchema = z.object({

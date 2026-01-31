@@ -7,7 +7,8 @@ import {
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
-import { fetchMattersRealtime, fetchMatterDetail } from "@/lib/services/docketwise-matters";
+import { fetchMatterDetail } from "@/lib/services/docketwise-matters";
+import { getMatterActivityStatus } from "@/lib/utils/matter-status";
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -24,23 +25,102 @@ export const getCustomMatters = authorized
   .output(paginatedMattersSchema)
   .handler(async ({ input, context }) => {
     const page = input.page || 1;
-    const perPage = 50;
+    const perPage = 20;
     
-    // Check if any filters are applied (excluding pagination)
-    const hasFilters = input.search || input.billingStatus || input.assignees || 
-                       input.matterType || input.status || input.dateFrom || 
-                       input.dateTo || input.hasDeadline !== undefined;
-    
-    // When filters are applied, we need to fetch more data to find matches
-    // because the Docketwise API doesn't support server-side filtering
-    const fetchPerPage = hasFilters ? 200 : perPage;
-    const fetchPage = hasFilters ? Math.ceil(page / (fetchPerPage / perPage)) : page;
-    
-    const result = await fetchMattersRealtime({
-      page: fetchPage,
-      perPage: fetchPerPage,
+    // Build database query filters
+    const whereClause: {
+      userId: string;
+      discardedAt: null;
+      billingStatus?: string;
+      matterType?: { contains: string; mode: 'insensitive' };
+      status?: { contains: string; mode: 'insensitive' };
+      estimatedDeadline?: { not: null } | null;
+      docketwiseCreatedAt?: { gte?: Date; lte?: Date };
+      OR?: Array<{
+        title?: { contains: string; mode: 'insensitive' };
+        clientName?: { contains: string; mode: 'insensitive' };
+        description?: { contains: string; mode: 'insensitive' };
+        status?: { contains: string; mode: 'insensitive' };
+        matterType?: { contains: string; mode: 'insensitive' };
+        assignees?: { contains: string; mode: 'insensitive' };
+      }>;
+    } = {
       userId: context.user.id,
+      discardedAt: null,
+    };
+
+    // Search filter (search across multiple fields)
+    if (input.search) {
+      whereClause.OR = [
+        { title: { contains: input.search, mode: 'insensitive' } },
+        { clientName: { contains: input.search, mode: 'insensitive' } },
+        { description: { contains: input.search, mode: 'insensitive' } },
+        { status: { contains: input.search, mode: 'insensitive' } },
+        { matterType: { contains: input.search, mode: 'insensitive' } },
+        { assignees: { contains: input.search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Billing status filter
+    if (input.billingStatus) {
+      whereClause.billingStatus = input.billingStatus as any;
+    }
+
+    // Matter type filter
+    if (input.matterType) {
+      whereClause.matterType = { contains: input.matterType, mode: 'insensitive' };
+    }
+
+    // Status filter
+    if (input.status) {
+      whereClause.status = { contains: input.status, mode: 'insensitive' };
+    }
+
+    // Assignee filter - match by assignees string or teamId
+    if (input.assignees) {
+      // Filter can be assignee name or teamId
+      const assigneeFilter = input.assignees;
+      whereClause.OR = whereClause.OR || [];
+      whereClause.OR.push(
+        { assignees: { contains: assigneeFilter, mode: 'insensitive' } }
+      );
+    }
+
+    // Has deadline filter
+    if (input.hasDeadline !== undefined) {
+      whereClause.estimatedDeadline = input.hasDeadline ? { not: null } : null;
+    }
+
+    // Date range filter
+    if (input.dateFrom || input.dateTo) {
+      whereClause.docketwiseCreatedAt = {};
+      if (input.dateFrom) {
+        whereClause.docketwiseCreatedAt.gte = new Date(input.dateFrom);
+      }
+      if (input.dateTo) {
+        const toDate = new Date(input.dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        whereClause.docketwiseCreatedAt.lte = toDate;
+      }
+    }
+
+    // Get sync settings for stale measurement
+    const syncSettings = await prisma.syncSettings.findUnique({
+      where: { userId: context.user.id },
+      select: { staleMeasurementDays: true },
     });
+    const staleMeasurementDays = syncSettings?.staleMeasurementDays || 10;
+
+    // Fetch from database with filters
+    const [totalCount, dbMatters] = await Promise.all([
+      prisma.matters.count({ where: whereClause as any }),
+      prisma.matters.findMany({
+        where: whereClause as any,
+        orderBy: { docketwiseCreatedAt: 'desc' },
+        skip: (page - 1) * perPage,
+        take: perPage,
+      }),
+    ]);
 
     // Load matter types for deadline calculation
     const matterTypes = await prisma.matterTypes.findMany({
@@ -57,79 +137,30 @@ export const getCustomMatters = authorized
       }
     }
 
-    // Apply client-side filters and calculate deadlines
-    const filteredMatters = result.data.filter((matter) => {
-      // Enhanced search filter - search by title, client, description, status, matter type, or assignee
-      if (input.search) {
-        const searchLower = input.search.toLowerCase();
-        const matchTitle = matter.title?.toLowerCase().includes(searchLower);
-        const matchClient = matter.clientName?.toLowerCase().includes(searchLower);
-        const matchDescription = matter.description?.toLowerCase().includes(searchLower);
-        const matchStatus = matter.status?.toLowerCase().includes(searchLower);
-        const matchMatterType = matter.matterType?.toLowerCase().includes(searchLower);
-        const matchAssignee = matter.assignee?.name?.toLowerCase().includes(searchLower);
-        const matchAssignees = matter.assignees?.toLowerCase().includes(searchLower);
-        
-        if (!matchTitle && !matchClient && !matchDescription && !matchStatus && !matchMatterType && !matchAssignee && !matchAssignees) {
-          return false;
-        }
-      }
-
-      // Billing status filter
-      if (input.billingStatus) {
-        if (matter.billingStatus !== input.billingStatus) return false;
-      }
-
-      // Assignee filter - check both assignee relation and legacy assignees field
+    // Post-process filters that need complex logic (assignees, activity status)
+    // Most filters are already handled by database query
+    const filteredMatters = dbMatters.filter((matter) => {
+      // Assignee filter - needs to check assignees field
       if (input.assignees) {
         const assigneesLower = input.assignees.toLowerCase();
-        const matchAssigneeName = matter.assignee?.name?.toLowerCase().includes(assigneesLower);
-        const matchAssigneeEmail = matter.assignee?.email?.toLowerCase().includes(assigneesLower);
         const matchLegacyAssignees = matter.assignees?.toLowerCase().includes(assigneesLower);
-        
-        if (!matchAssigneeName && !matchAssigneeEmail && !matchLegacyAssignees) return false;
+        if (!matchLegacyAssignees) return false;
       }
 
-      // Matter type filter
-      if (input.matterType) {
-        if (matter.matterType !== input.matterType) return false;
-      }
-
-      // Status filter - match the matter's actual current status
-      if (input.status) {
-        const filterStatus = input.status.toLowerCase().trim();
-        const matterStatus = (matter.status || "").toLowerCase().trim();
-        const matterStatusForFiling = (matter.statusForFiling || "").toLowerCase().trim();
+      // Activity status filter (active/stale/archived)
+      if (input.activityStatus) {
+        const activityStatus = getMatterActivityStatus(
+          {
+            archived: matter.archived,
+            closedAt: matter.closedAt,
+            status: matter.status,
+            docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+            updatedAt: matter.updatedAt,
+          },
+          staleMeasurementDays
+        );
         
-        // Match if either status field matches the filter
-        if (matterStatus !== filterStatus && matterStatusForFiling !== filterStatus) {
-          return false;
-        }
-      }
-
-      // Date range filter (docketwiseCreatedAt)
-      if (input.dateFrom || input.dateTo) {
-        if (!matter.docketwiseCreatedAt) return false;
-        
-        const createdAt = new Date(matter.docketwiseCreatedAt);
-        if (isNaN(createdAt.getTime()) || createdAt.getFullYear() <= 1970) return false;
-        
-        if (input.dateFrom) {
-          const fromDate = new Date(input.dateFrom);
-          if (createdAt < fromDate) return false;
-        }
-        
-        if (input.dateTo) {
-          const toDate = new Date(input.dateTo);
-          toDate.setHours(23, 59, 59, 999); // End of day
-          if (createdAt > toDate) return false;
-        }
-      }
-
-      // Has deadline filter
-      if (input.hasDeadline !== undefined) {
-        if (input.hasDeadline && !matter.estimatedDeadline) return false;
-        if (!input.hasDeadline && matter.estimatedDeadline) return false;
+        if (activityStatus !== input.activityStatus) return false;
       }
 
       return true;
@@ -164,46 +195,32 @@ export const getCustomMatters = authorized
         if (!isNaN(assignedDate.getTime()) && assignedDate.getFullYear() > 1970) {
           const now = new Date();
           const diffMs = now.getTime() - assignedDate.getTime();
-          totalHoursElapsed = Math.floor(diffMs / (1000 * 60 * 60)); // Convert to hours
+          totalHoursElapsed = Math.round(diffMs / (1000 * 60 * 60));
         }
       }
 
-      // Sanitize estimatedDeadline - if it's 1970, treat as null
-      let estimatedDeadline = matter.estimatedDeadline;
-      if (estimatedDeadline) {
-        const date = new Date(estimatedDeadline);
-        if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
-          estimatedDeadline = null;
-        }
-      }
-      
+      // Apply epoch date filtering (dates <= 1970 are treated as null)
+      const estimatedDeadline = matter.estimatedDeadline && new Date(matter.estimatedDeadline).getFullYear() > 1970
+        ? matter.estimatedDeadline
+        : null;
+
       return {
         id: matter.id,
         docketwiseId: matter.docketwiseId,
-        docketwiseCreatedAt: matter.docketwiseCreatedAt,
-        docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
         title: matter.title,
         description: matter.description,
+        clientName: matter.clientName,
+        clientId: matter.clientId,
         matterType: matter.matterType,
         matterTypeId: matter.matterTypeId,
         status: matter.status,
         statusId: matter.statusId,
         statusForFiling: matter.statusForFiling,
         statusForFilingId: matter.statusForFilingId,
-        clientName: matter.clientName,
-        clientId: matter.clientId,
         teamId: matter.teamId,
-        assignee: matter.assignee ? {
-          id: matter.assignee.id,
-          name: matter.assignee.name,
-          email: matter.assignee.email,
-          firstName: matter.assignee.firstName,
-          lastName: matter.assignee.lastName,
-          fullName: matter.assignee.fullName,
-          teamType: matter.assignee.teamType,
-          title: matter.assignee.title,
-          isActive: matter.assignee.isActive,
-        } : null,
+        docketwiseCreatedAt: matter.docketwiseCreatedAt,
+        docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+        assignee: null, // No relation - assignees stored as string
         assignees: matter.assignees,
         docketwiseUserIds: matter.docketwiseUserIds,
         openedAt: matter.openedAt,
@@ -222,46 +239,28 @@ export const getCustomMatters = authorized
         isEdited: matter.isEdited,
         editedBy: matter.editedBy,
         editedAt: matter.editedAt,
-        editedByUser: matter.editedByUser ? {
-          name: matter.editedByUser.name,
-          email: matter.editedByUser.email,
-        } : null,
+        editedByUser: null, // No relation in database
         userId: matter.userId,
         createdAt: matter.createdAt,
         updatedAt: matter.updatedAt,
         calculatedDeadline,
         isPastEstimatedDeadline,
         totalHoursElapsed,
-        notes: matter.notes,
       };
     });
 
-    // When filters are applied, paginate the filtered results
-    // Otherwise use the API's pagination
-    let paginatedData = mattersWithDeadlines;
-    let totalForPagination = result.total;
-    let totalPages = Math.ceil(result.total / perPage);
+    // Database pagination is already applied
+    const totalPages = Math.ceil(totalCount / perPage);
     
-    if (hasFilters) {
-      // Client-side pagination of filtered results
-      const startIndex = (page - 1) * perPage % fetchPerPage;
-      const endIndex = startIndex + perPage;
-      paginatedData = mattersWithDeadlines.slice(startIndex, endIndex);
-      totalForPagination = filteredMatters.length;
-      totalPages = Math.max(1, Math.ceil(totalForPagination / perPage));
-    }
-    
-    const finalResult = {
-      data: paginatedData,
+    return {
+      data: mattersWithDeadlines,
       pagination: {
-        total: totalForPagination,
+        total: totalCount,
         page,
         perPage,
         totalPages,
       },
     };
-        
-    return finalResult;
   });
 
 // Get Custom Matter by ID (from local DB)

@@ -1,9 +1,13 @@
 import "server-only";
-import { sendDeadlineReminderEmail } from "./email";
+import { sendDeadlineReminderEmail, sendNotificationEmail } from "./email";
+
+type EmailJobData = 
+  | { type: "deadline"; data: Parameters<typeof sendDeadlineReminderEmail>[0] }
+  | { type: "notification"; data: Parameters<typeof sendNotificationEmail>[0] };
 
 interface EmailJob {
   id: string;
-  data: Parameters<typeof sendDeadlineReminderEmail>[0];
+  jobData: EmailJobData;
   attempts: number;
   maxAttempts: number;
   createdAt: Date;
@@ -26,10 +30,10 @@ class EmailQueue {
   private readonly maxConcurrent = 3;
   private readonly retryDelayMs = 5000;
 
-  async add(data: Parameters<typeof sendDeadlineReminderEmail>[0]): Promise<string> {
+  async add(jobData: EmailJobData): Promise<string> {
     const job: EmailJob = {
       id: `email_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-      data,
+      jobData,
       attempts: 0,
       maxAttempts: 3,
       createdAt: new Date(),
@@ -37,7 +41,7 @@ class EmailQueue {
     };
 
     this.queue.push(job);
-    console.log(`[EMAIL-QUEUE] Added job ${job.id} to queue. Queue size: ${this.queue.length}`);
+    console.log(`[EMAIL-QUEUE] Added ${jobData.type} email job ${job.id} to queue. Queue size: ${this.queue.length}`);
 
     // Start processing if not already running
     this.processQueue();
@@ -61,16 +65,24 @@ class EmailQueue {
             job.attempts++;
 
             try {
-              const success = await sendDeadlineReminderEmail(job.data);
+              let success = false;
+              
+              // Handle different email types
+              if (job.jobData.type === "deadline") {
+                success = await sendDeadlineReminderEmail(job.jobData.data);
+              } else if (job.jobData.type === "notification") {
+                success = await sendNotificationEmail(job.jobData.data);
+              }
+              
               if (success) {
                 job.status = "completed";
-                console.log(`[EMAIL-QUEUE] Job ${job.id} completed successfully`);
+                console.log(`[EMAIL-QUEUE] Job ${job.id} (${job.jobData.type}) completed successfully`);
               } else {
                 throw new Error("Email send returned false");
               }
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : "Unknown error";
-              console.error(`[EMAIL-QUEUE] Job ${job.id} failed (attempt ${job.attempts}/${job.maxAttempts}):`, errorMessage);
+              console.error(`[EMAIL-QUEUE] Job ${job.id} (${job.jobData.type}) failed (attempt ${job.attempts}/${job.maxAttempts}):`, errorMessage);
 
               if (job.attempts < job.maxAttempts) {
                 job.status = "pending";
@@ -80,7 +92,7 @@ class EmailQueue {
               } else {
                 job.status = "failed";
                 job.error = errorMessage;
-                console.error(`[EMAIL-QUEUE] Job ${job.id} permanently failed after ${job.maxAttempts} attempts`);
+                console.error(`[EMAIL-QUEUE] Job ${job.id} (${job.jobData.type}) permanently failed after ${job.maxAttempts} attempts`);
               }
             }
           })
@@ -115,5 +127,12 @@ export const emailQueue = new EmailQueue();
 export async function queueDeadlineReminderEmail(
   data: Parameters<typeof sendDeadlineReminderEmail>[0]
 ): Promise<string> {
-  return emailQueue.add(data);
+  return emailQueue.add({ type: "deadline", data });
+}
+
+// Helper function to queue a notification email
+export async function queueNotificationEmail(
+  data: Parameters<typeof sendNotificationEmail>[0]
+): Promise<string> {
+  return emailQueue.add({ type: "notification", data });
 }

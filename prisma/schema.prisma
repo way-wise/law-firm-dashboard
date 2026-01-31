@@ -32,6 +32,7 @@ model users {
   editedMatterTypes      matterTypes[]           @relation("editedMatterTypes")
   notificationSettings   notificationSettings?
   notificationRecipients notificationRecipients?
+  dashboardStats         dashboardStats?
 }
 
 model sessions {
@@ -96,14 +97,15 @@ model todos {
 }
 
 model syncSettings {
-  id              String    @id @default(ulid())
-  userId          String    @unique
-  user            users     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pollingInterval Int       @default(30)
-  lastSyncAt      DateTime?
-  isEnabled       Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                   String    @id @default(ulid())
+  userId               String    @unique
+  user                 users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pollingInterval      Int       @default(30)
+  staleMeasurementDays Int       @default(10) // Days of inactivity before matter is considered stale
+  lastSyncAt           DateTime?
+  isEnabled            Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -400,4 +402,100 @@ model notificationRecipients {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model syncProgress {
+  id             String    @id @default(ulid())
+  userId         String
+  syncType       String // 'matter_details', 'matters', 'contacts', etc.
+  lastSyncedId   Int? // Last docketwiseId synced (for resumption)
+  lastSyncDate   DateTime? // Date of last successful sync (for daily sync check)
+  status         String    @default("idle") // 'idle', 'syncing', 'completed', 'failed'
+  failureReason  String? // Reason for failure (e.g., "Rate limit exceeded")
+  totalProcessed Int       @default(0)
+  totalFailed    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, syncType])
+  @@index([userId, syncType])
+  @@index([status])
+}
+
+model dashboardStats {
+  id     String @id @default(ulid())
+  userId String @unique
+  user   users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Primary KPIs
+  totalMatters        Int @default(0)
+  activeMattersCount  Int @default(0)
+  newMattersThisMonth Int @default(0)
+  criticalMatters     Int @default(0)
+  rfeFrequency        Int @default(0)
+
+  // Secondary KPIs
+  overdueMatters Int    @default(0)
+  avgDaysToFile  Float?
+  estRevenue     Float  @default(0)
+  unassigned     Int    @default(0)
+
+  // Trends and metrics
+  newMattersGrowth       String?
+  weightedActiveMatters  Int     @default(0)
+  revenueAtRisk          Float   @default(0)
+  deadlineComplianceRate Float   @default(0)
+  avgCycleTime           Float   @default(0)
+  paralegalUtilization   Float   @default(0)
+  atRiskMatters          Int     @default(0)
+  unassignedMatters      Int     @default(0)
+  overloadedParalegals   Int     @default(0)
+
+  // Revenue metrics
+  totalRevenue       Float @default(0)
+  pendingRevenue     Float @default(0)
+  collectedRevenue   Float @default(0)
+  averageMatterValue Float @default(0)
+
+  // Performance metrics
+  matterVelocity   Float @default(0)
+  onTimeRate       Float @default(0)
+  teamUtilization  Float @default(0)
+  avgRfeRate       Float @default(0)
+  totalReworkCount Int   @default(0)
+  qualityScore     Float @default(0)
+
+  // Capacity metrics
+  totalAvailableHours Float @default(0)
+  totalAssignedHours  Float @default(0)
+  totalBillableHours  Float @default(0)
+
+  // Trends
+  mattersTrend      Int?
+  revenueTrend      Int?
+  deadlineMissTrend Int?
+
+  // Data quality
+  mattersWithoutPricing    Int   @default(0)
+  mattersWithoutDeadline   Int   @default(0)
+  mattersWithoutMatterType Int   @default(0)
+  dataQualityScore         Float @default(100)
+
+  // Basic counts
+  totalContacts           Int @default(0)
+  totalMatterTypes        Int @default(0)
+  teamMembers             Int @default(0)
+  categories              Int @default(0)
+  activeTeamMembers       Int @default(0)
+  matterTypesWithWorkflow Int @default(0)
+  editedMatters           Int @default(0)
+
+  // Metadata
+  lastSyncedAt DateTime @default(now())
+  calculatedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([lastSyncedAt])
 }

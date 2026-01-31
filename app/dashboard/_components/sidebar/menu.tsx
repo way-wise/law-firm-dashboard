@@ -1,12 +1,27 @@
+"use client";
+
 import MenuCollapsible from "./menu-collapsible";
 import MenuCollapsibleItem from "./menu-collapsible-item";
 import MenuItem from "./menu-item";
 import { menuList } from "./menu-list";
 
-const SidebarMenu = () => {
+interface SidebarMenuProps {
+  userRole?: string | null;
+}
+
+const SidebarMenu = ({ userRole }: SidebarMenuProps) => {
+  // Filter menu items based on user role
+  const filteredMenu = menuList.filter((menu) => {
+    // Only show Users menu to super admins
+    if (menu.title === "Users" && userRole !== "super") {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <nav className="grow space-y-1.5 overflow-y-auto p-6">
-      {menuList.map((menu) => {
+      {filteredMenu.map((menu) => {
         if (menu.submenu && menu.baseUrl) {
           return (
             <MenuCollapsible

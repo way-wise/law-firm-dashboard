@@ -71,7 +71,7 @@ const ProfileDropdown = ({ session }: { session: Session }) => {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="#">
+          <Link href="/dashboard/profile">
             <LuUserRound className="opacity-70" aria-hidden="true" />
             <span>Profile</span>
           </Link>

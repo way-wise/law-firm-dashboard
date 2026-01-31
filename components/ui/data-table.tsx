@@ -54,15 +54,17 @@ export const DataTable = <TData, TValue>({
         <thead className="border-b bg-secondary tracking-wide dark:bg-background">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
+              {headerGroup.headers.map((header, index) => {
                 const canSort = header.column.getCanSort();
                 const sortDirection = header.column.getIsSorted();
+                const isLastColumn = index === headerGroup.headers.length - 1;
                 
                 return (
                   <th
                     className={cn(
                       "h-12 px-6 text-left font-medium whitespace-nowrap",
-                      canSort && "cursor-pointer select-none"
+                      canSort && "cursor-pointer select-none",
+                      isLastColumn && "sticky right-0 bg-secondary dark:bg-background z-10"
                     )}
                     key={header.id}
                     onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
@@ -100,14 +102,21 @@ export const DataTable = <TData, TValue>({
                 className="transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted/50"
                 data-state={row.getIsSelected() && "selected"}
               >
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    className="min-h-14 truncate px-6 py-2.5 text-sm"
-                    key={cell.id}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+                {row.getVisibleCells().map((cell, index) => {
+                  const isLastColumn = index === row.getVisibleCells().length - 1;
+                  
+                  return (
+                    <td
+                      className={cn(
+                        "min-h-14 truncate px-6 py-2.5 text-sm",
+                        isLastColumn && "sticky right-0 bg-background border-l z-10"
+                      )}
+                      key={cell.id}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
               </tr>
             ))
           ) : (

@@ -20,10 +20,11 @@ export function IntegrationsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [showSyncSettings, setShowSyncSettings] = useState(false);
-
-  useEffect(() => {
-    checkDocketwiseConnection();
-  }, []);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncFailed, setIsSyncFailed] = useState(false);
+  const [syncFailureReason, setSyncFailureReason] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{ processed: number; total: number; percentage: number } | null>(null);
+  const [syncPhase, setSyncPhase] = useState<string | null>(null);
 
   const checkDocketwiseConnection = async () => {
     try {
@@ -35,6 +36,56 @@ export function IntegrationsTab() {
       setIsConnected(false);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const checkSyncStatus = async () => {
+    try {
+      const status = await client.sync.getStatus({});
+      setIsSyncing(status.isRunning);
+      setIsSyncFailed(status.isFailed || false);
+      setSyncFailureReason(status.failureReason || null);
+      setSyncProgress(status.progress);
+      setSyncPhase(status.phaseName);
+    } catch (error) {
+      console.error("Error checking sync status:", error);
+      setIsSyncing(false);
+      setIsSyncFailed(false);
+      setSyncFailureReason(null);
+      setSyncProgress(null);
+      setSyncPhase(null);
+    }
+  };
+
+  const checkAndTriggerAutoSync = async () => {
+    try {
+      // Don't auto-sync if already syncing
+      if (isSyncing) return;
+      
+      // Get sync settings to check polling interval
+      const settings = await client.sync.getSettings({});
+      
+      // If no last sync, don't auto-trigger (user should manually sync first)
+      if (!settings.lastSyncAt) return;
+      
+      const lastSyncTime = new Date(settings.lastSyncAt).getTime();
+      const currentTime = Date.now();
+      const pollingIntervalMs = settings.pollingInterval * 60 * 1000; // Convert minutes to ms
+      const timeSinceLastSync = currentTime - lastSyncTime;
+      
+      // If polling interval has passed, trigger sync
+      if (timeSinceLastSync >= pollingIntervalMs) {
+        console.log("[AUTO-SYNC] Polling interval passed, triggering automatic sync");
+        
+        // Trigger sync without blocking UI
+        client.sync.unified({}).then(() => {
+          console.log("[AUTO-SYNC] Automatic sync completed");
+        }).catch((err) => {
+          console.error("[AUTO-SYNC] Automatic sync failed:", err);
+        });
+      }
+    } catch (error) {
+      console.error("Error checking auto-sync:", error);
     }
   };
 
@@ -56,6 +107,28 @@ export function IntegrationsTab() {
     // TODO: Implement disconnect functionality
     console.log("Disconnect Docketwise");
   };
+
+  useEffect(() => {
+    checkDocketwiseConnection();
+    checkSyncStatus();
+    checkAndTriggerAutoSync();
+    
+    // Poll sync status every 5 seconds while syncing
+    const statusInterval = setInterval(() => {
+      checkSyncStatus();
+    }, 5000);
+    
+    // Check for auto-sync every 5 minutes
+    const autoSyncInterval = setInterval(() => {
+      checkAndTriggerAutoSync();
+    }, 300000); // 5 minutes
+    
+    return () => {
+      clearInterval(statusInterval);
+      clearInterval(autoSyncInterval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -88,6 +161,25 @@ export function IntegrationsTab() {
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <XCircle className="h-5 w-5" />
                 Not Connected
+              </div>
+            )}
+            {isConnected && isSyncing && (
+              <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="hidden sm:inline">
+                  {syncPhase ? `Syncing (${syncPhase})` : syncProgress && syncProgress.percentage > 0 ? `Syncing (${syncProgress.percentage}%)` : 'Syncing...'}
+                </span>
+              </div>
+            )}
+            {isConnected && isSyncFailed && (
+              <div className="flex items-center gap-2 text-sm font-medium text-red-600" title={syncFailureReason || 'Sync failed'}>
+                <XCircle className="h-5 w-5" />
+                <span className="hidden sm:inline">
+                  {syncPhase ? `Syncing (${syncPhase}) - Failed` : 'Syncing (Failed)'}
+                </span>
+                {syncFailureReason && (
+                  <span className="hidden lg:inline text-xs text-red-500">({syncFailureReason})</span>
+                )}
               </div>
             )}
             {isConnected && (

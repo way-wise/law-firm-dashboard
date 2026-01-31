@@ -18,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AdvancedSelect, type AdvancedSelectOption } from "@/components/ui/advanced-select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { client } from "@/lib/orpc/client";
 import { useState, useEffect } from "react";
@@ -73,6 +72,7 @@ export function EditMatterDrawer({
   const [actualDeadline, setActualDeadline] = useState<Date | null>(null);
   const [billingStatus, setBillingStatus] = useState<string>("");
   const [assignees, setAssignees] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [description, setDescription] = useState("");
   const [totalHours, setTotalHours] = useState<number | null>(null);
   const [flatFee, setFlatFee] = useState<number | null>(null);
@@ -101,14 +101,8 @@ export function EditMatterDrawer({
   }
   statusOptions.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
-  // Map teams to select options
-  const assigneeOptions: AdvancedSelectOption[] = teams
-    .filter((t) => t.isActive)
-    .map((t) => ({
-      value: String(t.docketwiseId),
-      label: t.fullName || t.email,
-      description: t.email,
-    }));
+  // Get active teams for assignee selection
+  const activeTeams = teams.filter((t) => t.isActive);
 
   useEffect(() => {
     if (matter) {
@@ -121,6 +115,7 @@ export function EditMatterDrawer({
       setActualDeadline(matter.actualDeadline ? new Date(matter.actualDeadline) : null);
       setBillingStatus(matter.billingStatus || "");
       setAssignees(matter.assignees || "");
+      setSelectedTeamId(String(matter.teamId || ""));
       setDescription(matter.description || "");
       setTotalHours(matter.totalHours ?? null);
       setFlatFee(matter.flatFee ?? null);
@@ -336,13 +331,13 @@ export function EditMatterDrawer({
                 />
               </div>
 
-              {/* Assignees - Advanced Select */}
+              {/* Assignees */}
               <div className="space-y-2">
                 <Label htmlFor="assignees">Assignees</Label>
-                <AdvancedSelect
-                  options={assigneeOptions}
-                  value={String(matter.teamId || "")}
-                  onChange={(value: string) => {
+                <Select 
+                  value={selectedTeamId} 
+                  onValueChange={(value: string) => {
+                    setSelectedTeamId(value);
                     // Find the team member by docketwiseId
                     const selectedTeam = teams.find(t => String(t.docketwiseId) === value);
                     if (selectedTeam) {
@@ -355,10 +350,18 @@ export function EditMatterDrawer({
                       setAssignees("");
                     }
                   }}
-                  placeholder="Select assignee"
-                  emptyMessage="No assignees found"
-                  isClearable
-                />
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select assignee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeTeams.map((team) => (
+                      <SelectItem key={team.id} value={String(team.docketwiseId)}>
+                        {team.fullName || team.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Custom Notes */}

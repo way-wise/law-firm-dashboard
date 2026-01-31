@@ -88,11 +88,22 @@ const createUserSchema = z.object({
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 
+// Form schema for editing user (password optional)
+const editUserSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
+  role: z.enum(["user", "admin"]),
+});
+
+type EditUserFormData = z.infer<typeof editUserSchema>;
+
 // Role type (excludes super - cannot be assigned via UI)
 type RoleType = "user" | "admin";
 
 const UsersTable = ({ users }: UsersTableProps) => {
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
+  const [openEditDialog, setOpenEditDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [openRoleDialog, setOpenRoleDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
@@ -106,6 +117,17 @@ const UsersTable = ({ users }: UsersTableProps) => {
   // Create user form
   const createForm = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      role: "user",
+    },
+  });
+
+  // Edit user form
+  const editForm = useForm<EditUserFormData>({
+    resolver: zodResolver(editUserSchema),
     defaultValues: {
       name: "",
       email: "",
@@ -139,6 +161,80 @@ const UsersTable = ({ users }: UsersTableProps) => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Handle edit user
+  const handleEditUser = async (data: EditUserFormData) => {
+    if (!selectedUser) return;
+
+    setIsSubmitting(true);
+    try {
+      // Update user info
+      const updateData: {
+        userId: string;
+        name: string;
+        email: string;
+        password?: string;
+      } = {
+        userId: selectedUser.id,
+        name: data.name,
+        email: data.email,
+      };
+
+      // Only include password if provided
+      if (data.password && data.password.length > 0) {
+        updateData.password = data.password;
+      }
+
+      const result = await authClient.admin.updateUser({
+        userId: updateData.userId,
+        data: {
+          name: updateData.name,
+          email: updateData.email,
+          ...(updateData.password && { password: updateData.password }),
+        },
+      });
+
+      if (result.error) {
+        toast.error(result.error.message || "Failed to update user");
+        return;
+      }
+
+      // Update role if changed
+      if (data.role !== selectedUser.role) {
+        const roleResult = await authClient.admin.setRole({
+          userId: selectedUser.id,
+          role: data.role,
+        });
+
+        if (roleResult.error) {
+          toast.error(roleResult.error.message || "Failed to update role");
+          return;
+        }
+      }
+
+      toast.success("User updated successfully");
+      setOpenEditDialog(false);
+      setSelectedUser(null);
+      editForm.reset();
+      router.refresh();
+    } catch {
+      toast.error("An unexpected error occurred");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Open edit dialog with user data
+  const openEditUser = (user: UserType) => {
+    setSelectedUser(user);
+    editForm.reset({
+      name: user.name,
+      email: user.email,
+      password: "",
+      role: (user.role as RoleType) || "user",
+    });
+    setOpenEditDialog(true);
   };
 
   // Handle delete user
@@ -274,6 +370,13 @@ const UsersTable = ({ users }: UsersTableProps) => {
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem
+              onClick={() => openEditUser(row.original)}
+              disabled={row.original.role === "super"}
+            >
+              <LuUser />
+              <span>Edit User</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
               onClick={() => {
                 setSelectedUser(row.original);
                 setOpenRoleDialog(true);
@@ -285,7 +388,7 @@ const UsersTable = ({ users }: UsersTableProps) => {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
+              variant="destructive"
               onClick={() => {
                 setSelectedUser(row.original);
                 setOpenDeleteDialog(true);
@@ -469,6 +572,93 @@ const UsersTable = ({ users }: UsersTableProps) => {
               </Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? "Creating..." : "Create User"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={openEditDialog} onOpenChange={setOpenEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user information. Leave password blank to keep current password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={editForm.handleSubmit(handleEditUser)}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Full Name</FieldLabel>
+                <Input
+                  placeholder="John Doe"
+                  {...editForm.register("name")}
+                />
+                {editForm.formState.errors.name && (
+                  <FieldError>
+                    {editForm.formState.errors.name.message}
+                  </FieldError>
+                )}
+              </Field>
+              <Field>
+                <FieldLabel>Email Address</FieldLabel>
+                <Input
+                  type="email"
+                  placeholder="user@example.com"
+                  {...editForm.register("email")}
+                />
+                {editForm.formState.errors.email && (
+                  <FieldError>
+                    {editForm.formState.errors.email.message}
+                  </FieldError>
+                )}
+              </Field>
+              <Field>
+                <FieldLabel>New Password (Optional)</FieldLabel>
+                <Input
+                  type="password"
+                  placeholder="Leave blank to keep current"
+                  {...editForm.register("password")}
+                />
+                {editForm.formState.errors.password && (
+                  <FieldError>
+                    {editForm.formState.errors.password.message}
+                  </FieldError>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to keep current password
+                </p>
+              </Field>
+              <Field>
+                <FieldLabel>Role</FieldLabel>
+                <Controller
+                  name="role"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">User</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
+            </FieldGroup>
+            <DialogFooter className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpenEditDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Updating..." : "Update User"}
               </Button>
             </DialogFooter>
           </form>

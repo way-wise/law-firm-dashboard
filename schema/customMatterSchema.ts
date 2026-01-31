@@ -112,6 +112,7 @@ export const matterFilterSchema = z.object({
   assignees: z.string().optional(),
   matterType: z.string().optional(),
   status: z.string().optional(),
+  activityStatus: z.enum(["active", "stale", "archived"]).optional(),
   isStale: z.boolean().optional(),
   hasDeadline: z.boolean().optional(),
   dateFrom: z.string().optional(), // ISO date string for docketwiseCreatedAt filter

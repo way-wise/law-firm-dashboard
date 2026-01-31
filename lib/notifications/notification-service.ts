@@ -1,7 +1,7 @@
 import "server-only";
 import prisma from "@/lib/prisma";
 import { publishNotificationCreated } from "./publisher";
-import { sendNotificationEmail } from "./email";
+import { queueNotificationEmail } from "./email-queue";
 
 // Notification types that match the settings
 export type NotificationType = 
@@ -257,13 +257,23 @@ export async function sendNotification(data: NotificationData): Promise<{
   }
 
   // Check if email notifications are enabled for this type
-  if (isNotificationEnabled(settings, effectiveType, "email")) {
+  const emailEnabled = isNotificationEnabled(settings, effectiveType, "email");
+  console.log(`[NOTIFICATION] Email enabled for ${data.type} (effective: ${effectiveType})? ${emailEnabled}`);
+  
+  if (emailEnabled) {
     const emailRecipients = await getRecipients("email");
+    console.log(`[NOTIFICATION] Found ${emailRecipients.length} email recipients:`, emailRecipients.map(r => r.email));
+    
     const matterUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/matters?matterId=${data.matterId}`;
+    
+    if (emailRecipients.length === 0) {
+      console.warn(`[NOTIFICATION] No email recipients configured! Add recipients in Settings → Notifications.`);
+    }
     
     for (const recipient of emailRecipients) {
       try {
-        await sendNotificationEmail({
+        // Queue email for background processing (non-blocking)
+        await queueNotificationEmail({
           to: recipient.email,
           type: data.type === "pastDeadline" ? "deadline" : data.type as "rfe" | "approval" | "denial" | "statusChange" | "deadline",
           subject: content.subject,
@@ -280,6 +290,7 @@ export async function sendNotification(data: NotificationData): Promise<{
           matterUrl,
         });
 
+        // Record notification in database
         await prisma.deadlineNotifications.create({
           data: {
             matterId: data.matterId,
@@ -397,6 +408,7 @@ function isDeadlineChanged(
 }
 
 // Detect and send notifications for matter field changes
+// SIMPLIFIED: Only send emails for status, deadline (within 7 days), or billing changes
 export async function checkMatterChangesAndNotify(data: MatterChangeData): Promise<void> {
   // Check if any recipients are configured - skip if no one will receive notifications
   const recipients = await hasConfiguredRecipients();
@@ -407,65 +419,69 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
 
   const notifications: Array<{ type: NotificationType; data: NotificationData }> = [];
 
-  // Check estimated deadline change
+  // 1. STATUS CHANGE - Always notify
+  if (data.oldStatus !== data.status && data.status) {
+    notifications.push({
+      type: "statusChange",
+      data: {
+        type: "statusChange",
+        matterId: data.matterId,
+        matterTitle: data.matterTitle,
+        clientName: data.clientName,
+        matterType: data.matterType,
+        status: data.status,
+        oldStatus: data.oldStatus,
+        paralegalName: data.paralegalAssigned,
+      },
+    });
+  }
+
+  // 2. DEADLINE CHANGE - Only if new deadline is within 7 days
   const estimatedDeadlineChanged = isDeadlineChanged(data.oldEstimatedDeadline, data.estimatedDeadline);
   if (estimatedDeadlineChanged && data.estimatedDeadline) {
     const daysUntil = getDaysUntilDeadline(data.estimatedDeadline);
-    notifications.push({
-      type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
-      data: {
+    // Only send if deadline is within 7 days or past due
+    if (daysUntil !== null && daysUntil <= 7) {
+      notifications.push({
         type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
-        matterId: data.matterId,
-        matterTitle: data.matterTitle,
-        clientName: data.clientName,
-        matterType: data.matterType,
-        deadlineDate: data.estimatedDeadline,
-        daysRemaining: daysUntil ?? 0,
-        paralegalName: data.paralegalAssigned,
-        billingStatus: data.billingStatus,
-      },
-    });
+        data: {
+          type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
+          matterId: data.matterId,
+          matterTitle: data.matterTitle,
+          clientName: data.clientName,
+          matterType: data.matterType,
+          deadlineDate: data.estimatedDeadline,
+          daysRemaining: daysUntil,
+          paralegalName: data.paralegalAssigned,
+          billingStatus: data.billingStatus,
+        },
+      });
+    }
   }
 
-  // Check actual deadline change
   const actualDeadlineChanged = isDeadlineChanged(data.oldActualDeadline, data.actualDeadline);
   if (actualDeadlineChanged && data.actualDeadline) {
     const daysUntil = getDaysUntilDeadline(data.actualDeadline);
-    notifications.push({
-      type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
-      data: {
+    // Only send if deadline is within 7 days or past due
+    if (daysUntil !== null && daysUntil <= 7) {
+      notifications.push({
         type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
-        matterId: data.matterId,
-        matterTitle: data.matterTitle,
-        clientName: data.clientName,
-        matterType: data.matterType,
-        deadlineDate: data.actualDeadline,
-        daysRemaining: daysUntil ?? 0,
-        paralegalName: data.paralegalAssigned,
-        billingStatus: data.billingStatus,
-      },
-    });
+        data: {
+          type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
+          matterId: data.matterId,
+          matterTitle: data.matterTitle,
+          clientName: data.clientName,
+          matterType: data.matterType,
+          deadlineDate: data.actualDeadline,
+          daysRemaining: daysUntil,
+          paralegalName: data.paralegalAssigned,
+          billingStatus: data.billingStatus,
+        },
+      });
+    }
   }
 
-  // Check for workflow stage change
-  if (data.oldWorkflowStage !== data.workflowStage && data.workflowStage) {
-    notifications.push({
-      type: "workflowChange",
-      data: {
-        type: "workflowChange",
-        matterId: data.matterId,
-        matterTitle: data.matterTitle,
-        clientName: data.clientName,
-        matterType: data.matterType,
-        workflowStage: data.workflowStage,
-        oldWorkflowStage: data.oldWorkflowStage,
-        paralegalName: data.paralegalAssigned,
-        billingStatus: data.billingStatus,
-      },
-    });
-  }
-
-  // Check for billing status change
+  // 3. BILLING STATUS CHANGE - Always notify
   if (data.oldBillingStatus !== data.billingStatus && data.billingStatus) {
     notifications.push({
       type: "billingChange",
@@ -478,22 +494,6 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
         billingStatus: data.billingStatus,
         oldBillingStatus: data.oldBillingStatus,
         paralegalName: data.paralegalAssigned,
-      },
-    });
-  }
-
-  // Check for status change - send notification for any status update
-  if (data.oldStatus !== data.status && data.status) {
-    notifications.push({
-      type: "statusChange",
-      data: {
-        type: "statusChange",
-        matterId: data.matterId,
-        matterTitle: data.matterTitle,
-        clientName: data.clientName,
-        matterType: data.matterType,
-        status: data.status,
-        oldStatus: data.oldStatus,
       },
     });
   }
