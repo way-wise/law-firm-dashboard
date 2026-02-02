@@ -19,51 +19,59 @@ import { FormError } from "@/components/ui/form-error";
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { requestPasswordReset } from "@/lib/auth-client";
+import { resetPassword } from "@/lib/auth-client";
 import {
-  requestPasswordResetSchema,
-  RequestPasswordResetSchemaType,
+  resetPasswordSchema,
+  ResetPasswordSchemaType,
 } from "@/schema/authSchema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { LuMail } from "react-icons/lu";
+import { LuEye, LuEyeOff, LuLock } from "react-icons/lu";
+import { toast } from "sonner";
 
-const RequestPasswordResetForm = () => {
+const ResetPasswordForm = () => {
   const [pendingAuth, setPendingAuth] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const form = useForm({
-    resolver: zodResolver(requestPasswordResetSchema),
+    resolver: zodResolver(resetPasswordSchema),
     defaultValues: {
-      email: "",
+      password: "",
     },
   });
 
-  // On Submit
-  const onSubmit = async (values: RequestPasswordResetSchemaType) => {
-    await requestPasswordReset(
+  const onSubmit = async (values: ResetPasswordSchemaType) => {
+    const token = searchParams.get("token");
+
+    if (!token) {
+      setFormError("Invalid token! Please check your email again");
+      return;
+    }
+
+    await resetPassword(
       {
-        email: values.email,
-        redirectTo: "/auth/reset-password",
+        newPassword: values.password,
+        token,
       },
       {
         onRequest: () => {
           setPendingAuth(true);
           setFormError("");
         },
+        onSuccess: () => {
+          toast.success("Password reset successful");
+          router.replace("/auth/sign-in");
+        },
         onError: (ctx) => {
           setFormError(ctx.error.message);
-        },
-        onSuccess: (data) => {
-          if (data?.data.status) {
-            setFormError(
-              "Check your email for the reset link",
-            );
-          }
         },
       },
     );
@@ -74,9 +82,9 @@ const RequestPasswordResetForm = () => {
   return (
     <Card>
       <CardHeader className="items-center">
-        <CardTitle className="text-2xl">Request Password Reset</CardTitle>
+        <CardTitle className="text-2xl">Reset Password</CardTitle>
         <CardDescription className="text-center">
-          Enter your account email
+          Enter new password
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -84,21 +92,26 @@ const RequestPasswordResetForm = () => {
           <FieldSet>
             <FieldGroup>
               <Controller
-                name="email"
+                name="password"
                 control={form.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="email">Email</FieldLabel>
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
                     <InputGroup>
                       <InputGroupAddon>
-                        <LuMail />
+                        <LuLock />
                       </InputGroupAddon>
                       <InputGroupInput
-                        autoComplete="email"
+                        type={showPassword ? "text" : "password"}
                         {...field}
-                        id="email"
-                        placeholder="john@example.com"
+                        id="password"
+                        placeholder="Enter new password"
                       />
+                      <InputGroupButton
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <LuEye /> : <LuEyeOff />}
+                      </InputGroupButton>
                     </InputGroup>
                     <FieldError errors={[fieldState.error]} />
                   </Field>
@@ -110,24 +123,14 @@ const RequestPasswordResetForm = () => {
                 className="mt-4 w-full"
                 isLoading={pendingAuth}
               >
-                Send Reset Password Link
+                Reset Password
               </Button>
             </FieldGroup>
           </FieldSet>
         </form>
-
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-1 text-center text-sm">
-          <span className="text-muted-foreground">Remember password?</span>
-          <Link
-            href="/auth/sign-in"
-            className="text-muted-foreground underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-hidden"
-          >
-            Sign In
-          </Link>
-        </div>
       </CardContent>
     </Card>
   );
 };
 
-export default RequestPasswordResetForm;
+export default ResetPasswordForm;

@@ -1,10 +1,11 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
-import { genericOAuth, admin } from "better-auth/plugins";
+import { admin, genericOAuth } from "better-auth/plugins";
 import { headers } from "next/headers";
+import { emailEvents, EmailEventType } from "./events/emailEvent";
+import { ac, adminRole, superRole, userRole } from "./permissions";
 import prisma from "./prisma";
-import { ac, superRole, adminRole, userRole } from "./permissions";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -33,6 +34,13 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, url, token }) => {
+      emailEvents.emit(EmailEventType.PASSWORD_RESET_EMAIL, {
+        email: user.email,
+        url,
+        token,
+      });
+    },
   },
   plugins: [
     nextCookies(),

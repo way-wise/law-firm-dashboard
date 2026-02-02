@@ -45,3 +45,9 @@ export const requestPasswordResetSchema = z.object({
   }),
 });
 export type RequestPasswordResetSchemaType = z.infer<typeof requestPasswordResetSchema>;
+
+// Reset Password Schema
+export const resetPasswordSchema = z.object({
+  password: z.string().nonempty("Password is required"),
+});
+export type ResetPasswordSchemaType = z.infer<typeof resetPasswordSchema>;
