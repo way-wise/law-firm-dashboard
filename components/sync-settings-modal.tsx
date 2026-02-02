@@ -82,32 +82,20 @@ export function SyncSettingsModal({ open, onOpenChange }: SyncSettingsModalProps
   const handleManualSync = async () => {
     try {
       setIsSyncing(true);
-      toast.info("🔄 Starting sync...", { duration: 3000 });
+      toast.info("🔄 Starting sync in background...", { duration: 2000 });
       
-      // Call unified sync but it will run in background
-      // We'll use status polling to show progress
-      client.sync.unified({}).then((result) => {
+      // Call unified sync - it returns immediately now
+      const result = await client.sync.unified({});
+      
+      if (result.success) {
+        toast.success("✅ " + result.message, { duration: 4000 });
         setLastSyncAt(new Date());
-        
-        // Show final completion toast
-        if (result.success) {
-          toast.success(
-            `🎉 Sync complete in ${(result.totalDuration / 1000 / 60).toFixed(1)} min`,
-            { duration: 6000 }
-          );
-        } else {
-          toast.warning("⚠️ Sync completed with some errors");
-        }
-      }).catch((error) => {
-        console.error("Sync error:", error);
-        if (error instanceof Error && error.message !== "TIMEOUT") {
-          toast.error("Sync failed: " + error.message);
-        }
-      });
+      } else {
+        toast.error("Failed to start sync");
+      }
       
-      // Don't wait for sync to complete - let it run in background
-      // Status polling will show progress
-      toast.success("✅ Sync started in background", { duration: 4000 });
+      // Sync started successfully, stop loading state
+      setIsSyncing(false);
       
     } catch (error) {
       console.error("Error triggering sync:", error);

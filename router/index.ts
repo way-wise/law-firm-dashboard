@@ -77,7 +77,6 @@ import {
   getStatusDistribution,
   getMatterStatusesByType,
 } from "./dashboard";
-import { syncDashboardStats } from "./syncDashboardStats";
 import { generateReport } from "./reports";
 import { sendMatterNotification } from "./sendMatterNotification";
 import { unifiedSync, getSyncStatus } from "./unifiedSync";
@@ -159,7 +158,6 @@ export const router = {
   },
   dashboard: {
     getStats: getDashboardStats,
-    syncStats: syncDashboardStats,
     getAssigneeStats: getAssigneeStats,
     getRecentMatters: getRecentMatters,
     getStatusDistribution: getMatterStatusDistribution,

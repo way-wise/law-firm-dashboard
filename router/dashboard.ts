@@ -129,83 +129,26 @@ const dashboardStatsInputSchema = z.object({
   dateTo: z.string().optional(),
 });
 
-// Get Dashboard Stats
+// Get Dashboard Stats - Always calculated in real-time from database
 export const getDashboardStats = authorized
   .route({
     method: "GET",
     path: "/dashboard/stats",
-    summary: "Get dashboard statistics from cache",
+    summary: "Get dashboard statistics calculated in real-time",
     tags: ["Dashboard"],
   })
   .input(dashboardStatsInputSchema)
   .output(dashboardStatsSchema)
   .handler(async ({ context }) => {
-    // Try to get cached stats from database
-    const cachedStats = await prisma.dashboardStats.findUnique({
-      where: { userId: context.user.id },
-    });
-
-    // If cached stats exist, return them
-    if (cachedStats) {
-      return {
-        totalContacts: cachedStats.totalContacts,
-        totalMatters: cachedStats.totalMatters,
-        totalMatterTypes: cachedStats.totalMatterTypes,
-        teamMembers: cachedStats.teamMembers,
-        categories: cachedStats.categories,
-        activeTeamMembers: cachedStats.activeTeamMembers,
-        matterTypesWithWorkflow: cachedStats.matterTypesWithWorkflow,
-        editedMatters: cachedStats.editedMatters,
-        activeMattersCount: cachedStats.activeMattersCount,
-        newMattersThisMonth: cachedStats.newMattersThisMonth,
-        criticalMatters: cachedStats.criticalMatters,
-        rfeFrequency: cachedStats.rfeFrequency,
-        newMattersGrowth: cachedStats.newMattersGrowth || "+0 from last month",
-        weightedActiveMatters: cachedStats.weightedActiveMatters,
-        revenueAtRisk: cachedStats.revenueAtRisk,
-        deadlineComplianceRate: cachedStats.deadlineComplianceRate,
-        avgCycleTime: cachedStats.avgCycleTime,
-        paralegalUtilization: cachedStats.paralegalUtilization,
-        overdueMatters: cachedStats.overdueMatters,
-        atRiskMatters: cachedStats.atRiskMatters,
-        unassignedMatters: cachedStats.unassignedMatters,
-        overloadedParalegals: cachedStats.overloadedParalegals,
-        totalRevenue: cachedStats.totalRevenue,
-        pendingRevenue: cachedStats.pendingRevenue,
-        collectedRevenue: cachedStats.collectedRevenue,
-        averageMatterValue: cachedStats.averageMatterValue,
-        matterVelocity: cachedStats.matterVelocity,
-        onTimeRate: cachedStats.onTimeRate,
-        teamUtilization: cachedStats.teamUtilization,
-        avgRfeRate: cachedStats.avgRfeRate,
-        totalReworkCount: cachedStats.totalReworkCount,
-        qualityScore: cachedStats.qualityScore,
-        totalAvailableHours: cachedStats.totalAvailableHours,
-        totalAssignedHours: cachedStats.totalAssignedHours,
-        totalBillableHours: cachedStats.totalBillableHours,
-        mattersTrend: cachedStats.mattersTrend ?? undefined,
-        revenueTrend: cachedStats.revenueTrend ?? undefined,
-        deadlineMissTrend: cachedStats.deadlineMissTrend ?? undefined,
-        mattersWithoutPricing: cachedStats.mattersWithoutPricing,
-        mattersWithoutDeadline: cachedStats.mattersWithoutDeadline,
-        mattersWithoutMatterType: cachedStats.mattersWithoutMatterType,
-        dataQualityScore: cachedStats.dataQualityScore,
-      };
-    }
-
-    // If no cached stats, return defaults (user should sync stats)
-    console.log("[DASHBOARD] No cached stats found, returning defaults");
+    console.log("[DASHBOARD] Calculating stats in real-time from database");
     
-    // === FALLBACK: Return default values ===
+    // === CALCULATE ALL STATS IN REAL-TIME ===
     
     // Basic counts
     const totalContacts = await prisma.contacts.count();
+    // Total Matters = count of all matters for this user (no other filters)
     const totalMatters = await prisma.matters.count({
-      where: { 
-        userId: context.user.id,
-        discardedAt: null,
-        // DO NOT filter by archived - total means ALL matters
-      },
+      where: { userId: context.user.id },
     });
     const categories = await prisma.categories.count();
     const totalMatterTypes = await prisma.matterTypes.count();
@@ -418,32 +361,16 @@ export const getDashboardStats = authorized
       return daysUntil > 0 && daysUntil <= 7;
     }).length;
 
-    // Unassigned matters - only count active matters without any assignee
-    const unassignedMatters = activeMatters.filter(m => {
-      // Must have no team assignment
-      const hasTeamId = m.teamId !== null && m.teamId !== undefined;
-      if (hasTeamId) return false;
-      
-      // Must have no assignees string
-      const hasAssigneesStr = m.assignees && m.assignees.trim() !== '';
-      if (hasAssigneesStr) return false;
-      
-      // Must have no user IDs
-      const userIdsStr = m.docketwiseUserIds || "";
-      if (userIdsStr.trim()) {
-        if (userIdsStr.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(userIdsStr);
-            if (Array.isArray(parsed) && parsed.length > 0) return false;
-          } catch { /* continue */ }
-        } else {
-          const hasUserIds = userIdsStr.split(',').some((id: string) => !isNaN(parseInt(id.trim())));
-          if (hasUserIds) return false;
-        }
-      }
-      
-      return true;
-    }).length;
+    // Unassigned matters - count matters for this user without assignees
+    const unassignedMatters = await prisma.matters.count({
+      where: {
+        userId: context.user.id,
+        OR: [
+          { assignees: null },
+          { assignees: "" },
+        ],
+      },
+    });
 
     const overloadedParalegals = paralegals.filter(paralegal => {
       const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
