@@ -6,8 +6,11 @@ import {
   paginatedMattersSchema,
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
+<<<<<<< Updated upstream
+=======
 import { checkMatterChangesAndNotify } from "@/lib/notifications/notification-service";
-import { fetchMattersRealtime, fetchMatterDetail } from "@/lib/services/docketwise-matters";
+import { fetchMatterDetail } from "@/lib/services/docketwise-matters";
+>>>>>>> Stashed changes
 import { ORPCError } from "@orpc/server";
 import * as z from "zod";
 
@@ -25,118 +28,182 @@ export const getCustomMatters = authorized
   .handler(async ({ input, context }) => {
     const page = input.page || 1;
     const perPage = 50;
-    
-    // Check if any filters are applied (excluding pagination)
-    const hasFilters = input.search || input.billingStatus || input.assignees || 
-                       input.matterType || input.status || input.dateFrom || 
-                       input.dateTo || input.hasDeadline !== undefined;
-    
-    // When filters are applied, we need to fetch more data to find matches
-    // because the Docketwise API doesn't support server-side filtering
-    const fetchPerPage = hasFilters ? 200 : perPage;
-    const fetchPage = hasFilters ? Math.ceil(page / (fetchPerPage / perPage)) : page;
-    
-    const result = await fetchMattersRealtime({
-      page: fetchPage,
-      perPage: fetchPerPage,
+<<<<<<< Updated upstream
+    const skip = (page - 1) * perPage;
+
+    const where: Prisma.mattersWhereInput = {
       userId: context.user.id,
-    });
-
-    // Load matter types for deadline calculation
-    const matterTypes = await prisma.matterTypes.findMany({
-      select: {
-        docketwiseId: true,
-        estimatedDays: true,
-      },
-    });
-
-    const matterTypeEstDaysMap = new Map<number, number>();
-    for (const mt of matterTypes) {
-      if (mt.estimatedDays) {
-        matterTypeEstDaysMap.set(mt.docketwiseId, mt.estimatedDays);
+    };
+=======
+    
+    // Build Prisma WHERE clause with filters
+    const where: Prisma.mattersWhereInput = {
+      userId: context.user.id,
+      archived: false,
+      discardedAt: null,
+    };
+    
+    // Search filter - search across multiple fields
+    if (input.search) {
+      const searchLower = input.search.toLowerCase();
+      where.OR = [
+        { title: { contains: searchLower, mode: 'insensitive' } },
+        { clientName: { contains: searchLower, mode: 'insensitive' } },
+        { description: { contains: searchLower, mode: 'insensitive' } },
+        { status: { contains: searchLower, mode: 'insensitive' } },
+        { matterType: { contains: searchLower, mode: 'insensitive' } },
+        { assignees: { contains: searchLower, mode: 'insensitive' } },
+      ];
+    }
+    
+    // Billing status filter
+    if (input.billingStatus) {
+      where.billingStatus = input.billingStatus;
+    }
+    
+    // Assignee filter - database level
+    if (input.assignees) {
+      where.assignees = { contains: input.assignees, mode: 'insensitive' };
+    }
+    
+    // Matter type filter
+    if (input.matterType) {
+      where.matterType = input.matterType;
+    }
+    
+    // Status filter - database level
+    if (input.status) {
+      where.OR = where.OR || [];
+      where.OR.push(
+        { status: { equals: input.status, mode: 'insensitive' } },
+        { statusForFiling: { equals: input.status, mode: 'insensitive' } }
+      );
+    }
+    
+    // Date range filter
+    if (input.dateFrom || input.dateTo) {
+      where.docketwiseCreatedAt = {};
+      if (input.dateFrom) {
+        where.docketwiseCreatedAt.gte = new Date(input.dateFrom);
+      }
+      if (input.dateTo) {
+        const toDate = new Date(input.dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        where.docketwiseCreatedAt.lte = toDate;
       }
     }
 
-    // Apply client-side filters and calculate deadlines
-    const filteredMatters = result.data.filter((matter) => {
-      // Enhanced search filter - search by title, client, description, status, matter type, or assignee
-      if (input.search) {
-        const searchLower = input.search.toLowerCase();
-        const matchTitle = matter.title?.toLowerCase().includes(searchLower);
-        const matchClient = matter.clientName?.toLowerCase().includes(searchLower);
-        const matchDescription = matter.description?.toLowerCase().includes(searchLower);
-        const matchStatus = matter.status?.toLowerCase().includes(searchLower);
-        const matchMatterType = matter.matterType?.toLowerCase().includes(searchLower);
-        const matchAssignee = matter.assignee?.name?.toLowerCase().includes(searchLower);
-        const matchAssignees = matter.assignees?.toLowerCase().includes(searchLower);
-        
-        if (!matchTitle && !matchClient && !matchDescription && !matchStatus && !matchMatterType && !matchAssignee && !matchAssignees) {
-          return false;
-        }
-      }
+    // Has deadline filter
+    if (input.hasDeadline !== undefined) {
+      where.estimatedDeadline = input.hasDeadline ? { not: null } : null;
+    }
 
-      // Billing status filter
-      if (input.billingStatus) {
-        if (matter.billingStatus !== input.billingStatus) return false;
-      }
-
-      // Assignee filter - check both assignee relation and legacy assignees field
-      if (input.assignees) {
-        const assigneesLower = input.assignees.toLowerCase();
-        const matchAssigneeName = matter.assignee?.name?.toLowerCase().includes(assigneesLower);
-        const matchAssigneeEmail = matter.assignee?.email?.toLowerCase().includes(assigneesLower);
-        const matchLegacyAssignees = matter.assignees?.toLowerCase().includes(assigneesLower);
-        
-        if (!matchAssigneeName && !matchAssigneeEmail && !matchLegacyAssignees) return false;
-      }
-
-      // Matter type filter
-      if (input.matterType) {
-        if (matter.matterType !== input.matterType) return false;
-      }
-
-      // Status filter - match the matter's actual current status
-      if (input.status) {
-        const filterStatus = input.status.toLowerCase().trim();
-        const matterStatus = (matter.status || "").toLowerCase().trim();
-        const matterStatusForFiling = (matter.statusForFiling || "").toLowerCase().trim();
-        
-        // Match if either status field matches the filter
-        if (matterStatus !== filterStatus && matterStatusForFiling !== filterStatus) {
-          return false;
-        }
-      }
-
-      // Date range filter (docketwiseCreatedAt)
-      if (input.dateFrom || input.dateTo) {
-        if (!matter.docketwiseCreatedAt) return false;
-        
-        const createdAt = new Date(matter.docketwiseCreatedAt);
-        if (isNaN(createdAt.getTime()) || createdAt.getFullYear() <= 1970) return false;
-        
-        if (input.dateFrom) {
-          const fromDate = new Date(input.dateFrom);
-          if (createdAt < fromDate) return false;
-        }
-        
-        if (input.dateTo) {
-          const toDate = new Date(input.dateTo);
-          toDate.setHours(23, 59, 59, 999); // End of day
-          if (createdAt > toDate) return false;
-        }
-      }
-
-      // Has deadline filter
-      if (input.hasDeadline !== undefined) {
-        if (input.hasDeadline && !matter.estimatedDeadline) return false;
-        if (!input.hasDeadline && matter.estimatedDeadline) return false;
-      }
-
-      return true;
+    // Fetch from database with all filters applied
+    const allMatters = await prisma.matters.findMany({
+      where,
+      select: {
+        docketwiseId: true,
+        docketwiseCreatedAt: true,
+        docketwiseUpdatedAt: true,
+        title: true,
+        description: true,
+        matterType: true,
+        matterTypeId: true,
+        status: true,
+        statusId: true,
+        statusForFiling: true,
+        statusForFilingId: true,
+        clientName: true,
+        clientId: true,
+        teamId: true,
+        assignees: true,
+        docketwiseUserIds: true,
+        openedAt: true,
+        closedAt: true,
+        assignedDate: true,
+        estimatedDeadline: true,
+        actualDeadline: true,
+        billingStatus: true,
+        totalHours: true,
+        flatFee: true,
+        customNotes: true,
+        lastSyncedAt: true,
+        isStale: true,
+        isEdited: true,
+        editedBy: true,
+        editedAt: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+        archived: true,
+        editedByUser: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { docketwiseCreatedAt: "desc" },
     });
+    
+    const totalMatters = allMatters.length;
+    const totalPages = Math.ceil(totalMatters / perPage);
+    const paginatedMatters = allMatters.slice((page - 1) * perPage, page * perPage);
+>>>>>>> Stashed changes
 
+    if (input.search) {
+      where.OR = [
+        { title: { contains: input.search, mode: "insensitive" } },
+        { clientName: { contains: input.search, mode: "insensitive" } },
+      ];
+    }
+
+    if (input.billingStatus) {
+      where.billingStatus = input.billingStatus;
+    }
+
+    if (input.paralegalAssigned) {
+      where.paralegalAssigned = input.paralegalAssigned;
+    }
+
+    if (input.isStale !== undefined) {
+      where.isStale = input.isStale;
+    }
+
+    if (input.hasDeadline !== undefined) {
+      if (input.hasDeadline) {
+        where.estimatedDeadline = { not: null };
+      } else {
+        where.estimatedDeadline = null;
+      }
+    }
+
+<<<<<<< Updated upstream
+    const [matters, total] = await Promise.all([
+      prisma.matters.findMany({
+        where,
+        skip,
+        take: perPage,
+        orderBy: { updatedAt: "desc" },
+        include: {
+          editedByUser: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.matters.count({ where }),
+    ]);
+
+    return {
+      data: matters,
+      pagination: {
+        total,
+=======
     // Calculate dynamic deadline and time spent for each matter
-    const mattersWithDeadlines = filteredMatters.map((matter) => {
+    const mattersWithDeadlines = paginatedMatters.map((matter) => {
       let calculatedDeadline: Date | null = null;
       let isPastEstimatedDeadline = false;
       let totalHoursElapsed: number | undefined = undefined;
@@ -178,7 +245,7 @@ export const getCustomMatters = authorized
       }
       
       return {
-        id: matter.id,
+        id: matter.docketwiseId.toString(),
         docketwiseId: matter.docketwiseId,
         docketwiseCreatedAt: matter.docketwiseCreatedAt,
         docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
@@ -193,17 +260,7 @@ export const getCustomMatters = authorized
         clientName: matter.clientName,
         clientId: matter.clientId,
         teamId: matter.teamId,
-        assignee: matter.assignee ? {
-          id: matter.assignee.id,
-          name: matter.assignee.name,
-          email: matter.assignee.email,
-          firstName: matter.assignee.firstName,
-          lastName: matter.assignee.lastName,
-          fullName: matter.assignee.fullName,
-          teamType: matter.assignee.teamType,
-          title: matter.assignee.title,
-          isActive: matter.assignee.isActive,
-        } : null,
+        assignee: null,
         assignees: matter.assignees,
         docketwiseUserIds: matter.docketwiseUserIds,
         openedAt: matter.openedAt,
@@ -218,43 +275,25 @@ export const getCustomMatters = authorized
         lastSyncedAt: matter.lastSyncedAt,
         isStale: matter.isStale,
         archived: matter.archived,
-        priorityDate: matter.priorityDate,
         isEdited: matter.isEdited,
         editedBy: matter.editedBy,
         editedAt: matter.editedAt,
-        editedByUser: matter.editedByUser ? {
-          name: matter.editedByUser.name,
-          email: matter.editedByUser.email,
-        } : null,
+        editedByUser: matter.editedByUser,
         userId: matter.userId,
         createdAt: matter.createdAt,
         updatedAt: matter.updatedAt,
         calculatedDeadline,
         isPastEstimatedDeadline,
         totalHoursElapsed,
-        notes: matter.notes,
+        notes: null,
       };
     });
 
-    // When filters are applied, paginate the filtered results
-    // Otherwise use the API's pagination
-    let paginatedData = mattersWithDeadlines;
-    let totalForPagination = result.total;
-    let totalPages = Math.ceil(result.total / perPage);
-    
-    if (hasFilters) {
-      // Client-side pagination of filtered results
-      const startIndex = (page - 1) * perPage % fetchPerPage;
-      const endIndex = startIndex + perPage;
-      paginatedData = mattersWithDeadlines.slice(startIndex, endIndex);
-      totalForPagination = filteredMatters.length;
-      totalPages = Math.max(1, Math.ceil(totalForPagination / perPage));
-    }
-    
-    const finalResult = {
-      data: paginatedData,
+    return {
+      data: mattersWithDeadlines,
       pagination: {
-        total: totalForPagination,
+        total: totalMatters,
+>>>>>>> Stashed changes
         page,
         perPage,
         totalPages,
