@@ -70,8 +70,7 @@ const step3Schema = z.object({
   billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).optional(),
   totalHours: z.number().optional(),
   flatFee: z.number().optional(),
-  estimatedDeadline: z.date().optional(),
-  actualDeadline: z.date().optional(),
+  deadline: z.date().optional(),
   customNotes: z.string().optional(),
 });
 
@@ -160,7 +159,7 @@ const NewMatterForm = () => {
         status: data.status,
         assignees: data.assignees,
         assignedDate: data.assignedDate,
-        estimatedDeadline: data.estimatedDeadline,
+        deadline: data.deadline,
         billingStatus: data.billingStatus,
         customNotes: data.customNotes,
       });
@@ -638,36 +637,19 @@ const NewMatterForm = () => {
                     />
                   </FieldGroup>
 
-                  {/* Deadlines */}
-                  <FieldGroup className="grid sm:grid-cols-2">
+                  {/* Deadline */}
+                  <FieldGroup>
                     <Controller
-                      name="estimatedDeadline"
+                      name="deadline"
                       control={form.control}
                       render={({ field, fieldState }) => (
                         <Field>
-                          <FieldLabel htmlFor="estimatedDeadline">Estimated Deadline</FieldLabel>
+                          <FieldLabel htmlFor="deadline">Deadline</FieldLabel>
                           <Input
                             type="date"
                             value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
                             onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
-                            placeholder="Select estimated deadline"
-                          />
-                          <FieldError errors={[fieldState.error]} />
-                        </Field>
-                      )}
-                    />
-
-                    <Controller
-                      name="actualDeadline"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field>
-                          <FieldLabel htmlFor="actualDeadline">Actual Deadline</FieldLabel>
-                          <Input
-                            type="date"
-                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
-                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
-                            placeholder="Select actual deadline"
+                            placeholder="Select deadline"
                           />
                           <FieldError errors={[fieldState.error]} />
                         </Field>

@@ -429,9 +429,9 @@ export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
         chartColor="primary"
       />
 
-      {/* AREA - filled area shows revenue with real trend */}
+      {/* AREA - filled area shows case value (flat fees) with real trend */}
       <KPICard
-        label="Est. Revenue"
+        label="Case Value"
         value={revenue}
         change={formatTrend(revenueTrend)}
         changeType={revenueTrend >= 0 ? "positive" : "negative"}

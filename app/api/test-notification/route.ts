@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
             : "Status Updated",
       oldStatus: matter.statusForFiling,
       paralegalName: matter.assignees,
-      deadlineDate: matter.estimatedDeadline,
+      deadlineDate: matter.deadline,
       daysRemaining: notificationType === "deadline" ? 3 : undefined,
     });
 

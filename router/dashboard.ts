@@ -26,7 +26,17 @@ const dashboardStatsSchema = z.object({
   revenueAtRisk: z.number(), // Revenue from matters due in next 14 days
   deadlineComplianceRate: z.number(), // Percentage of matters completed on time
   avgCycleTime: z.number(), // Average days from creation to completion
-  paralegalUtilization: z.number(), // Average utilization across paralegals
+  paralegalUtilization: z.number(), // Average team utilization percentage
+
+  // Status Group Counts (Dynamic)
+  statusGroupCounts: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    count: z.number(),
+    color: z.string().nullable(),
+    isSystem: z.boolean(),
+  })),
+  staleMattersCount: z.number(), // Matters not updated in staleMeasurementDays
 
   // Risk Command Center
   overdueMatters: z.number(),
@@ -100,7 +110,7 @@ const recentMatterSchema = z.object({
   billingStatus: z
     .enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"])
     .nullable(),
-  estimatedDeadline: z.date().nullable(),
+  deadline: z.date().nullable(),
   calculatedDeadline: z.date().nullable().optional(),
   isPastEstimatedDeadline: z.boolean().optional(),
   docketwiseCreatedAt: z.date().nullable(),
@@ -187,10 +197,12 @@ export const getDashboardStats = authorized
           id: true,
           status: true,
           statusForFiling: true,
+          statusId: true,
+          statusForFilingId: true,
           closedAt: true,
-          estimatedDeadline: true,
-          actualDeadline: true,
+          deadline: true,
           docketwiseCreatedAt: true,
+          docketwiseUpdatedAt: true,
           createdAt: true,
           billingStatus: true,
           totalHours: true,
@@ -273,8 +285,8 @@ export const getDashboardStats = authorized
     
     // 4. Critical Matters (deadline within 7 days or passed)
     const criticalMatters = allMatters.filter(m => {
-      if (!m.estimatedDeadline) return false;
-      const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (!m.deadline) return false;
+      const daysUntil = Math.ceil((new Date(m.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       return daysUntil <= 7; // includes overdue (negative) and upcoming
     }).length;
     
@@ -296,6 +308,73 @@ export const getDashboardStats = authorized
       return total + complexity;
     }, 0);
 
+    // === STATUS GROUP COUNTS ===
+    
+    // Fetch all status groups for this user
+    const statusGroups = await prisma.statusGroups.findMany({
+      where: {
+        userId: context.user.id,
+        isActive: true,
+      },
+      include: {
+        statusGroupMappings: {
+          select: {
+            matterStatus: {
+              select: { docketwiseId: true },
+            },
+          },
+        },
+      },
+      orderBy: { displayOrder: 'asc' },
+    });
+
+    // Calculate counts for each status group
+    const statusGroupCounts = await Promise.all(
+      statusGroups.map(async (group) => {
+        const docketwiseStatusIds = group.statusGroupMappings.map(
+          (mapping) => mapping.matterStatus.docketwiseId
+        );
+
+        const count = await prisma.matters.count({
+          where: {
+            userId: context.user.id,
+            archived: false,
+            discardedAt: null,
+            OR: [
+              { statusId: { in: docketwiseStatusIds } },
+              { statusForFilingId: { in: docketwiseStatusIds } },
+            ],
+          },
+        });
+
+        return {
+          id: group.id,
+          name: group.name,
+          count,
+          color: group.color,
+          isSystem: group.isSystem,
+        };
+      })
+    );
+
+    // Calculate stale matters count
+    const syncSettings = await prisma.syncSettings.findUnique({
+      where: { userId: context.user.id },
+      select: { staleMeasurementDays: true },
+    });
+    const staleMeasurementDays = syncSettings?.staleMeasurementDays || 10;
+    const staleDate = new Date();
+    staleDate.setDate(staleDate.getDate() - staleMeasurementDays);
+    
+    const staleMattersCount = await prisma.matters.count({
+      where: {
+        userId: context.user.id,
+        archived: false,
+        discardedAt: null,
+        docketwiseUpdatedAt: { lte: staleDate },
+      },
+    });
+
     // 7. Revenue at Risk (matters due in next 14 days)
     const next14Days = new Date();
     next14Days.setDate(next14Days.getDate() + 14);
@@ -303,7 +382,7 @@ export const getDashboardStats = authorized
     const revenueAtRisk = allMatters
       .filter(matter => {
         if (!matter.matterTypeId) return false;
-        const deadline = matter.estimatedDeadline;
+        const deadline = matter.deadline;
         if (!deadline) return false;
         const deadlineDate = new Date(deadline);
         return deadlineDate <= next14Days && deadlineDate >= now;
@@ -318,10 +397,10 @@ export const getDashboardStats = authorized
 
     // 3. Deadline Compliance Rate
     const completedWithDeadlines = allMatters.filter(m => 
-      m.closedAt && m.estimatedDeadline
+      m.closedAt && m.deadline
     );
     const onTimeDeliveries = completedWithDeadlines.filter(m => 
-      new Date(m.actualDeadline || m.closedAt!) <= new Date(m.estimatedDeadline!)
+      new Date(m.closedAt!) <= new Date(m.deadline!)
     ).length;
     const deadlineComplianceRate = completedWithDeadlines.length > 0 
       ? (onTimeDeliveries / completedWithDeadlines.length) * 100 
@@ -351,13 +430,13 @@ export const getDashboardStats = authorized
 
     // Risk Command Center
     const overdueMatters = allMatters.filter(m => {
-      if (!m.estimatedDeadline) return false;
-      return new Date(m.estimatedDeadline) < now;
+      if (!m.deadline) return false;
+      return new Date(m.deadline) < now;
     }).length;
 
     const atRiskMatters = allMatters.filter(m => {
-      if (!m.estimatedDeadline) return false;
-      const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (!m.deadline) return false;
+      const daysUntil = Math.ceil((new Date(m.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       return daysUntil > 0 && daysUntil <= 7;
     }).length;
 
@@ -488,14 +567,14 @@ export const getDashboardStats = authorized
 
     // Deadline miss trend: compare overdue matters this month vs last month
     const thisMonthOverdue = allMatters.filter(m => {
-      if (!m.estimatedDeadline) return false;
-      const deadline = new Date(m.estimatedDeadline);
+      if (!m.deadline) return false;
+      const deadline = new Date(m.deadline);
       return deadline < now && deadline >= startOfMonth;
     }).length;
 
     const lastMonthOverdue = allMatters.filter(m => {
-      if (!m.estimatedDeadline) return false;
-      const deadline = new Date(m.estimatedDeadline);
+      if (!m.deadline) return false;
+      const deadline = new Date(m.deadline);
       return deadline >= startOfLastMonth && deadline <= endOfLastMonth && deadline < now;
     }).length;
 
@@ -513,7 +592,7 @@ export const getDashboardStats = authorized
       return !hasTypeFee;
     }).length;
 
-    const mattersWithoutDeadline = allMatters.filter(m => !m.estimatedDeadline).length;
+    const mattersWithoutDeadline = allMatters.filter(m => !m.deadline).length;
     const mattersWithoutMatterType = allMatters.filter(m => !m.matterTypeId).length;
 
     // Calculate data quality score (percentage of matters with complete data)
@@ -553,6 +632,10 @@ export const getDashboardStats = authorized
       deadlineComplianceRate,
       avgCycleTime,
       paralegalUtilization,
+
+      // Status Group Counts
+      statusGroupCounts,
+      staleMattersCount,
 
       // Risk Command Center
       overdueMatters,
@@ -646,9 +729,9 @@ export const getAssigneeStats = authorized
         docketwiseUserIds: true,
         teamId: true,
         closedAt: true,
-        estimatedDeadline: true,
-        actualDeadline: true,
+        deadline: true,
         docketwiseCreatedAt: true,
+        docketwiseUpdatedAt: true,
         createdAt: true,
         status: true,
       },
@@ -737,12 +820,12 @@ export const getAssigneeStats = authorized
         }
 
         // Check if overdue using status classifier (excludes closed/filed/approved)
-        if (isMatterOverdue(matter.estimatedDeadline, matter.status)) {
+        if (isMatterOverdue(matter.deadline, matter.status)) {
           stats.overdue++;
         }
 
         // Check if completed on time
-        const deadline = matter.estimatedDeadline;
+        const deadline = matter.deadline;
         if (isCompleted && deadline) {
           const completionDate = matter.closedAt ? new Date(matter.closedAt) : now;
           const deadlineDate = new Date(deadline);
@@ -947,7 +1030,7 @@ export const getRecentMatters = authorized
         statusForFiling: true,
         assignees: true,
         billingStatus: true,
-        estimatedDeadline: true,
+        deadline: true,
         docketwiseCreatedAt: true,
         docketwiseUpdatedAt: true,
         assignedDate: true,
@@ -1011,12 +1094,12 @@ export const getRecentMatters = authorized
         }
       }
 
-      // Sanitize estimatedDeadline - if it's 1970, treat as null
-      let estimatedDeadline = matter.estimatedDeadline;
-      if (estimatedDeadline) {
-        const date = new Date(estimatedDeadline);
+      // Sanitize deadline - if it's 1970, treat as null
+      let deadline = matter.deadline;
+      if (deadline) {
+        const date = new Date(deadline);
         if (isNaN(date.getTime()) || date.getFullYear() <= 1970) {
-          estimatedDeadline = null;
+          deadline = null;
         }
       }
 
@@ -1031,7 +1114,7 @@ export const getRecentMatters = authorized
         statusForFiling: matter.statusForFiling,
         assignees: matter.assignees,
         billingStatus: matter.billingStatus,
-        estimatedDeadline: estimatedDeadline,
+        deadline: deadline,
         docketwiseCreatedAt: matter.docketwiseCreatedAt,
         assignedDate: matter.assignedDate,
         updatedAt: matter.updatedAt,

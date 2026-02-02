@@ -66,8 +66,8 @@ const DashboardOverviewPage = async () => {
   const now = new Date();
   const mattersWithRisk = recentMatters.map((matter) => {
     let daysUntilDeadline: number | null = null;
-    if (matter.estimatedDeadline) {
-      const deadline = new Date(matter.estimatedDeadline);
+    if (matter.deadline) {
+      const deadline = new Date(matter.deadline);
       daysUntilDeadline = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     }
     return {

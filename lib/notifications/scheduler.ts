@@ -17,7 +17,7 @@ export async function checkAndSendDeadlineNotifications() {
     // Get all matters with upcoming deadlines
     const upcomingMatters = await prisma.matters.findMany({
       where: {
-        estimatedDeadline: {
+        deadline: {
           gte: today,
           lte: endOfDay(addDays(today, Math.max(...NOTIFICATION_INTERVALS))),
         },
@@ -39,9 +39,9 @@ export async function checkAndSendDeadlineNotifications() {
     let notificationsSent = 0;
 
     for (const matter of upcomingMatters) {
-      if (!matter.estimatedDeadline) continue;
+      if (!matter.deadline) continue;
 
-      const daysUntilDeadline = differenceInDays(startOfDay(matter.estimatedDeadline), today);
+      const daysUntilDeadline = differenceInDays(startOfDay(matter.deadline), today);
 
       // Check if we should send a notification for this matter
       if (!NOTIFICATION_INTERVALS.includes(daysUntilDeadline)) {
@@ -105,7 +105,7 @@ export async function checkAndSendDeadlineNotifications() {
         matterTitle: matter.title,
         clientName: matter.clientName,
         matterType: matter.matterType,
-        deadlineDate: matter.estimatedDeadline,
+        deadlineDate: matter.deadline,
         daysRemaining: daysUntilDeadline,
         workflowStage: matter.status,
         paralegalName: matter.assignees,

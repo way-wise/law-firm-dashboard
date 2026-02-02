@@ -14,8 +14,7 @@ const coercedDateNullable = z.preprocess(
 
 export const customMatterFieldsSchema = z.object({
   assignedDate: coercedDateNullable,
-  estimatedDeadline: coercedDateNullable,
-  actualDeadline: coercedDateNullable,
+  deadline: coercedDateNullable,
   billingStatus: billingStatusEnum.nullable(),
   totalHours: z.number().nullable(),
   customNotes: z.string().nullable(),
@@ -53,8 +52,7 @@ export const matterSchema = z.object({
   openedAt: coercedDateNullable,
   closedAt: coercedDateNullable,
   assignedDate: coercedDateNullable,
-  estimatedDeadline: coercedDateNullable,
-  actualDeadline: coercedDateNullable,
+  deadline: coercedDateNullable,
   billingStatus: billingStatusEnum.nullable(),
   totalHours: z.number().nullable(),
   flatFee: z.number().nullable(),
@@ -97,8 +95,7 @@ export const updateCustomMatterFieldsSchema = z.object({
   assignees: z.string().nullable().optional(),
   teamId: z.number().nullable().optional(),
   assignedDate: z.date().nullable().optional(),
-  estimatedDeadline: z.date().nullable().optional(),
-  actualDeadline: z.date().nullable().optional(),
+  deadline: z.date().nullable().optional(),
   billingStatus: billingStatusEnum.nullable().optional(),
   totalHours: z.number().nullable().optional(),
   flatFee: z.number().nullable().optional(),
@@ -112,6 +109,7 @@ export const matterFilterSchema = z.object({
   assignees: z.string().optional(),
   matterType: z.string().optional(),
   status: z.string().optional(),
+  statusGroupId: z.string().optional(), // Filter by status group ID
   activityStatus: z.enum(["active", "stale", "archived"]).optional(),
   isStale: z.boolean().optional(),
   hasDeadline: z.boolean().optional(),

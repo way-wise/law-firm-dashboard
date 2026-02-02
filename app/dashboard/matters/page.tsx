@@ -7,9 +7,9 @@ export const revalidate = 60; // Revalidate every 60 seconds
 const MattersPage = async ({
   searchParams,
 }: PageProps<"/dashboard/matters">) => {
-  const { page, search, billingStatus, assignees, matterType, status, activityStatus, dateFrom, dateTo, isStale, hasDeadline } = await searchParams;
+  const { page, search, billingStatus, assignees, matterType, status, statusGroupId, dateFrom, dateTo, isStale, hasDeadline } = await searchParams;
 
-  const [matters, matterTypes, teams] = await Promise.all([
+  const [matters, matterTypes, teams, statusGroups] = await Promise.all([
     client.customMatters.get({
       page: page ? Number(page) : undefined,
       search: typeof search === "string" ? search : undefined,
@@ -17,7 +17,7 @@ const MattersPage = async ({
       assignees: typeof assignees === "string" ? assignees : undefined,
       matterType: typeof matterType === "string" ? matterType : undefined,
       status: typeof status === "string" ? status : undefined,
-      activityStatus: (activityStatus === "active" || activityStatus === "stale" || activityStatus === "archived") ? activityStatus : undefined,
+      statusGroupId: typeof statusGroupId === "string" ? statusGroupId : undefined,
       dateFrom: typeof dateFrom === "string" ? dateFrom : undefined,
       dateTo: typeof dateTo === "string" ? dateTo : undefined,
       isStale: isStale === "true" ? true : isStale === "false" ? false : undefined,
@@ -25,6 +25,7 @@ const MattersPage = async ({
     }),
     client.matterTypes.get(),
     client.team.get({ active: true }),
+    client.statusGroups.get({ page: 1, perPage: 100 }),
   ]);
 
   // Extract unique statuses from matterTypes (all available workflow stages)
@@ -52,7 +53,7 @@ const MattersPage = async ({
       isActive: t.active ?? true,
     }));
 
-  return <MattersTable matters={matters} matterTypes={matterTypes} statuses={uniqueStatuses} teams={teamMembers} />;
+  return <MattersTable matters={matters} matterTypes={matterTypes} statuses={uniqueStatuses} teams={teamMembers} statusGroups={statusGroups.statusGroups} />;
 };
 
 export default MattersPage;

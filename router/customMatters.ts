@@ -1,5 +1,6 @@
 import { authorized } from "@/lib/orpc";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   matterFilterSchema,
   matterSchema,
@@ -28,23 +29,30 @@ export const getCustomMatters = authorized
     const perPage = 20;
     
     // Build database query filters
-    const whereClause: {
+    type WhereClause = {
       userId: string;
       discardedAt: null;
       billingStatus?: string;
-      matterType?: { contains: string; mode: 'insensitive' };
-      status?: { contains: string; mode: 'insensitive' };
-      estimatedDeadline?: { not: null } | null;
+      matterType?: { contains: string; mode: Prisma.QueryMode };
+      status?: { contains: string; mode: Prisma.QueryMode };
+      deadline?: { not: null } | null;
       docketwiseCreatedAt?: { gte?: Date; lte?: Date };
+      docketwiseUpdatedAt?: { lte: Date };
+      statusId?: { in: number[] };
+      statusForFilingId?: { in: number[] };
       OR?: Array<{
-        title?: { contains: string; mode: 'insensitive' };
-        clientName?: { contains: string; mode: 'insensitive' };
-        description?: { contains: string; mode: 'insensitive' };
-        status?: { contains: string; mode: 'insensitive' };
-        matterType?: { contains: string; mode: 'insensitive' };
-        assignees?: { contains: string; mode: 'insensitive' };
+        title?: { contains: string; mode: Prisma.QueryMode };
+        clientName?: { contains: string; mode: Prisma.QueryMode };
+        description?: { contains: string; mode: Prisma.QueryMode };
+        status?: { contains: string; mode: Prisma.QueryMode };
+        matterType?: { contains: string; mode: Prisma.QueryMode };
+        assignees?: { contains: string; mode: Prisma.QueryMode };
+        statusId?: { in: number[] };
+        statusForFilingId?: { in: number[] };
       }>;
-    } = {
+    };
+    
+    const whereClause: WhereClause = {
       userId: context.user.id,
       discardedAt: null,
     };
@@ -63,7 +71,7 @@ export const getCustomMatters = authorized
 
     // Billing status filter
     if (input.billingStatus) {
-      whereClause.billingStatus = input.billingStatus as any;
+      whereClause.billingStatus = input.billingStatus;
     }
 
     // Matter type filter
@@ -86,9 +94,56 @@ export const getCustomMatters = authorized
       );
     }
 
+    // Status Group Filter
+    if (input.statusGroupId && input.statusGroupId !== 'all') {
+      if (input.statusGroupId === 'stale') {
+        // Stale filter: matters not updated in staleMeasurementDays
+        const syncSettings = await prisma.syncSettings.findUnique({
+          where: { userId: context.user.id },
+          select: { staleMeasurementDays: true },
+        });
+        const staleMeasurementDays = syncSettings?.staleMeasurementDays || 10;
+        const staleDate = new Date();
+        staleDate.setDate(staleDate.getDate() - staleMeasurementDays);
+        whereClause.docketwiseUpdatedAt = { lte: staleDate };
+      } else {
+        // Fetch status group mappings
+        const statusGroup = await prisma.statusGroups.findFirst({
+          where: {
+            id: input.statusGroupId,
+            userId: context.user.id,
+          },
+          include: {
+            statusGroupMappings: {
+              select: {
+                matterStatus: {
+                  select: { docketwiseId: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (statusGroup) {
+          const docketwiseStatusIds = statusGroup.statusGroupMappings.map(
+            (mapping) => mapping.matterStatus.docketwiseId
+          );
+          
+          // Match on statusId OR statusForFilingId
+          if (docketwiseStatusIds.length > 0) {
+            whereClause.OR = whereClause.OR || [];
+            whereClause.OR.push(
+              { statusId: { in: docketwiseStatusIds } },
+              { statusForFilingId: { in: docketwiseStatusIds } }
+            );
+          }
+        }
+      }
+    }
+
     // Has deadline filter
     if (input.hasDeadline !== undefined) {
-      whereClause.estimatedDeadline = input.hasDeadline ? { not: null } : null;
+      whereClause.deadline = input.hasDeadline ? { not: null } : null;
     }
 
     // Date range filter
@@ -113,9 +168,9 @@ export const getCustomMatters = authorized
 
     // Fetch from database with filters
     const [totalCount, dbMatters] = await Promise.all([
-      prisma.matters.count({ where: whereClause as any }),
+      prisma.matters.count({ where: whereClause }),
       prisma.matters.findMany({
-        where: whereClause as any,
+        where: whereClause,
         orderBy: { docketwiseCreatedAt: 'desc' },
         skip: (page - 1) * perPage,
         take: perPage,
@@ -200,8 +255,8 @@ export const getCustomMatters = authorized
       }
 
       // Apply epoch date filtering (dates <= 1970 are treated as null)
-      const estimatedDeadline = matter.estimatedDeadline && new Date(matter.estimatedDeadline).getFullYear() > 1970
-        ? matter.estimatedDeadline
+      const deadline = matter.deadline && new Date(matter.deadline).getFullYear() > 1970
+        ? matter.deadline
         : null;
 
       return {
@@ -226,8 +281,7 @@ export const getCustomMatters = authorized
         openedAt: matter.openedAt,
         closedAt: matter.closedAt,
         assignedDate: matter.assignedDate,
-        estimatedDeadline,
-        actualDeadline: matter.actualDeadline,
+        deadline,
         billingStatus: matter.billingStatus,
         totalHours: matter.totalHours,
         flatFee: matter.flatFee,
@@ -374,8 +428,9 @@ export const updateCustomMatter = authorized
     );
 
     // Auto-set assignedDate when assignee is being set and no assignedDate exists
+    // BUT only if user didn't explicitly provide an assignedDate
     const hasAssignee = updateData.assignees || updateData.teamId;
-    if (hasAssignee && !existingMatter.assignedDate) {
+    if (hasAssignee && !existingMatter.assignedDate && updateData.assignedDate === undefined) {
       filteredUpdateData.assignedDate = new Date();
     }
 
@@ -426,12 +481,9 @@ export const updateCustomMatter = authorized
       // Billing status changes
       billingStatus: updatedMatter.billingStatus,
       oldBillingStatus: existingMatter.billingStatus,
-      // Estimated deadline changes
-      estimatedDeadline: updatedMatter.estimatedDeadline,
-      oldEstimatedDeadline: existingMatter.estimatedDeadline,
-      // Actual deadline changes
-      actualDeadline: updatedMatter.actualDeadline,
-      oldActualDeadline: existingMatter.actualDeadline,
+      // Deadline changes
+      deadline: updatedMatter.deadline,
+      oldDeadline: existingMatter.deadline,
     }).catch((err) => {
       console.error("[NOTIFICATION] Failed to check matter changes:", err);
     });
@@ -475,7 +527,7 @@ export const createCustomMatter = authorized
       statusForFiling: z.string().optional(),  // Status for filing
       assignees: z.string().optional(),
       assignedDate: z.coerce.date().optional(),
-      estimatedDeadline: z.coerce.date().optional(),
+      deadline: z.coerce.date().optional(),
       billingStatus: z.enum(["PAID", "DEPOSIT_PAID", "PAYMENT_PLAN", "DUE"]).optional(),
       customNotes: z.string().optional(),
     })
@@ -498,7 +550,7 @@ export const createCustomMatter = authorized
         statusForFiling: input.statusForFiling,
         assignees: input.assignees,
         assignedDate: input.assignedDate,
-        estimatedDeadline: input.estimatedDeadline,
+        deadline: input.deadline,
         billingStatus: input.billingStatus,
         customNotes: input.customNotes,
         userId: context.user.id,
@@ -530,14 +582,14 @@ export const createCustomMatter = authorized
 
 
     // Check if new matter has a deadline and send notifications
-    if (input.estimatedDeadline) {
+    if (input.deadline) {
       checkMatterChangesAndNotify({
         matterId: matter.id,
         matterTitle: matter.title,
         clientName: matter.clientName,
         matterType: matter.matterType,
-        estimatedDeadline: matter.estimatedDeadline,
-        oldEstimatedDeadline: null,
+        deadline: matter.deadline,
+        oldDeadline: null,
       }).catch((err) => {
         console.error("[NOTIFICATION] Failed to check new matter deadline:", err);
       });

@@ -144,13 +144,12 @@ model matters {
   archived            Boolean   @default(false) // Whether matter is archived in Docketwise
   discardedAt         DateTime? // When matter was deleted/discarded in Docketwise
 
-  assignedDate      DateTime?
-  estimatedDeadline DateTime?
-  actualDeadline    DateTime?
-  billingStatus     BillingStatus?
-  totalHours        Float?
-  flatFee           Float? // Flat fee for this specific matter
-  customNotes       String?
+  assignedDate  DateTime?
+  deadline      DateTime? // Custom deadline set by user
+  billingStatus BillingStatus?
+  totalHours    Float?
+  flatFee       Float? // Flat fee for this specific matter
+  customNotes   String?
 
   // Quality metrics
   rfeCount         Int       @default(0)
@@ -177,7 +176,7 @@ model matters {
   @@index([userId])
   @@index([teamId])
   @@index([assignedDate])
-  @@index([estimatedDeadline])
+  @@index([deadline])
   @@index([isStale])
   @@index([status])
   @@index([matterType])
@@ -366,8 +365,48 @@ model matterStatuses {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Relations
+  statusGroupMappings statusGroupMappings[]
+
   @@index([docketwiseId])
   @@index([matterTypeId])
+}
+
+model statusGroups {
+  id           String  @id @default(ulid())
+  userId       String
+  name         String // e.g., "Pending", "Active", "Completed"
+  description  String?
+  color        String? // Hex color for UI display
+  icon         String? // Icon name for UI display
+  displayOrder Int     @default(0) // Order to show on dashboard
+  isActive     Boolean @default(true)
+  isSystem     Boolean @default(false) // System groups can't be deleted
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  statusGroupMappings statusGroupMappings[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([displayOrder])
+}
+
+model statusGroupMappings {
+  id             String         @id @default(ulid())
+  statusGroupId  String
+  statusGroup    statusGroups   @relation(fields: [statusGroupId], references: [id], onDelete: Cascade)
+  matterStatusId String
+  matterStatus   matterStatuses @relation(fields: [matterStatusId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([statusGroupId, matterStatusId])
+  @@index([statusGroupId])
+  @@index([matterStatusId])
 }
 
 model notificationSettings {

@@ -8,6 +8,7 @@ import {
   Shield,
   Tags,
   FileBarChart,
+  Layers,
 } from "lucide-react";
 
 export interface SubMenuItem {
@@ -70,12 +71,18 @@ export const menuList: MenuItem[] = [
   },
   {
     id: 8,
+    title: "Status Groups",
+    icon: <Layers className="icon" />,
+    url: "/dashboard/status-groups",
+  },
+  {
+    id: 9,
     title: "Reports",
     icon: <FileBarChart className="icon" />,
     url: "/dashboard/reports",
   },
   {
-    id: 9,
+    id: 10,
     title: "Settings",
     icon: <Settings className="icon" />,
     url: "/dashboard/settings",

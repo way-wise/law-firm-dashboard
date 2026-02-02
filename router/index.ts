@@ -80,6 +80,14 @@ import {
 import { generateReport } from "./reports";
 import { sendMatterNotification } from "./sendMatterNotification";
 import { unifiedSync, getSyncStatus } from "./unifiedSync";
+import {
+  getStatusGroups,
+  getStatusGroupById,
+  createStatusGroup,
+  updateStatusGroup,
+  deleteStatusGroup,
+} from "./statusGroups";
+import { getMatterStatuses } from "./matterStatuses";
 
 export const router = {
   todos: {
@@ -174,5 +182,15 @@ export const router = {
     get: getTeamMembers,
     getList: getTeamMembersList,
     getById: getTeamMemberById,
+  },
+  statusGroups: {
+    get: getStatusGroups,
+    getById: getStatusGroupById,
+    create: createStatusGroup,
+    update: updateStatusGroup,
+    delete: deleteStatusGroup,
+  },
+  matterStatuses: {
+    get: getMatterStatuses,
   },
 };

@@ -103,6 +103,16 @@ interface TeamMemberType {
   isActive: boolean;
 }
 
+interface StatusGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  isActive: boolean;
+  isSystem: boolean;
+  matterCount: number;
+}
+
 interface MattersTableProps {
   matters: {
     data: MatterType[];
@@ -116,9 +126,10 @@ interface MattersTableProps {
   matterTypes: MatterTypeWithStatuses[];
   statuses: StatusType[];
   teams: TeamMemberType[];
+  statusGroups: StatusGroup[];
 }
 
-const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTableProps) => {
+const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: MattersTableProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mounted = useMounted();
@@ -494,11 +505,11 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
     },
     {
       header: "Updated",
-      accessorKey: "updatedAt",
+      accessorKey: "docketwiseUpdatedAt",
       enableSorting: true,
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
-          {row.original.updatedAt ? formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true }) : "-"}
+          {row.original.docketwiseUpdatedAt ? formatDistanceToNow(new Date(row.original.docketwiseUpdatedAt), { addSuffix: true }) : "-"}
         </p>
       ),
     },
@@ -636,17 +647,20 @@ const MattersTable = ({ matters, matterTypes, statuses, teams }: MattersTablePro
                   />
 
                   <Select
-                    value={searchParams.get("activityStatus") || "all"}
-                    onValueChange={(value) => updateFilters("activityStatus", value)}
+                    value={searchParams.get("statusGroupId") || "all"}
+                    onValueChange={(value) => updateFilters("statusGroupId", value)}
                   >
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Activity" />
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Status Group" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Activity</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="all">All Matters</SelectItem>
                       <SelectItem value="stale">Stale</SelectItem>
-                      <SelectItem value="archived">Archived</SelectItem>
+                      {statusGroups.map((group) => (
+                        <SelectItem key={group.id} value={group.id}>
+                          {group.name} ({group.matterCount})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
 

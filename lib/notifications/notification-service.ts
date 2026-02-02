@@ -359,14 +359,12 @@ interface MatterChangeData {
   status?: string | null;
   workflowStage?: string | null;
   billingStatus?: string | null;
-  estimatedDeadline?: Date | null;
-  actualDeadline?: Date | null;
+  deadline?: Date | null;
   // Previous values
   oldStatus?: string | null;
   oldWorkflowStage?: string | null;
   oldBillingStatus?: string | null;
-  oldEstimatedDeadline?: Date | null;
-  oldActualDeadline?: Date | null;
+  oldDeadline?: Date | null;
 }
 
 // Check if a deadline is past
@@ -437,42 +435,20 @@ export async function checkMatterChangesAndNotify(data: MatterChangeData): Promi
   }
 
   // 2. DEADLINE CHANGE - Only if new deadline is within 7 days
-  const estimatedDeadlineChanged = isDeadlineChanged(data.oldEstimatedDeadline, data.estimatedDeadline);
-  if (estimatedDeadlineChanged && data.estimatedDeadline) {
-    const daysUntil = getDaysUntilDeadline(data.estimatedDeadline);
+  const deadlineChanged = isDeadlineChanged(data.oldDeadline, data.deadline);
+  if (deadlineChanged && data.deadline) {
+    const daysUntil = getDaysUntilDeadline(data.deadline);
     // Only send if deadline is within 7 days or past due
     if (daysUntil !== null && daysUntil <= 7) {
       notifications.push({
-        type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
+        type: isDeadlinePast(data.deadline) ? "pastDeadline" : "deadline",
         data: {
-          type: isDeadlinePast(data.estimatedDeadline) ? "pastDeadline" : "deadline",
+          type: isDeadlinePast(data.deadline) ? "pastDeadline" : "deadline",
           matterId: data.matterId,
           matterTitle: data.matterTitle,
           clientName: data.clientName,
           matterType: data.matterType,
-          deadlineDate: data.estimatedDeadline,
-          daysRemaining: daysUntil,
-          paralegalName: data.paralegalAssigned,
-          billingStatus: data.billingStatus,
-        },
-      });
-    }
-  }
-
-  const actualDeadlineChanged = isDeadlineChanged(data.oldActualDeadline, data.actualDeadline);
-  if (actualDeadlineChanged && data.actualDeadline) {
-    const daysUntil = getDaysUntilDeadline(data.actualDeadline);
-    // Only send if deadline is within 7 days or past due
-    if (daysUntil !== null && daysUntil <= 7) {
-      notifications.push({
-        type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
-        data: {
-          type: isDeadlinePast(data.actualDeadline) ? "pastDeadline" : "deadline",
-          matterId: data.matterId,
-          matterTitle: data.matterTitle,
-          clientName: data.clientName,
-          matterType: data.matterType,
-          deadlineDate: data.actualDeadline,
+          deadlineDate: data.deadline,
           daysRemaining: daysUntil,
           paralegalName: data.paralegalAssigned,
           billingStatus: data.billingStatus,

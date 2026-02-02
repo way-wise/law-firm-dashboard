@@ -58,76 +58,25 @@ export function EditMatterDrawer({
   open,
   onOpenChange,
   onSuccess,
-  matterTypes,
-  teams,
 }: EditMatterDrawerProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [title, setTitle] = useState("");
-  const [matterType, setMatterType] = useState("");
-  const [matterTypeId, setMatterTypeId] = useState<string | null>(null);
-  const [clientName, setClientName] = useState("");
-  const [status, setStatus] = useState("");
   const [assignedDate, setAssignedDate] = useState<Date | null>(null);
-  const [estimatedDeadline, setEstimatedDeadline] = useState<Date | null>(null);
-  const [actualDeadline, setActualDeadline] = useState<Date | null>(null);
+  const [deadline, setDeadline] = useState<Date | null>(null);
   const [billingStatus, setBillingStatus] = useState<string>("");
-  const [assignees, setAssignees] = useState("");
-  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
-  const [description, setDescription] = useState("");
   const [totalHours, setTotalHours] = useState<number | null>(null);
   const [flatFee, setFlatFee] = useState<number | null>(null);
   const [customNotes, setCustomNotes] = useState("");
 
-  // Get current matter type from preloaded data
-  const currentMatterType = matterTypeId
-    ? matterTypes.find(mt => mt.id === matterTypeId)
-    : matter?.matterType
-    ? matterTypes.find(mt => mt.name === matter.matterType)
-    : null;
-
-  // Use ONLY statuses from the current matter type
-  const availableStatuses = currentMatterType?.matterStatuses || [];
-  
-  // Always include current status as option even if not in the type's status list
-  const statusOptions = [...availableStatuses];
-  if (status && !statusOptions.some(s => s.name === status)) {
-    statusOptions.push({
-      id: 'current',
-      docketwiseId: 0,
-      name: status,
-      duration: null,
-      sort: null,
-    });
-  }
-  statusOptions.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
-
-  // Get active teams for assignee selection
-  const activeTeams = teams.filter((t) => t.isActive);
-
   useEffect(() => {
     if (matter) {
-      setTitle(matter.title || "");
-      setMatterType(matter.matterType || "");
-      setClientName(matter.clientName || "");
-      setStatus(matter.status || "");
       setAssignedDate(matter.assignedDate ? new Date(matter.assignedDate) : null);
-      setEstimatedDeadline(matter.estimatedDeadline ? new Date(matter.estimatedDeadline) : null);
-      setActualDeadline(matter.actualDeadline ? new Date(matter.actualDeadline) : null);
+      setDeadline(matter.deadline ? new Date(matter.deadline) : null);
       setBillingStatus(matter.billingStatus || "");
-      setAssignees(matter.assignees || "");
-      setSelectedTeamId(String(matter.teamId || ""));
-      setDescription(matter.description || "");
       setTotalHours(matter.totalHours ?? null);
       setFlatFee(matter.flatFee ?? null);
       setCustomNotes(matter.customNotes || "");
-      
-      // Find the matter type ID from the type name
-      if (matter.matterType) {
-        const foundType = matterTypes.find((mt: MatterTypeWithStatuses) => mt.name === matter.matterType);
-        setMatterTypeId(foundType?.id || null);
-      }
     }
-  }, [matter, matterTypes]);
+  }, [matter]);
 
   const handleSave = async () => {
     if (!matter) return;
@@ -136,16 +85,9 @@ export function EditMatterDrawer({
       setIsLoading(true);
       await client.customMatters.update({
         id: matter.id,
-        title: title || undefined,
-        description: description || null,
-        matterType: matterType || null,
-        clientName: clientName || null,
-        status: status || null,
         assignedDate: assignedDate || null,
-        estimatedDeadline: estimatedDeadline || null,
-        actualDeadline: actualDeadline || null,
+        deadline: deadline || null,
         billingStatus: billingStatus ? (billingStatus as "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE") : null,
-        assignees: assignees || null,
         totalHours: totalHours,
         flatFee: flatFee,
         customNotes: customNotes || null,
@@ -177,83 +119,39 @@ export function EditMatterDrawer({
             </DrawerHeader>
 
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-6">
-              {/* Matter Info */}
-              <div className="pb-4 border-b">
-                <p className="text-sm font-medium text-muted-foreground">Editing: {matter.title}</p>
-              </div>
-
-              {/* Matter Title */}
-              <div className="space-y-2">
-                <Label htmlFor="title">Matter Title</Label>
-                <Input
-                  id="title"
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
-
-              {/* Type/Status - Single field showing current type and status dropdown */}
-              <div className="space-y-2">
-                <Label htmlFor="typeStatus">Type / Status</Label>
-                <div className="space-y-2">
-                  {/* Show current matter type as text */}
-                  <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/50">
-                    <span className="text-sm font-medium">
-                      {currentMatterType ? currentMatterType.name : matterType || "No type set"}
-                    </span>
-                    {currentMatterType && (
-                      <span className="text-xs text-muted-foreground">
-                        ({currentMatterType.matterStatuses.length} stages)
-                      </span>
-                    )}
+              {/* Matter Info - Read Only from Docketwise */}
+              <div className="pb-4 border-b space-y-3">
+                <p className="text-sm font-semibold">Matter Information (from Docketwise)</p>
+                <div className="space-y-2 bg-muted/30 p-3 rounded-md">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Title</Label>
+                    <p className="text-sm font-medium">{matter.title || "-"}</p>
                   </div>
-                  
-                  {/* Status dropdown - shows ALL statuses */}
-                  <Select value={status || ""} onValueChange={setStatus}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select workflow status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusOptions.map((statusOption) => (
-                        <SelectItem key={statusOption.id} value={statusOption.name}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{statusOption.name}</span>
-                            {statusOption.duration && (
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {statusOption.duration}d
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Type / Status</Label>
+                    <p className="text-sm">{matter.matterType || "-"} / {matter.status || "-"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Client</Label>
+                    <p className="text-sm">{matter.clientName || "-"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Assignees</Label>
+                    <p className="text-sm">{matter.assignees || "-"}</p>
+                  </div>
+                  {matter.description && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Description</Label>
+                      <p className="text-sm">{matter.description}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Client Name */}
-              <div className="space-y-2">
-                <Label htmlFor="clientName">Client Name</Label>
-                <Input
-                  id="clientName"
-                  type="text"
-                  placeholder="Client full name"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
-              </div>
-
-              {/* Description */}
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Matter description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                />
+              {/* Editable Custom Fields */}
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">Custom Fields (Editable)</p>
+                <p className="text-xs text-muted-foreground">These fields are specific to your dashboard</p>
               </div>
 
               {/* Assigned Date */}
@@ -266,23 +164,13 @@ export function EditMatterDrawer({
                 />
               </div>
 
-              {/* Estimated Deadline */}
+              {/* Deadline */}
               <div className="space-y-2">
-                <Label>Estimated Deadline</Label>
+                <Label>Deadline</Label>
                 <DatePicker
-                  value={estimatedDeadline && new Date(estimatedDeadline).getFullYear() > 1970 ? estimatedDeadline : null}
-                  onChange={(date) => setEstimatedDeadline(date || null)}
-                  placeholder="Select estimated deadline"
-                />
-              </div>
-
-              {/* Actual Deadline */}
-              <div className="space-y-2">
-                <Label>Actual Deadline</Label>
-                <DatePicker
-                  value={actualDeadline && new Date(actualDeadline).getFullYear() > 1970 ? actualDeadline : null}
-                  onChange={(date) => setActualDeadline(date || null)}
-                  placeholder="Select actual deadline"
+                  value={deadline && new Date(deadline).getFullYear() > 1970 ? deadline : null}
+                  onChange={(date) => setDeadline(date || null)}
+                  placeholder="Select deadline"
                 />
               </div>
 
@@ -329,39 +217,6 @@ export function EditMatterDrawer({
                   value={flatFee ?? ""}
                   onChange={(e) => setFlatFee(e.target.value ? parseFloat(e.target.value) : null)}
                 />
-              </div>
-
-              {/* Assignees */}
-              <div className="space-y-2">
-                <Label htmlFor="assignees">Assignees</Label>
-                <Select 
-                  value={selectedTeamId} 
-                  onValueChange={(value: string) => {
-                    setSelectedTeamId(value);
-                    // Find the team member by docketwiseId
-                    const selectedTeam = teams.find(t => String(t.docketwiseId) === value);
-                    if (selectedTeam) {
-                      setAssignees(selectedTeam.fullName || selectedTeam.email);
-                      // Auto-set assignedDate to now if not already set
-                      if (!assignedDate || new Date(assignedDate).getFullYear() <= 1970) {
-                        setAssignedDate(new Date());
-                      }
-                    } else {
-                      setAssignees("");
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeTeams.map((team) => (
-                      <SelectItem key={team.id} value={String(team.docketwiseId)}>
-                        {team.fullName || team.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               {/* Custom Notes */}
