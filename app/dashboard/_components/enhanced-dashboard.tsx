@@ -50,7 +50,7 @@ interface RecentMatter {
   status: string | null;
   assignees: string | null;
   billingStatus: string | null;
-  estimatedDeadline: Date | null;
+  deadline: Date | null;
   updatedAt: Date;
   daysUntilDeadline?: number | null;
 }

@@ -38,8 +38,7 @@ export const sendMatterNotification = authorized
           statusForFiling: true,
           assignees: true,
           billingStatus: true,
-          estimatedDeadline: true,
-          actualDeadline: true,
+          deadline: true,
         },
       });
     } else {
@@ -54,8 +53,7 @@ export const sendMatterNotification = authorized
           statusForFiling: true,
           assignees: true,
           billingStatus: true,
-          estimatedDeadline: true,
-          actualDeadline: true,
+          deadline: true,
         },
       });
     }
@@ -106,7 +104,7 @@ export const sendMatterNotification = authorized
             clientName: matter.clientName,
             matterType: matter.matterType,
             workflowStage: matter.status,
-            deadlineDate: matter.estimatedDeadline,
+            deadlineDate: matter.deadline,
             paralegalAssigned: matter.assignees,
             billingStatus: matter.billingStatus,
             matterUrl,

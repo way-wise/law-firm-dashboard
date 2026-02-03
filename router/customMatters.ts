@@ -1,6 +1,5 @@
 import { authorized } from "@/lib/orpc";
-import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import prisma, { Prisma } from "@/lib/prisma";
 import {
   matterFilterSchema,
   matterSchema,
@@ -29,30 +28,7 @@ export const getCustomMatters = authorized
     const perPage = 20;
     
     // Build database query filters
-    type WhereClause = {
-      userId: string;
-      discardedAt: null;
-      billingStatus?: string;
-      matterType?: { contains: string; mode: Prisma.QueryMode };
-      status?: { contains: string; mode: Prisma.QueryMode };
-      deadline?: { not: null } | null;
-      docketwiseCreatedAt?: { gte?: Date; lte?: Date };
-      docketwiseUpdatedAt?: { lte: Date };
-      statusId?: { in: number[] };
-      statusForFilingId?: { in: number[] };
-      OR?: Array<{
-        title?: { contains: string; mode: Prisma.QueryMode };
-        clientName?: { contains: string; mode: Prisma.QueryMode };
-        description?: { contains: string; mode: Prisma.QueryMode };
-        status?: { contains: string; mode: Prisma.QueryMode };
-        matterType?: { contains: string; mode: Prisma.QueryMode };
-        assignees?: { contains: string; mode: Prisma.QueryMode };
-        statusId?: { in: number[] };
-        statusForFilingId?: { in: number[] };
-      }>;
-    };
-    
-    const whereClause: WhereClause = {
+    const whereClause: Prisma.mattersWhereInput = {
       userId: context.user.id,
       discardedAt: null,
     };

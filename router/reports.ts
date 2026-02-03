@@ -167,9 +167,9 @@ export const generateReport = authorized
       const active = data.matters.filter((m) => !m.closedAt).length;
       const overdue = data.matters.filter(
         (m) =>
-          m.estimatedDeadline &&
+          m.deadline &&
           !m.closedAt &&
-          isBefore(m.estimatedDeadline, now)
+          isBefore(m.deadline, now)
       ).length;
 
       const completedWithDates = data.matters.filter(
@@ -219,25 +219,25 @@ export const generateReport = authorized
     // ========== DEADLINE TRACKING ==========
     const upcomingDeadlines = allMatters.filter(
       (m) =>
-        m.estimatedDeadline &&
+        m.deadline &&
         !m.closedAt &&
-        isAfter(m.estimatedDeadline, now) &&
-        differenceInDays(m.estimatedDeadline, now) <= 30
+        isAfter(m.deadline, now) &&
+        differenceInDays(m.deadline, now) <= 30
     ).length;
 
     const overdueDeadlines = allMatters.filter(
       (m) =>
-        m.estimatedDeadline && !m.closedAt && isBefore(m.estimatedDeadline, now)
+        m.deadline && !m.closedAt && isBefore(m.deadline, now)
     ).length;
 
     const mattersWithDeadlines = allMatters.filter(
-      (m) => m.estimatedDeadline && m.closedAt
+      (m) => m.deadline && m.closedAt
     );
     const metDeadlines = mattersWithDeadlines.filter(
-      (m) => !isAfter(m.closedAt!, m.estimatedDeadline!)
+      (m) => !isAfter(m.closedAt!, m.deadline!)
     ).length;
     const missedDeadlines = mattersWithDeadlines.filter((m) =>
-      isAfter(m.closedAt!, m.estimatedDeadline!)
+      isAfter(m.closedAt!, m.deadline!)
     ).length;
 
     const totalDeadlineMatters = metDeadlines + missedDeadlines;
@@ -345,12 +345,12 @@ export const generateReport = authorized
     allMatters
       .filter(
         (m) =>
-          m.estimatedDeadline &&
+          m.deadline &&
           !m.closedAt &&
-          isBefore(m.estimatedDeadline, now)
+          isBefore(m.deadline, now)
       )
       .forEach((m) => {
-        const daysOverdue = differenceInDays(now, m.estimatedDeadline!);
+        const daysOverdue = differenceInDays(now, m.deadline!);
         issues.push({
           type: "overdue",
           severity:

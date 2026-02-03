@@ -118,8 +118,7 @@ interface MappedMatter {
   openedAt: Date | null;
   closedAt: Date | null;
   assignedDate: Date | null;
-  estimatedDeadline: Date | null;
-  actualDeadline: Date | null;
+  deadline: Date | null;
   billingStatus: "PAID" | "DEPOSIT_PAID" | "PAYMENT_PLAN" | "DUE" | null;
   totalHours: number | null;
   flatFee: number | null;
@@ -136,7 +135,7 @@ interface MappedMatter {
   archived: boolean;
   priorityDate: Date | null;
   calculatedDeadline: Date | null;
-  isPastEstimatedDeadline: boolean;
+  isPastDeadline: boolean;
   notes?: Array<{
     id: number;
     title: string | null;
@@ -415,8 +414,7 @@ async function fetchMattersFromDB(
     openedAt: matter.openedAt,
     closedAt: matter.closedAt,
     assignedDate: matter.assignedDate,
-    estimatedDeadline: matter.estimatedDeadline,
-    actualDeadline: matter.actualDeadline,
+    deadline: matter.deadline,
     billingStatus: matter.billingStatus,
     totalHours: matter.totalHours,
     flatFee: matter.flatFee,
@@ -436,7 +434,7 @@ async function fetchMattersFromDB(
     createdAt: matter.createdAt,
     updatedAt: matter.updatedAt,
     calculatedDeadline: null,
-    isPastEstimatedDeadline: false,
+    isPastDeadline: false,
     notes: null,
   }));
 
@@ -631,8 +629,7 @@ export async function fetchMattersRealtime(
         openedAt,
         closedAt,
         assignedDate: edited?.assignedDate || null,
-        estimatedDeadline: edited?.estimatedDeadline || null,
-        actualDeadline: edited?.actualDeadline || null,
+        deadline: edited?.deadline || null,
         billingStatus: edited?.billingStatus || null,
         totalHours: edited?.totalHours || null,
         flatFee: edited?.flatFee || null,
@@ -652,7 +649,7 @@ export async function fetchMattersRealtime(
         createdAt: edited?.createdAt || now,
         updatedAt: edited?.updatedAt || now,
         calculatedDeadline: null, // Will be calculated in the UI
-        isPastEstimatedDeadline: false, // Will be calculated in the UI
+        isPastDeadline: false, // Will be calculated in the UI
         notes: null, // Will be fetched separately if needed
       };
     });
@@ -743,8 +740,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
         openedAt: matter.openedAt,
         closedAt: matter.closedAt,
         assignedDate: matter.assignedDate,
-        estimatedDeadline: matter.estimatedDeadline,
-        actualDeadline: matter.actualDeadline,
+        deadline: matter.deadline,
         billingStatus: matter.billingStatus,
         totalHours: matter.totalHours,
         flatFee: matter.flatFee,
@@ -764,7 +760,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
         createdAt: matter.createdAt,
         updatedAt: matter.updatedAt,
         calculatedDeadline: null,
-        isPastEstimatedDeadline: false,
+        isPastDeadline: false,
         notes: null,
       };
     }
@@ -857,8 +853,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       statusForFiling: edited?.statusForFiling || (typeof matter.status === "string" ? matter.status : matter.status?.name || null),
       statusForFilingId: edited?.statusForFilingId || (typeof matter.status === "object" && matter.status ? matter.status.id : null),
       assignedDate: edited?.assignedDate || null,
-      estimatedDeadline: edited?.estimatedDeadline || null,
-      actualDeadline: edited?.actualDeadline || null,
+      deadline: edited?.deadline || null,
       billingStatus: edited?.billingStatus || null,
       totalHours: edited?.totalHours || null,
       flatFee: edited?.flatFee || null,
@@ -882,7 +877,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       createdAt: edited?.createdAt || new Date(),
       updatedAt: edited?.updatedAt || new Date(),
       calculatedDeadline: null, // Will be calculated in the UI
-      isPastEstimatedDeadline: false, // Will be calculated in the UI
+      isPastDeadline: false, // Will be calculated in the UI
       notes: matter.notes || null,
     };
 
@@ -955,8 +950,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       openedAt: matter.openedAt,
       closedAt: matter.closedAt,
       assignedDate: matter.assignedDate,
-      estimatedDeadline: matter.estimatedDeadline,
-      actualDeadline: matter.actualDeadline,
+      deadline: matter.deadline,
       billingStatus: matter.billingStatus,
       totalHours: matter.totalHours,
       flatFee: matter.flatFee,
@@ -964,7 +958,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       lastSyncedAt: matter.lastSyncedAt,
       isStale: matter.isStale,
       archived: matter.archived,
-      priorityDate: null,
+      priorityDate: matter.priorityDate,
       isEdited: matter.isEdited,
       editedBy: matter.editedBy,
       editedAt: matter.editedAt,
@@ -976,7 +970,7 @@ export async function fetchMatterDetail(docketwiseId: number, userId: string) {
       createdAt: matter.createdAt,
       updatedAt: matter.updatedAt,
       calculatedDeadline: null,
-      isPastEstimatedDeadline: false,
+      isPastDeadline: false,
       notes: null,
     };
   }

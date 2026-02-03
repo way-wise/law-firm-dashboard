@@ -617,7 +617,7 @@ export async function syncMatters(userId: string) {
           matterType: true,
           assignees: true,
           teamId: true,
-          estimatedDeadline: true,
+          deadline: true,
         },
       });
 
@@ -743,7 +743,7 @@ export async function syncMatters(userId: string) {
                       status: newStatus,
                       oldStatus: existingMatter.statusForFiling,
                       paralegalName: existingMatter.assignees,
-                      deadlineDate: existingMatter.estimatedDeadline,
+                      deadlineDate: existingMatter.deadline,
                     }).catch((err) =>
                       console.error(`[SYNC] Failed to send notification:`, err),
                     );

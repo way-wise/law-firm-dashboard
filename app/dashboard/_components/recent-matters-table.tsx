@@ -22,9 +22,9 @@ interface RecentMatter {
   statusForFiling: string | null;
   assignees: string | null;
   billingStatus: string | null;
-  estimatedDeadline: Date | null;
+  deadline: Date | null;
   calculatedDeadline?: Date | null;
-  isPastEstimatedDeadline?: boolean;
+  isPastDeadline?: boolean;
   docketwiseCreatedAt: Date | null;
   assignedDate?: Date | null;
   updatedAt: Date;
@@ -54,12 +54,12 @@ const getBillingStatusColor = (status: string | null) => {
 };
 
 // Format deadline - only show if estimated days exist
-const formatDeadline = (calculatedDeadline?: Date | null, isPastEstimatedDeadline?: boolean, hasEstimatedDays?: boolean) => {
+const formatDeadline = (calculatedDeadline?: Date | null, isPastDeadline?: boolean, hasEstimatedDays?: boolean) => {
   if (!calculatedDeadline || !hasEstimatedDays) return "-";
   
   const formattedDate = format(calculatedDeadline, "MM/dd/yyyy");
   
-  if (isPastEstimatedDeadline) {
+  if (isPastDeadline) {
     return (
       <div className="flex flex-col">
         <p className="text-sm text-red-500 font-medium">{formattedDate}</p>
@@ -185,11 +185,11 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
     },
     {
       header: "Deadline",
-      accessorKey: "estimatedDeadline",
+      accessorKey: "deadline",
       cell: ({ row }) => {
-        const customDeadline = row.original.estimatedDeadline;
+        const customDeadline = row.original.deadline;
         const calculatedDeadline = row.original.calculatedDeadline;
-        const isPastEstimatedDeadline = row.original.isPastEstimatedDeadline;
+        const isPastDeadline = row.original.isPastDeadline;
         const estimatedDays = row.original.estimatedDays;
 
         // Prefer custom deadline if set, otherwise use calculated deadline
@@ -206,7 +206,7 @@ export function RecentMattersTable({ matters }: RecentMattersTableProps) {
 
         // Fall back to calculated deadline if no custom deadline AND we have estimated days
         if (!deadline && calculatedDeadline && estimatedDays) {
-          return formatDeadline(calculatedDeadline, isPastEstimatedDeadline, true);
+          return formatDeadline(calculatedDeadline, isPastDeadline, true);
         }
 
         if (!deadline) return <p className="text-sm text-muted-foreground">-</p>;

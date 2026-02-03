@@ -23,7 +23,7 @@ export const getNotifications = authorized
             id: true,
             title: true,
             clientName: true,
-            estimatedDeadline: true,
+            deadline: true,
             assignees: true,
           },
         },

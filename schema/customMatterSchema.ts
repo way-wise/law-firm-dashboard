@@ -71,7 +71,7 @@ export const matterSchema = z.object({
   updatedAt: z.coerce.date(),
   // Dynamic deadline calculation fields
   calculatedDeadline: coercedDateNullable.optional(),
-  isPastEstimatedDeadline: z.boolean().optional(),
+  isPastDeadline: z.boolean().optional(),
   totalHoursElapsed: z.number().optional(),
   // Notes from Docketwise API
   notes: z.array(z.object({

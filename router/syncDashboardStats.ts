@@ -29,8 +29,7 @@ export const syncDashboardStats = authorized
             status: true,
             statusForFiling: true,
             closedAt: true,
-            estimatedDeadline: true,
-            actualDeadline: true,
+            deadline: true,
             docketwiseCreatedAt: true,
             createdAt: true,
             billingStatus: true,
@@ -139,8 +138,8 @@ export const syncDashboardStats = authorized
       
       // Critical Matters
       const criticalMatters = allMatters.filter(m => {
-        if (!m.estimatedDeadline) return false;
-        const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (!m.deadline) return false;
+        const daysUntil = Math.ceil((new Date(m.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return daysUntil <= 7;
       }).length;
       
@@ -163,7 +162,7 @@ export const syncDashboardStats = authorized
       const revenueAtRisk = allMatters
         .filter(matter => {
           if (!matter.matterTypeId) return false;
-          const deadline = matter.estimatedDeadline;
+          const deadline = matter.deadline;
           if (!deadline) return false;
           const deadlineDate = new Date(deadline);
           return deadlineDate <= next14Days && deadlineDate >= now;
@@ -177,10 +176,10 @@ export const syncDashboardStats = authorized
 
       // Deadline Compliance Rate
       const completedWithDeadlines = allMatters.filter(m => 
-        m.closedAt && m.estimatedDeadline
+        m.closedAt && m.deadline
       );
       const onTimeDeliveries = completedWithDeadlines.filter(m => 
-        new Date(m.actualDeadline || m.closedAt!) <= new Date(m.estimatedDeadline!)
+        new Date(m.closedAt!) <= new Date(m.deadline!)
       ).length;
       const deadlineComplianceRate = completedWithDeadlines.length > 0 
         ? (onTimeDeliveries / completedWithDeadlines.length) * 100 
@@ -221,12 +220,12 @@ export const syncDashboardStats = authorized
 
       // Risk metrics - Use status classifier to exclude closed/approved/denied
       const overdueMatters = allMatters.filter(m => {
-        return isMatterOverdue(m.estimatedDeadline, m.status);
+        return isMatterOverdue(m.deadline, m.status);
       }).length;
 
       const atRiskMatters = allMatters.filter(m => {
-        if (!m.estimatedDeadline || m.closedAt) return false;
-        const daysUntil = Math.ceil((new Date(m.estimatedDeadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (!m.deadline || m.closedAt) return false;
+        const daysUntil = Math.ceil((new Date(m.deadline).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return daysUntil > 0 && daysUntil <= 7;
       }).length;
 
@@ -319,17 +318,17 @@ export const syncDashboardStats = authorized
         : thisMonthClosedRevenue > 0 ? 100 : 0;
 
       const thisMonthOverdue = allMatters.filter(m => {
-        if (!m.estimatedDeadline) return false;
-        const deadline = new Date(m.estimatedDeadline);
+        if (!m.deadline) return false;
+        const deadline = new Date(m.deadline);
         // Use status classifier to exclude closed/approved/denied
-        return deadline < now && deadline >= startOfMonth && isMatterOverdue(m.estimatedDeadline, m.status);
+        return deadline < now && deadline >= startOfMonth && isMatterOverdue(m.deadline, m.status);
       }).length;
 
       const lastMonthOverdue = allMatters.filter(m => {
-        if (!m.estimatedDeadline) return false;
-        const deadline = new Date(m.estimatedDeadline);
+        if (!m.deadline) return false;
+        const deadline = new Date(m.deadline);
         // Use status classifier to exclude closed/approved/denied
-        return deadline >= startOfLastMonth && deadline <= endOfLastMonth && isMatterOverdue(m.estimatedDeadline, m.status);
+        return deadline >= startOfLastMonth && deadline <= endOfLastMonth && isMatterOverdue(m.deadline, m.status);
       }).length;
 
       const deadlineMissTrend = lastMonthOverdue > 0
@@ -346,7 +345,7 @@ export const syncDashboardStats = authorized
         return !hasTypeFee;
       }).length;
 
-      const mattersWithoutDeadline = allMatters.filter(m => !m.estimatedDeadline).length;
+      const mattersWithoutDeadline = allMatters.filter(m => !m.deadline).length;
       const mattersWithoutMatterType = allMatters.filter(m => !m.matterTypeId).length;
 
       const dataQualityIssues = mattersWithoutPricing + mattersWithoutDeadline + mattersWithoutMatterType;

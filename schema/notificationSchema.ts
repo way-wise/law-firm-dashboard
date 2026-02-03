@@ -16,7 +16,7 @@ export const notificationSchema = z.object({
     id: z.string(),
     title: z.string(),
     clientName: z.string().nullable(),
-    estimatedDeadline: z.date().nullable(),
+    deadline: z.date().nullable(),
     assignees: z.string().nullable(),
   }).optional(),
 });

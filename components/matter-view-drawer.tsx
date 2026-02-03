@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Calendar, FileText, User, X, Loader2, Clock } from "lucide-react";
+import { Calendar, FileText, User, X, Loader2 } from "lucide-react";
 import { client } from "@/lib/orpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { formatDate, getInitials } from "@/lib/utils";
@@ -205,18 +205,10 @@ export function MatterViewDrawer({ docketwiseId, open, onOpenChange }: MatterVie
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <Clock className="size-4 text-muted-foreground" />
-                    <div className="flex items-center justify-between flex-1">
-                      <span className="text-sm text-muted-foreground">Estimated Deadline</span>
-                      <span className="text-sm font-medium">{formatDateSafe(matter.estimatedDeadline)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
                     <Calendar className="size-4 text-muted-foreground" />
                     <div className="flex items-center justify-between flex-1">
-                      <span className="text-sm text-muted-foreground">Actual Deadline</span>
-                      <span className="text-sm font-medium">{formatDateSafe(matter.actualDeadline)}</span>
+                      <span className="text-sm text-muted-foreground">Deadline</span>
+                      <span className="text-sm font-medium">{formatDateSafe(matter.deadline)}</span>
                     </div>
                   </div>
                 </div>

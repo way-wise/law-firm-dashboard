@@ -112,7 +112,7 @@ const recentMatterSchema = z.object({
     .nullable(),
   deadline: z.date().nullable(),
   calculatedDeadline: z.date().nullable().optional(),
-  isPastEstimatedDeadline: z.boolean().optional(),
+  isPastDeadline: z.boolean().optional(),
   docketwiseCreatedAt: z.date().nullable(),
   assignedDate: z.date().nullable().optional(),
   updatedAt: z.date(),
@@ -1056,7 +1056,7 @@ export const getRecentMatters = authorized
     // Calculate deadlines and hours for dashboard matters
     const mattersWithDeadlines = matters.map((matter) => {
       let calculatedDeadline: Date | null = null;
-      let isPastEstimatedDeadline = false;
+      let isPastDeadline = false;
       let daysUntilDeadline: number | undefined;
       let totalHoursElapsed: number | undefined;
 
@@ -1071,7 +1071,7 @@ export const getRecentMatters = authorized
 
             if (targetDate.getFullYear() > 1970) {
               calculatedDeadline = targetDate;
-              isPastEstimatedDeadline = new Date() > calculatedDeadline;
+              isPastDeadline = new Date() > calculatedDeadline;
               
               // Calculate days until deadline (negative if overdue)
               const now = new Date();
@@ -1119,7 +1119,7 @@ export const getRecentMatters = authorized
         assignedDate: matter.assignedDate,
         updatedAt: matter.updatedAt,
         calculatedDeadline,
-        isPastEstimatedDeadline,
+        isPastDeadline,
         totalHoursElapsed,
         daysUntilDeadline,
         estimatedDays: matterTypeEstDaysMap.get(matter.matterTypeId || 0) || null,
