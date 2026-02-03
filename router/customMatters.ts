@@ -27,9 +27,10 @@ export const getCustomMatters = authorized
     const page = input.page || 1;
     const perPage = 20;
     
-    // Build database query filters
+    // Build database query filters - MUST match Status Groups query logic
     const whereClause: Prisma.mattersWhereInput = {
       userId: context.user.id,
+      archived: false,
       discardedAt: null,
     };
 
@@ -105,13 +106,22 @@ export const getCustomMatters = authorized
             (mapping) => mapping.matterStatus.docketwiseId
           );
           
-          // Match on statusId OR statusForFilingId
+          // Match on statusId OR statusForFilingId - use AND to avoid mixing with other OR clauses
           if (docketwiseStatusIds.length > 0) {
-            whereClause.OR = whereClause.OR || [];
-            whereClause.OR.push(
-              { statusId: { in: docketwiseStatusIds } },
-              { statusForFilingId: { in: docketwiseStatusIds } }
-            );
+            const statusFilter = {
+              OR: [
+                { statusId: { in: docketwiseStatusIds } },
+                { statusForFilingId: { in: docketwiseStatusIds } }
+              ]
+            };
+            
+            if (Array.isArray(whereClause.AND)) {
+              whereClause.AND.push(statusFilter);
+            } else if (whereClause.AND) {
+              whereClause.AND = [whereClause.AND, statusFilter];
+            } else {
+              whereClause.AND = [statusFilter];
+            }
           }
         }
       }

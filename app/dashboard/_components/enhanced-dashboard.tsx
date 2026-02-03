@@ -21,6 +21,7 @@ import { useDebounceCallback } from "usehooks-ts";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface DashboardStats {
+  totalMatters: number;
   activeMattersCount: number;
   newMattersThisMonth: number;
   criticalMatters: number;
@@ -72,14 +73,14 @@ interface MonthlyTrend {
   rfe: number;
 }
 
-interface StatusCategory {
-  category: string;
-  count: number;
-  statuses: Array<{
-    statusId: number;
-    statusName: string;
-    matterCount: number;
-  }>;
+interface StatusGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  displayOrder: number;
+  matterCount: number;
 }
 
 interface EnhancedDashboardProps {
@@ -92,7 +93,7 @@ interface EnhancedDashboardProps {
   };
   teamMembers: TeamMemberData[];
   monthlyTrends: MonthlyTrend[];
-  statusByCategory: StatusCategory[];
+  statusGroups: StatusGroup[];
 }
 
 function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
@@ -287,7 +288,7 @@ export function EnhancedDashboard({
   distribution,
   teamMembers,
   monthlyTrends,
-  statusByCategory,
+  statusGroups,
 }: EnhancedDashboardProps) {
   // Use real monthly trends data from API (or fallback to empty if not available)
   const adjudicationData = monthlyTrends.length > 0 
@@ -323,8 +324,8 @@ export function EnhancedDashboard({
       {/* Row 2: Secondary KPI Cards */}
       <SecondaryKPICards stats={stats} />
 
-      {/* Row 3: Workflow Stage Cards - using real status categories */}
-      <WorkflowStageCards distribution={distribution} statusByCategory={statusByCategory} />
+      {/* Row 3: Workflow Stage Cards - using Status Groups */}
+      <WorkflowStageCards distribution={distribution} statusGroups={statusGroups} totalMatters={stats.totalMatters} />
 
       {/* Row 4: In-House Team Cards */}
       <TeamPerformanceCards members={teamPerformanceData} title="In-House Team" />

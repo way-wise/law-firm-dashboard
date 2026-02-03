@@ -82,6 +82,7 @@ import { sendMatterNotification } from "./sendMatterNotification";
 import { unifiedSync, getSyncStatus } from "./unifiedSync";
 import {
   getStatusGroups,
+  getActiveStatusGroups,
   getStatusGroupById,
   createStatusGroup,
   updateStatusGroup,
@@ -185,6 +186,7 @@ export const router = {
   },
   statusGroups: {
     get: getStatusGroups,
+    getActive: getActiveStatusGroups,
     getById: getStatusGroupById,
     create: createStatusGroup,
     update: updateStatusGroup,

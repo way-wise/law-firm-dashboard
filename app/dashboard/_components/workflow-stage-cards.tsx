@@ -4,21 +4,22 @@ import { Card } from "@/components/ui/card";
 import { FileEdit, Send, AlertCircle, Clock, CheckCircle, XCircle, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface StatusCategory {
-  category: string;
-  count: number;
-  statuses: Array<{
-    statusId: number;
-    statusName: string;
-    matterCount: number;
-  }>;
+interface StatusGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  displayOrder: number;
+  matterCount: number;
 }
 
 interface WorkflowStageCardsProps {
   distribution: {
     byStatus: Array<{ status: string; count: number }>;
   };
-  statusByCategory?: StatusCategory[];
+  statusGroups?: StatusGroup[];
+  totalMatters: number;
 }
 
 // Map category names to display config
@@ -78,28 +79,30 @@ const categoryConfig: Record<string, {
   },
 };
 
-// Priority order for displaying categories
-const categoryPriority = ['pending', 'filed', 'rfe', 'interview', 'approved', 'denied', 'closed', 'other'];
-
-export function WorkflowStageCards({ distribution, statusByCategory }: WorkflowStageCardsProps) {
-  // Use statusByCategory if available (real data from matterStatuses table)
+export function WorkflowStageCards({ distribution, statusGroups, totalMatters }: WorkflowStageCardsProps) {
+  // Use Status Groups if available (admin-defined groupings)
   // Otherwise fall back to distribution.byStatus parsing
   let stages: Array<{ key: string; label: string; icon: typeof FileEdit; iconBg: string; progressColor: string; count: number }>;
   
-  if (statusByCategory && statusByCategory.length > 0) {
-    // Use real categorized data from API
-    stages = categoryPriority
-      .map(category => {
-        const data = statusByCategory.find(s => s.category === category);
-        const config = categoryConfig[category] || categoryConfig.other;
+  if (statusGroups && statusGroups.length > 0) {
+    // Use Status Groups - map group name to category config for icons/colors
+    stages = statusGroups
+      .map(group => {
+        // Try to find matching config by lowercase name (pending, rfe, filed, etc.)
+        const configKey = group.name.toLowerCase();
+        const config = categoryConfig[configKey] || categoryConfig.other;
+        
         return {
-          key: category,
-          ...config,
-          count: data?.count || 0,
+          key: group.id,
+          label: group.name, // Use actual group name from admin
+          icon: config.icon,
+          iconBg: config.iconBg,
+          progressColor: config.progressColor,
+          count: group.matterCount,
         };
       })
-      .filter(s => s.count > 0) // Only show categories with matters
-      .slice(0, 4); // Show top 4 categories
+      .filter(s => s.count > 0) // Only show groups with matters
+      .slice(0, 4); // Show top 4 groups
   } else {
     // Fallback to old string matching logic
     const stageConfig = [
@@ -121,14 +124,12 @@ export function WorkflowStageCards({ distribution, statusByCategory }: WorkflowS
     });
   }
 
-  // Calculate total for percentage
-  const total = stages.reduce((sum, s) => sum + s.count, 0) || 1;
-
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {stages.map((stage) => {
         const Icon = stage.icon;
-        const percentage = Math.round((stage.count / total) * 100);
+        // Percentage against ALL matters in database, not just displayed cards
+        const percentage = totalMatters > 0 ? Math.round((stage.count / totalMatters) * 100) : 0;
         
         return (
           <Card key={stage.key} className="p-4 h-[120px] flex flex-col">

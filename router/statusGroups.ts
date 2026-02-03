@@ -8,6 +8,73 @@ import {
 } from "@/schema/statusGroupSchema";
 import * as z from "zod";
 
+// Get active status groups for dashboard (no pagination)
+export const getActiveStatusGroups = authorized
+  .route({
+    method: "GET",
+    path: "/status-groups/active",
+    summary: "Get active status groups with matter counts for dashboard",
+    tags: ["Status Groups"],
+  })
+  .output(z.array(statusGroupWithCountSchema))
+  .handler(async ({ context }) => {
+    const statusGroups = await prisma.statusGroups.findMany({
+      where: {
+        userId: context.user.id,
+        isActive: true,
+      },
+      include: {
+        statusGroupMappings: {
+          include: {
+            matterStatus: true,
+          },
+        },
+      },
+      orderBy: { displayOrder: "asc" },
+    });
+
+    // Get matter counts for each status group
+    const statusGroupsWithCounts = await Promise.all(
+      statusGroups.map(async (group) => {
+        // Get all Docketwise status IDs in this group
+        const docketwiseStatusIds = group.statusGroupMappings.map(
+          (mapping) => mapping.matterStatus.docketwiseId
+        );
+
+        // Count matters that have these statuses - EXACT same logic as matters table filter
+        const matterCount = await prisma.matters.count({
+          where: {
+            userId: context.user.id,
+            archived: false,
+            discardedAt: null,
+            OR: [
+              { statusId: { in: docketwiseStatusIds } },
+              { statusForFilingId: { in: docketwiseStatusIds } },
+            ],
+          },
+        });
+
+        return {
+          id: group.id,
+          userId: group.userId,
+          name: group.name,
+          description: group.description,
+          color: group.color,
+          icon: group.icon,
+          displayOrder: group.displayOrder,
+          isActive: group.isActive,
+          isSystem: group.isSystem,
+          createdAt: group.createdAt,
+          updatedAt: group.updatedAt,
+          matterCount,
+          matterStatusIds: group.statusGroupMappings.map((m) => m.matterStatusId),
+        };
+      })
+    );
+
+    return statusGroupsWithCounts;
+  });
+
 // Get all status groups with matter counts
 export const getStatusGroups = authorized
   .route({

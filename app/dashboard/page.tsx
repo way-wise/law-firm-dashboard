@@ -6,7 +6,7 @@ import { DashboardHeader } from "./_components/dashboard-header";
 const DashboardOverviewPage = async () => {
   // Fetch all dashboard data from database via oRPC with proper error handling
   // Fetch dashboard data
-  const [stats, assigneeStats, recentMatters, distribution, monthlyTrends, statusByCategory] = await Promise.all([
+  const [stats, assigneeStats, recentMatters, distribution, monthlyTrends, statusGroups] = await Promise.all([
     client.dashboard.getStats({}).catch(() => ({
       totalContacts: 0,
       totalMatters: 0,
@@ -59,7 +59,7 @@ const DashboardOverviewPage = async () => {
       byStatus: [],
     })),
     client.dashboard.getMonthlyTrends({ months: 6 }).catch(() => []),
-    client.dashboard.getStatusByCategory({}).catch(() => []),
+    client.statusGroups.getActive().catch(() => []),
   ]);
 
   // Calculate days until deadline for recent matters
@@ -98,7 +98,7 @@ const DashboardOverviewPage = async () => {
         distribution={distribution}
         teamMembers={teamMembers}
         monthlyTrends={monthlyTrends}
-        statusByCategory={statusByCategory}
+        statusGroups={statusGroups}
       />
     </div>
   );
