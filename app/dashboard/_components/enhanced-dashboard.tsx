@@ -316,6 +316,10 @@ export function EnhancedDashboard({
     completedCount: member.completedCount,
   }));
 
+  // Get Active status group count
+  const activeStatusGroup = statusGroups.find(g => g.name.toLowerCase() === 'active');
+  const activeStatusGroupCount = activeStatusGroup?.matterCount ?? 0;
+
   return (
     <div className="space-y-5">
       {/* Row 1: Primary KPI Cards */}
@@ -327,8 +331,12 @@ export function EnhancedDashboard({
       {/* Row 3: Workflow Stage Cards - using Status Groups */}
       <WorkflowStageCards distribution={distribution} statusGroups={statusGroups} totalMatters={stats.totalMatters} />
 
-      {/* Row 4: In-House Team Cards */}
-      <TeamPerformanceCards members={teamPerformanceData} title="In-House Team" />
+      {/* Row 4: In-House Team Cards - using Active status group count */}
+      <TeamPerformanceCards 
+        members={teamPerformanceData} 
+        title="In-House Team"
+        activeStatusGroupCount={activeStatusGroupCount}
+      />
 
       {/* Row 5: Adjudication Trends + Paralegal Throughput */}
       <div className="grid gap-4 lg:grid-cols-5 min-h-[280px]">

@@ -27,12 +27,8 @@ export const getCustomMatters = authorized
     const page = input.page || 1;
     const perPage = 20;
     
-    // Build database query filters - MUST match Status Groups query logic
-    const whereClause: Prisma.mattersWhereInput = {
-      userId: context.user.id,
-      archived: false,
-      discardedAt: null,
-    };
+    // Build database query filters - only explicit user filters, no hidden filters
+    const whereClause: Prisma.mattersWhereInput = {};
 
     // Search filter (search across multiple fields)
     if (input.search) {
@@ -94,7 +90,7 @@ export const getCustomMatters = authorized
             statusGroupMappings: {
               select: {
                 matterStatus: {
-                  select: { docketwiseId: true },
+                  select: { docketwiseId: true, name: true },
                 },
               },
             },
@@ -106,12 +102,30 @@ export const getCustomMatters = authorized
             (mapping) => mapping.matterStatus.docketwiseId
           );
           
-          // Match on statusId OR statusForFilingId - use AND to avoid mixing with other OR clauses
+          const statusNames = statusGroup.statusGroupMappings.map(
+            (mapping) => mapping.matterStatus.name
+          );
+          
+          // Match on statusId OR statusForFilingId - handle NULL statusIds by matching text
           if (docketwiseStatusIds.length > 0) {
             const statusFilter = {
               OR: [
                 { statusId: { in: docketwiseStatusIds } },
-                { statusForFilingId: { in: docketwiseStatusIds } }
+                { statusForFilingId: { in: docketwiseStatusIds } },
+                // Handle NULL statusId - match by status name
+                {
+                  AND: [
+                    { statusId: null },
+                    { status: { in: statusNames } }
+                  ]
+                },
+                // Handle NULL statusForFilingId - match by statusForFiling name
+                {
+                  AND: [
+                    { statusForFilingId: null },
+                    { statusForFiling: { in: statusNames } }
+                  ]
+                },
               ]
             };
             
@@ -153,15 +167,12 @@ export const getCustomMatters = authorized
     const staleMeasurementDays = syncSettings?.staleMeasurementDays || 10;
 
     // Fetch from database with filters
-    const [totalCount, dbMatters] = await Promise.all([
-      prisma.matters.count({ where: whereClause }),
-      prisma.matters.findMany({
-        where: whereClause,
-        orderBy: { docketwiseCreatedAt: 'desc' },
-        skip: (page - 1) * perPage,
-        take: perPage,
-      }),
-    ]);
+    const dbMatters = await prisma.matters.findMany({
+      where: whereClause,
+      orderBy: { docketwiseCreatedAt: 'desc' },
+      skip: (page - 1) * perPage,
+      take: perPage,
+    });
 
     // Load matter types for deadline calculation
     const matterTypes = await prisma.matterTypes.findMany({
@@ -289,13 +300,56 @@ export const getCustomMatters = authorized
       };
     });
 
-    // Database pagination is already applied
-    const totalPages = Math.ceil(totalCount / perPage);
+    // IMPORTANT: Use actual filtered data count for pagination since post-processing filters reduce the dataset
+    // The DB query doesn't handle all filters - JavaScript filters (assignees, activity status) are applied after
+    // This fixes the off-by-one issue where DB shows 60 but after filtering we have 59
+    
+    // For accurate pagination, we need to count ALL filtered results, not just current page
+    // Since we're applying filters in JS, we need to do a full count query
+    const allFilteredMatters = await prisma.matters.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        assignees: true,
+        archived: true,
+        closedAt: true,
+        status: true,
+        docketwiseUpdatedAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    // Apply same post-processing filters
+    const totalFilteredCount = allFilteredMatters.filter((matter) => {
+      if (input.assignees) {
+        const assigneesLower = input.assignees.toLowerCase();
+        const matchLegacyAssignees = matter.assignees?.toLowerCase().includes(assigneesLower);
+        if (!matchLegacyAssignees) return false;
+      }
+      
+      if (input.activityStatus) {
+        const activityStatus = getMatterActivityStatus(
+          {
+            archived: matter.archived,
+            closedAt: matter.closedAt,
+            status: matter.status,
+            docketwiseUpdatedAt: matter.docketwiseUpdatedAt,
+            updatedAt: matter.updatedAt,
+          },
+          staleMeasurementDays
+        );
+        if (activityStatus !== input.activityStatus) return false;
+      }
+      
+      return true;
+    }).length;
+    
+    const totalPages = Math.ceil(totalFilteredCount / perPage);
     
     return {
       data: mattersWithDeadlines,
       pagination: {
-        total: totalCount,
+        total: totalFilteredCount, // Accurate count after all filters
         page,
         perPage,
         totalPages,

@@ -15,10 +15,12 @@ interface TeamMember {
 interface TeamPerformanceCardsProps {
   members: TeamMember[];
   title?: string;
+  activeStatusGroupCount?: number; // Total from Active status group
 }
 
-export function TeamPerformanceCards({ members, title = "In-House Team" }: TeamPerformanceCardsProps) {
-  const totalActive = members.reduce((sum, m) => sum + m.activeMatters, 0);
+export function TeamPerformanceCards({ members, title = "In-House Team", activeStatusGroupCount }: TeamPerformanceCardsProps) {
+  // Use Active status group count if provided, otherwise sum team member counts
+  const totalActive = activeStatusGroupCount ?? members.reduce((sum, m) => sum + m.activeMatters, 0);
 
   if (members.length === 0) {
     return (
@@ -43,38 +45,19 @@ export function TeamPerformanceCards({ members, title = "In-House Team" }: TeamP
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {members.slice(0, 6).map((member, idx) => {
-          const total = member.activeMatters + member.completedCount;
-          const completionRate = total > 0 ? (member.completedCount / total) * 100 : 0;
-          
-          return (
-            <Card key={idx} className="p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="font-medium">{member.name}</p>
-                  <p className="text-sm text-muted-foreground">{member.activeMatters} cases</p>
-                </div>
-                <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                  <User className="size-4" />
-                </div>
+        {members.slice(0, 6).map((member, idx) => (
+          <Card key={idx} className="p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-medium">{member.name}</p>
+                <p className="text-sm text-muted-foreground">{member.activeMatters} assigned</p>
               </div>
-              
-              {/* Progress bar */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Completion</span>
-                  <span className="font-medium">{completionRate.toFixed(0)}%</span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${completionRate}%` }}
-                  />
-                </div>
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <User className="size-4" />
               </div>
-            </Card>
-          );
-        })}
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   );

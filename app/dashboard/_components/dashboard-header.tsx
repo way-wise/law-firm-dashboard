@@ -1,15 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
-import { subDays } from "date-fns";
+import { subDays, format } from "date-fns";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export function DashboardHeader() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 30),
-    to: new Date(),
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // Initialize from URL or default to last 30 days
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const from = searchParams.get("dateFrom");
+    const to = searchParams.get("dateTo");
+    
+    if (from && to) {
+      return {
+        from: new Date(from),
+        to: new Date(to),
+      };
+    }
+    
+    return {
+      from: subDays(new Date(), 30),
+      to: new Date(),
+    };
   });
+
+  // Update URL when date range changes
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("dateFrom", format(dateRange.from, "yyyy-MM-dd"));
+      params.set("dateTo", format(dateRange.to, "yyyy-MM-dd"));
+      router.push(`/dashboard?${params.toString()}`);
+    }
+  }, [dateRange, router, searchParams]);
 
   return (
     <div className="flex items-center justify-between">

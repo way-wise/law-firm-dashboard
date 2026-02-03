@@ -39,10 +39,14 @@ const dashboardStatsSchema = z.object({
   staleMattersCount: z.number(), // Matters not updated in staleMeasurementDays
 
   // Risk Command Center
-  overdueMatters: z.number(),
+  overdueMatters: z.number(), // Deadline passed AND billing not paid
   atRiskMatters: z.number(), // Due within 7 days
   unassignedMatters: z.number(),
   overloadedParalegals: z.number(), // Paralegals with >90% utilization
+  
+  // Middle Row KPIs
+  avgDaysToFile: z.number(), // Average days from creation to update for Filed status group
+  caseValue: z.number(), // Sum of flatFee for Active status group matters
 
   // Financial metrics
   totalRevenue: z.number(),
@@ -149,17 +153,19 @@ export const getDashboardStats = authorized
   })
   .input(dashboardStatsInputSchema)
   .output(dashboardStatsSchema)
-  .handler(async ({ context }) => {
+  .handler(async ({ context, input }) => {
     console.log("[DASHBOARD] Calculating stats in real-time from database");
+    
+    // Parse date range from input
+    const dateFrom = input.dateFrom ? new Date(input.dateFrom) : null;
+    const dateTo = input.dateTo ? new Date(input.dateTo + 'T23:59:59.999Z') : null;
     
     // === CALCULATE ALL STATS IN REAL-TIME ===
     
     // Basic counts
     const totalContacts = await prisma.contacts.count();
-    // Total Matters = count of all matters for this user (no other filters)
-    const totalMatters = await prisma.matters.count({
-      where: { userId: context.user.id },
-    });
+    // Total Matters = count of ALL matters in database (no filters)
+    const totalMatters = await prisma.matters.count();
     const categories = await prisma.categories.count();
     const totalMatterTypes = await prisma.matterTypes.count();
     const matterTypesWithWorkflow = await prisma.matterTypes.count({
@@ -175,10 +181,7 @@ export const getDashboardStats = authorized
     });
     const editedMatters = await prisma.matters.count({
       where: {
-        userId: context.user.id,
         isEdited: true,
-        archived: false,
-        discardedAt: null,
       },
     });
 
@@ -186,13 +189,8 @@ export const getDashboardStats = authorized
     
     // Get comprehensive data for KPI calculations
     const [allMatters, matterTypesFull, paralegals] = await Promise.all([
-      // All matters with full data
+      // All matters with full data - no hidden filters
       prisma.matters.findMany({
-        where: { 
-          userId: context.user.id,
-          archived: false,
-          discardedAt: null,
-        },
         select: {
           id: true,
           status: true,
@@ -259,29 +257,41 @@ export const getDashboardStats = authorized
     // 1. Active Matters Count (simple count)
     const activeMattersCount = activeMatters.length;
     
-    // 2. New Matters This Month
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // 2. New Matters in Date Range (based on docketwiseCreatedAt)
     const newMattersThisMonth = allMatters.filter(m => {
-      const createdDate = m.docketwiseCreatedAt || m.createdAt;
+      const createdDate = m.docketwiseCreatedAt;
       if (!createdDate) return false;
       const date = new Date(createdDate);
-      return date >= startOfMonth;
+      
+      // Filter by date range if provided
+      if (dateFrom && date < dateFrom) return false;
+      if (dateTo && date > dateTo) return false;
+      
+      return true;
     }).length;
     
-    // 3. New Matters Last Month (for growth calculation)
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    const newMattersLastMonth = allMatters.filter(m => {
-      const createdDate = m.docketwiseCreatedAt || m.createdAt;
-      if (!createdDate) return false;
-      const date = new Date(createdDate);
-      return date >= startOfLastMonth && date <= endOfLastMonth;
-    }).length;
+    // 3. Calculate growth trend (percentage change vs previous period)
+    let mattersTrend = 0;
+    if (dateFrom && dateTo) {
+      const rangeMs = dateTo.getTime() - dateFrom.getTime();
+      const prevFrom = new Date(dateFrom.getTime() - rangeMs);
+      const prevTo = new Date(dateFrom.getTime() - 1);
+      
+      const prevPeriodMatters = allMatters.filter(m => {
+        const createdDate = m.docketwiseCreatedAt;
+        if (!createdDate) return false;
+        const date = new Date(createdDate);
+        return date >= prevFrom && date <= prevTo;
+      }).length;
+      
+      if (prevPeriodMatters > 0) {
+        mattersTrend = Math.round(((newMattersThisMonth - prevPeriodMatters) / prevPeriodMatters) * 100);
+      }
+    }
     
-    const growthDiff = newMattersThisMonth - newMattersLastMonth;
-    const newMattersGrowth = growthDiff >= 0 
-      ? `+${growthDiff} from last month` 
-      : `${growthDiff} from last month`;
+    const newMattersGrowth = mattersTrend >= 0 
+      ? `+${mattersTrend}% vs last period` 
+      : `${mattersTrend}% vs last period`;
     
     // 4. Critical Matters (deadline within 7 days or passed)
     const criticalMatters = allMatters.filter(m => {
@@ -290,17 +300,52 @@ export const getDashboardStats = authorized
       return daysUntil <= 7; // includes overdue (negative) and upcoming
     }).length;
     
-    // 5. RFE Frequency (count of matters with RFE in status or statusForFiling)
-    // Note: statusForFiling is the Docketwise "Status For Filing" column where RFE status is stored
-    const rfeFrequency = allMatters.filter(m => {
-      const statusForFiling = (m.statusForFiling || "").toLowerCase();
-      const status = (m.status || "").toLowerCase();
-      // Match any variation of RFE status
-      return statusForFiling.includes("request for evidence") || 
-             statusForFiling.includes("rfe") ||
-             status.includes("request for evidence") ||
-             status.includes("rfe");
-    }).length;
+    // 5. RFE Frequency (calculate occurrence rate in date range)
+    // Get RFE status group to find all RFE statuses
+    const rfeStatusGroup = await prisma.statusGroups.findFirst({
+      where: {
+        userId: context.user.id,
+        name: { equals: 'RFE', mode: 'insensitive' },
+      },
+      include: {
+        statusGroupMappings: {
+          select: {
+            matterStatus: { select: { docketwiseId: true } },
+          },
+        },
+      },
+    });
+    
+    let rfeFrequency = 0;
+    if (rfeStatusGroup && dateFrom && dateTo) {
+      const rfeStatusIds = rfeStatusGroup.statusGroupMappings.map(
+        (m) => m.matterStatus.docketwiseId
+      );
+      
+      // Count RFE matters in date range
+      const rfeMattersInRange = allMatters.filter(m => {
+        const hasRFEStatus = rfeStatusIds.includes(m.statusId || 0) || 
+                            rfeStatusIds.includes(m.statusForFilingId || 0);
+        if (!hasRFEStatus) return false;
+        
+        const createdDate = m.docketwiseCreatedAt;
+        if (!createdDate) return false;
+        const date = new Date(createdDate);
+        
+        return date >= dateFrom && date <= dateTo;
+      }).length;
+      
+      // Calculate frequency: RFEs per day in the range
+      const rangeInDays = Math.ceil((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24));
+      rfeFrequency = rangeInDays > 0 ? Math.round((rfeMattersInRange / rangeInDays) * 10) / 10 : 0;
+    } else {
+      // Fallback: just count RFE matters
+      rfeFrequency = allMatters.filter(m => {
+        const statusForFiling = (m.statusForFiling || "").toLowerCase();
+        const status = (m.status || "").toLowerCase();
+        return statusForFiling.includes("rfe") || status.includes("rfe");
+      }).length;
+    }
     
     // 6. Weighted Active Matters (complexity weighted)
     const weightedActiveMatters = activeMatters.reduce((total, matter) => {
@@ -320,7 +365,7 @@ export const getDashboardStats = authorized
         statusGroupMappings: {
           select: {
             matterStatus: {
-              select: { docketwiseId: true },
+              select: { docketwiseId: true, name: true },
             },
           },
         },
@@ -334,15 +379,30 @@ export const getDashboardStats = authorized
         const docketwiseStatusIds = group.statusGroupMappings.map(
           (mapping) => mapping.matterStatus.docketwiseId
         );
+        
+        const statusNames = group.statusGroupMappings.map(
+          (mapping) => mapping.matterStatus.name
+        );
 
         const count = await prisma.matters.count({
           where: {
-            userId: context.user.id,
-            archived: false,
-            discardedAt: null,
             OR: [
               { statusId: { in: docketwiseStatusIds } },
               { statusForFilingId: { in: docketwiseStatusIds } },
+              // Handle NULL statusId - match by status name
+              {
+                AND: [
+                  { statusId: null },
+                  { status: { in: statusNames } }
+                ]
+              },
+              // Handle NULL statusForFilingId - match by statusForFiling name
+              {
+                AND: [
+                  { statusForFilingId: null },
+                  { statusForFiling: { in: statusNames } }
+                ]
+              },
             ],
           },
         });
@@ -368,9 +428,6 @@ export const getDashboardStats = authorized
     
     const staleMattersCount = await prisma.matters.count({
       where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
         docketwiseUpdatedAt: { lte: staleDate },
       },
     });
@@ -395,16 +452,30 @@ export const getDashboardStats = authorized
         return total + flatFee;
       }, 0);
 
-    // 3. Deadline Compliance Rate
-    const completedWithDeadlines = allMatters.filter(m => 
-      m.closedAt && m.deadline
-    );
-    const onTimeDeliveries = completedWithDeadlines.filter(m => 
-      new Date(m.closedAt!) <= new Date(m.deadline!)
-    ).length;
-    const deadlineComplianceRate = completedWithDeadlines.length > 0 
-      ? (onTimeDeliveries / completedWithDeadlines.length) * 100 
-      : 0;
+    // 3. On-Time Rate - COUNT of matters closed before deadline (in date range if provided)
+    let deadlineComplianceRate = 0;
+    if (dateFrom && dateTo) {
+      // Filter matters with deadline in the date range
+      const mattersWithDeadlineInRange = allMatters.filter(m => {
+        if (!m.deadline) return false;
+        const deadline = new Date(m.deadline);
+        return deadline >= dateFrom && deadline <= dateTo;
+      });
+      
+      // Count those closed before their deadline
+      deadlineComplianceRate = mattersWithDeadlineInRange.filter(m => {
+        if (!m.closedAt) return false;
+        return new Date(m.closedAt) <= new Date(m.deadline!);
+      }).length;
+    } else {
+      // Fallback: all closed before deadline
+      const completedWithDeadlines = allMatters.filter(m => 
+        m.closedAt && m.deadline
+      );
+      deadlineComplianceRate = completedWithDeadlines.filter(m => 
+        new Date(m.closedAt!) <= new Date(m.deadline!)
+      ).length;
+    }
 
     // 4. Average Cycle Time
     const completedMatterData = allMatters.filter(matter => 
@@ -429,8 +500,10 @@ export const getDashboardStats = authorized
       : 0;
 
     // Risk Command Center
+    // Overdue = deadline passed AND billing status is NOT paid
     const overdueMatters = allMatters.filter(m => {
       if (!m.deadline) return false;
+      if (m.billingStatus === 'PAID') return false; // Exclude paid matters
       return new Date(m.deadline) < now;
     }).length;
 
@@ -440,16 +513,75 @@ export const getDashboardStats = authorized
       return daysUntil > 0 && daysUntil <= 7;
     }).length;
 
-    // Unassigned matters - count matters for this user without assignees
+    // Unassigned matters - count matters without assignees (real-time)
     const unassignedMatters = await prisma.matters.count({
       where: {
-        userId: context.user.id,
         OR: [
           { assignees: null },
           { assignees: "" },
         ],
       },
     });
+
+    // === MIDDLE ROW KPIs ===
+    
+    // 1. AVG Days to File - average days from creation to update for Filed status group
+    const filedStatusGroup = statusGroups.find(g => g.name.toLowerCase() === 'filed');
+    let avgDaysToFile = 0;
+    if (filedStatusGroup) {
+      const filedStatusIds = filedStatusGroup.statusGroupMappings.map(
+        (mapping) => mapping.matterStatus.docketwiseId
+      );
+      
+      const filedMatters = await prisma.matters.findMany({
+        where: {
+          OR: [
+            { statusId: { in: filedStatusIds } },
+            { statusForFilingId: { in: filedStatusIds } },
+          ],
+          docketwiseCreatedAt: { not: null },
+          docketwiseUpdatedAt: { not: null },
+        },
+        select: {
+          docketwiseCreatedAt: true,
+          docketwiseUpdatedAt: true,
+        },
+      });
+      
+      if (filedMatters.length > 0) {
+        const totalDays = filedMatters.reduce((sum, matter) => {
+          const createdAt = new Date(matter.docketwiseCreatedAt!);
+          const updatedAt = new Date(matter.docketwiseUpdatedAt!);
+          const days = Math.ceil((updatedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+          return sum + Math.max(0, days); // Avoid negative days
+        }, 0);
+        avgDaysToFile = Math.round(totalDays / filedMatters.length);
+      }
+    }
+    
+    // 2. Case Value - sum of flatFee for Active status group matters
+    const activeStatusGroup = statusGroups.find(g => g.name.toLowerCase() === 'active');
+    let caseValue = 0;
+    if (activeStatusGroup) {
+      const activeStatusIds = activeStatusGroup.statusGroupMappings.map(
+        (mapping) => mapping.matterStatus.docketwiseId
+      );
+      
+      const activeMattersWithFee = await prisma.matters.findMany({
+        where: {
+          OR: [
+            { statusId: { in: activeStatusIds } },
+            { statusForFilingId: { in: activeStatusIds } },
+          ],
+          flatFee: { not: null },
+        },
+        select: {
+          flatFee: true,
+        },
+      });
+      
+      caseValue = activeMattersWithFee.reduce((sum, matter) => sum + (matter.flatFee || 0), 0);
+    }
 
     const overloadedParalegals = paralegals.filter(paralegal => {
       const assignedMatters = allMatters.filter(m => m.teamId === paralegal.docketwiseId);
@@ -529,58 +661,44 @@ export const getDashboardStats = authorized
       return sum + (baseHours * complexity);
     }, 0);
 
-    // Calculate real period-over-period trends
-    
-    // Matters trend: compare this month vs last month new matters
-    const mattersTrend = newMattersLastMonth > 0 
-      ? Math.round(((newMattersThisMonth - newMattersLastMonth) / newMattersLastMonth) * 100)
-      : newMattersThisMonth > 0 ? 100 : 0;
+    // Calculate revenue trend (using date range if available)
+    let revenueTrend = 0;
+    if (dateFrom && dateTo) {
+      const rangeMs = dateTo.getTime() - dateFrom.getTime();
+      const prevFrom = new Date(dateFrom.getTime() - rangeMs);
+      const prevTo = new Date(dateFrom.getTime() - 1);
+      
+      const currentPeriodRevenue = allMatters
+        .filter(m => {
+          if (!m.closedAt) return false;
+          const closedDate = new Date(m.closedAt);
+          return closedDate >= dateFrom && closedDate <= dateTo;
+        })
+        .reduce((sum, m) => {
+          if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
+          const matterType = matterTypeMap.get(m.matterTypeId || 0);
+          return sum + (matterType?.flatFee || 0);
+        }, 0);
 
-    // Revenue trend: compare this month's closed matters revenue vs last month
-    const thisMonthClosedRevenue = allMatters
-      .filter(m => {
-        if (!m.closedAt) return false;
-        const closedDate = new Date(m.closedAt);
-        return closedDate >= startOfMonth;
-      })
-      .reduce((sum, m) => {
-        if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
-        const matterType = matterTypeMap.get(m.matterTypeId || 0);
-        return sum + (matterType?.flatFee || 0);
-      }, 0);
+      const prevPeriodRevenue = allMatters
+        .filter(m => {
+          if (!m.closedAt) return false;
+          const closedDate = new Date(m.closedAt);
+          return closedDate >= prevFrom && closedDate <= prevTo;
+        })
+        .reduce((sum, m) => {
+          if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
+          const matterType = matterTypeMap.get(m.matterTypeId || 0);
+          return sum + (matterType?.flatFee || 0);
+        }, 0);
 
-    const lastMonthClosedRevenue = allMatters
-      .filter(m => {
-        if (!m.closedAt) return false;
-        const closedDate = new Date(m.closedAt);
-        return closedDate >= startOfLastMonth && closedDate <= endOfLastMonth;
-      })
-      .reduce((sum, m) => {
-        if (m.flatFee !== null && m.flatFee !== undefined) return sum + m.flatFee;
-        const matterType = matterTypeMap.get(m.matterTypeId || 0);
-        return sum + (matterType?.flatFee || 0);
-      }, 0);
+      if (prevPeriodRevenue > 0) {
+        revenueTrend = Math.round(((currentPeriodRevenue - prevPeriodRevenue) / prevPeriodRevenue) * 100);
+      }
+    }
 
-    const revenueTrend = lastMonthClosedRevenue > 0
-      ? Math.round(((thisMonthClosedRevenue - lastMonthClosedRevenue) / lastMonthClosedRevenue) * 100)
-      : thisMonthClosedRevenue > 0 ? 100 : 0;
-
-    // Deadline miss trend: compare overdue matters this month vs last month
-    const thisMonthOverdue = allMatters.filter(m => {
-      if (!m.deadline) return false;
-      const deadline = new Date(m.deadline);
-      return deadline < now && deadline >= startOfMonth;
-    }).length;
-
-    const lastMonthOverdue = allMatters.filter(m => {
-      if (!m.deadline) return false;
-      const deadline = new Date(m.deadline);
-      return deadline >= startOfLastMonth && deadline <= endOfLastMonth && deadline < now;
-    }).length;
-
-    const deadlineMissTrend = lastMonthOverdue > 0
-      ? Math.round(((thisMonthOverdue - lastMonthOverdue) / lastMonthOverdue) * 100)
-      : thisMonthOverdue > 0 ? 100 : 0;
+    // Deadline miss trend - not currently used
+    const deadlineMissTrend = 0;
 
     // Data Quality Metrics
     const mattersWithoutPricing = allMatters.filter(m => {
@@ -642,6 +760,10 @@ export const getDashboardStats = authorized
       atRiskMatters,
       unassignedMatters,
       overloadedParalegals,
+
+      // Middle Row KPIs
+      avgDaysToFile,
+      caseValue,
 
       // Financial metrics
       totalRevenue,
@@ -718,11 +840,6 @@ export const getAssigneeStats = authorized
 
     // Fetch matters from DATABASE (no API calls!)
     const matters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       select: {
         id: true,
         assignees: true,
@@ -926,11 +1043,6 @@ export const getMatterDistribution = authorized
   }))
   .handler(async ({ context }) => {
     const matters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       select: {
         matterType: true,
         matterTypeId: true,
@@ -1010,11 +1122,6 @@ export const getRecentMatters = authorized
   .handler(async ({ input, context }) => {
     // Fetch matters from DATABASE (no API calls!) - ordered by most recently updated
     const matters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       orderBy: {
         docketwiseUpdatedAt: 'desc',
       },
@@ -1142,10 +1249,7 @@ export const getMatterStatusDistribution = authorized
     const statusGroups = await prisma.matters.groupBy({
       by: ["status"],
       where: {
-        userId: context.user.id,
         status: { not: null },
-        archived: false,
-        discardedAt: null,
       },
       _count: true,
     });
@@ -1168,11 +1272,6 @@ export const getMatterTypeDistribution = authorized
   .handler(async ({ context }) => {
     const typeGroups = await prisma.matters.groupBy({
       by: ["matterType"],
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       _count: true,
     });
 
@@ -1207,13 +1306,8 @@ export const getMonthlyTrends = authorized
     const now = new Date();
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     
-    // Get all matters for this user
+    // Get all matters
     const allMatters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       select: {
         docketwiseCreatedAt: true,
         createdAt: true,
@@ -1299,11 +1393,6 @@ export const getStatusDistribution = authorized
   .handler(async ({ context }) => {
     // Get all matters with their status IDs
     const matters = await prisma.matters.findMany({
-      where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
-      },
       select: {
         statusId: true,
         status: true,
@@ -1411,9 +1500,6 @@ export const getMatterStatusesByType = authorized
     const matterCounts = await prisma.matters.groupBy({
       by: ['statusId'],
       where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
         statusId: { not: null },
       },
       _count: true,

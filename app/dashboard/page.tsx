@@ -2,12 +2,19 @@ import "@/lib/orpc/server";
 import { client } from "@/lib/orpc/client";
 import { EnhancedDashboard } from "./_components/enhanced-dashboard";
 import { DashboardHeader } from "./_components/dashboard-header";
+import { subDays } from "date-fns";
 
-const DashboardOverviewPage = async () => {
+const DashboardOverviewPage = async ({ searchParams }: { searchParams: Promise<{ dateFrom?: string; dateTo?: string }> }) => {
+  const params = await searchParams;
+  
+  // Get date range from URL or default to last 30 days
+  const dateFrom = params.dateFrom || subDays(new Date(), 30).toISOString().split('T')[0];
+  const dateTo = params.dateTo || new Date().toISOString().split('T')[0];
+  
   // Fetch all dashboard data from database via oRPC with proper error handling
-  // Fetch dashboard data
+  // Fetch dashboard data with date range
   const [stats, assigneeStats, recentMatters, distribution, monthlyTrends, statusGroups] = await Promise.all([
-    client.dashboard.getStats({}).catch(() => ({
+    client.dashboard.getStats({ dateFrom, dateTo }).catch(() => ({
       totalContacts: 0,
       totalMatters: 0,
       totalMatterTypes: 0,
@@ -64,7 +71,7 @@ const DashboardOverviewPage = async () => {
 
   // Calculate days until deadline for recent matters
   const now = new Date();
-  const mattersWithRisk = recentMatters.map((matter) => {
+  const mattersWithRisk = recentMatters.map((matter: any) => {
     let daysUntilDeadline: number | null = null;
     if (matter.deadline) {
       const deadline = new Date(matter.deadline);
@@ -77,7 +84,7 @@ const DashboardOverviewPage = async () => {
   });
 
   // Transform assigneeStats to team members format - REAL DATA from database
-  const teamMembers = assigneeStats.map((member) => ({
+  const teamMembers = assigneeStats.map((member: any) => ({
     id: member.id,
     name: member.name,
     email: member.email,

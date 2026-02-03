@@ -315,25 +315,26 @@ export async function syncMatterDetails(
         // Fetch matter details with smart rate limit handling
         const { data: details, rateLimited } = await fetchMatterDetails(matter.docketwiseId, token);
 
-        // If rate limited after 2min retry, FAIL the sync
+        // If rate limited after 2min retry, PAUSE and save progress (don't fail)
+        // The sync will auto-resume from lastSyncedId on next run
         if (rateLimited) {
-          console.error(`[MATTER-DETAILS-SYNC] ❌ Rate limit exceeded. Failing sync.`);
+          console.warn(`[MATTER-DETAILS-SYNC] ⏸️ Rate limit hit. Saving progress and pausing. Will resume from ID ${lastProcessedId || 'newest'} on next sync.`);
           await prisma.syncProgress.update({
             where: { id: syncProgress!.id },
             data: {
-              status: 'failed',
-              failureReason: 'Rate limit exceeded after 2min retry',
+              status: 'idle', // Mark as idle so it can resume
               lastSyncedId: lastProcessedId,
+              lastSyncDate: new Date(), // Set to today so resumption logic knows this is today's sync
               totalProcessed: processedCount,
               totalFailed: failedCount,
               updatedAt: new Date(),
             },
           });
           return {
-            success: false,
+            success: true, // Return success so caller knows it's paused, not failed
             totalProcessed: processedCount,
             totalFailed: failedCount,
-            message: 'Sync failed: Rate limit exceeded',
+            message: `Sync paused due to rate limit. Processed ${processedCount} matters. Will auto-resume from ID ${lastProcessedId || 'newest'} on next sync (DESC order).`,
           };
         }
 

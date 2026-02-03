@@ -40,16 +40,32 @@ export const getActiveStatusGroups = authorized
         const docketwiseStatusIds = group.statusGroupMappings.map(
           (mapping) => mapping.matterStatus.docketwiseId
         );
+        
+        // Get status names for NULL statusId fallback
+        const statusNames = group.statusGroupMappings.map(
+          (mapping) => mapping.matterStatus.name
+        );
 
-        // Count matters that have these statuses - EXACT same logic as matters table filter
+        // Count matters that have these statuses - handle NULL statusIds by matching text
         const matterCount = await prisma.matters.count({
           where: {
-            userId: context.user.id,
-            archived: false,
-            discardedAt: null,
             OR: [
               { statusId: { in: docketwiseStatusIds } },
               { statusForFilingId: { in: docketwiseStatusIds } },
+              // Handle NULL statusId - match by status name
+              {
+                AND: [
+                  { statusId: null },
+                  { status: { in: statusNames } }
+                ]
+              },
+              // Handle NULL statusForFilingId - match by statusForFiling name
+              {
+                AND: [
+                  { statusForFilingId: null },
+                  { statusForFiling: { in: statusNames } }
+                ]
+              },
             ],
           },
         });
@@ -123,16 +139,32 @@ export const getStatusGroups = authorized
         const docketwiseStatusIds = group.statusGroupMappings.map(
           (mapping) => mapping.matterStatus.docketwiseId
         );
+        
+        // Get status names for NULL statusId fallback
+        const statusNames = group.statusGroupMappings.map(
+          (mapping) => mapping.matterStatus.name
+        );
 
-        // Count matters that have these statuses
+        // Count matters that have these statuses - handle NULL statusIds by matching text
         const matterCount = await prisma.matters.count({
           where: {
-            userId: context.user.id,
-            archived: false,
-            discardedAt: null,
             OR: [
               { statusId: { in: docketwiseStatusIds } },
               { statusForFilingId: { in: docketwiseStatusIds } },
+              // Handle NULL statusId - match by status name
+              {
+                AND: [
+                  { statusId: null },
+                  { status: { in: statusNames } }
+                ]
+              },
+              // Handle NULL statusForFilingId - match by statusForFiling name
+              {
+                AND: [
+                  { statusForFilingId: null },
+                  { statusForFiling: { in: statusNames } }
+                ]
+              },
             ],
           },
         });
@@ -196,15 +228,30 @@ export const getStatusGroupById = authorized
     const docketwiseStatusIds = group.statusGroupMappings.map(
       (mapping) => mapping.matterStatus.docketwiseId
     );
+    
+    const statusNames = group.statusGroupMappings.map(
+      (mapping) => mapping.matterStatus.name
+    );
 
     const matterCount = await prisma.matters.count({
       where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
         OR: [
           { statusId: { in: docketwiseStatusIds } },
           { statusForFilingId: { in: docketwiseStatusIds } },
+          // Handle NULL statusId - match by status name
+          {
+            AND: [
+              { statusId: null },
+              { status: { in: statusNames } }
+            ]
+          },
+          // Handle NULL statusForFilingId - match by statusForFiling name
+          {
+            AND: [
+              { statusForFilingId: null },
+              { statusForFiling: { in: statusNames } }
+            ]
+          },
         ],
       },
     });
@@ -297,15 +344,30 @@ export const createStatusGroup = authorized
     const docketwiseStatusIds = completeGroup.statusGroupMappings.map(
       (mapping) => mapping.matterStatus.docketwiseId
     );
+    
+    const statusNames = completeGroup.statusGroupMappings.map(
+      (mapping) => mapping.matterStatus.name
+    );
 
     const matterCount = await prisma.matters.count({
       where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
         OR: [
           { statusId: { in: docketwiseStatusIds } },
           { statusForFilingId: { in: docketwiseStatusIds } },
+          // Handle NULL statusId - match by status name
+          {
+            AND: [
+              { statusId: null },
+              { status: { in: statusNames } }
+            ]
+          },
+          // Handle NULL statusForFilingId - match by statusForFiling name
+          {
+            AND: [
+              { statusForFilingId: null },
+              { statusForFiling: { in: statusNames } }
+            ]
+          },
         ],
       },
     });
@@ -396,15 +458,30 @@ export const updateStatusGroup = authorized
     const docketwiseStatusIds = updatedGroup.statusGroupMappings.map(
       (mapping) => mapping.matterStatus.docketwiseId
     );
+    
+    const statusNames = updatedGroup.statusGroupMappings.map(
+      (mapping) => mapping.matterStatus.name
+    );
 
     const matterCount = await prisma.matters.count({
       where: {
-        userId: context.user.id,
-        archived: false,
-        discardedAt: null,
         OR: [
           { statusId: { in: docketwiseStatusIds } },
           { statusForFilingId: { in: docketwiseStatusIds } },
+          // Handle NULL statusId - match by status name
+          {
+            AND: [
+              { statusId: null },
+              { status: { in: statusNames } }
+            ]
+          },
+          // Handle NULL statusForFilingId - match by statusForFiling name
+          {
+            AND: [
+              { statusForFilingId: null },
+              { statusForFiling: { in: statusNames } }
+            ]
+          },
         ],
       },
     });

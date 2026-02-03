@@ -244,8 +244,8 @@ const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: M
     } else {
       params.delete(key);
     }
-    params.delete("page");
-    router.push(`?${params.toString()}`);
+    params.delete("page"); // Reset to first page when filter changes
+    router.push(`/dashboard/matters?${params.toString()}`);
   };
 
   // Debounced search handler
@@ -256,8 +256,8 @@ const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: M
     } else {
       params.delete("search");
     }
-    params.delete("page");
-    router.push(`?${params.toString()}`);
+    params.delete("page"); // Reset to first page when search changes
+    router.push(`/dashboard/matters?${params.toString()}`);
   }, 500);
 
   const handleSearchChange = (value: string) => {
@@ -281,8 +281,8 @@ const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: M
       params.delete("dateTo");
     }
     
-    params.delete("page");
-    router.push(`?${params.toString()}`);
+    params.delete("page"); // Reset to first page when date range changes
+    router.push(`/dashboard/matters?${params.toString()}`);
   };
 
   const columns: ColumnDef<MatterType>[] = [
@@ -702,7 +702,7 @@ const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: M
                 onClick={() => {
                   const params = new URLSearchParams(searchParams.toString());
                   params.set("page", String(matters.pagination!.page - 1));
-                  router.push(`?${params.toString()}`);
+                  router.push(`/dashboard/matters?${params.toString()}`);
                 }}
                 disabled={matters.pagination.page <= 1}
               >
@@ -714,7 +714,7 @@ const MattersTable = ({ matters, matterTypes, statuses, teams, statusGroups }: M
                 onClick={() => {
                   const params = new URLSearchParams(searchParams.toString());
                   params.set("page", String(matters.pagination!.page + 1));
-                  router.push(`?${params.toString()}`);
+                  router.push(`/dashboard/matters?${params.toString()}`);
                 }}
                 disabled={matters.pagination.page >= matters.pagination.totalPages}
               >

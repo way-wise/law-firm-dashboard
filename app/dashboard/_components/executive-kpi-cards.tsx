@@ -361,14 +361,14 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
         chartColor="primary"
       />
 
-      {/* DONUT - perfect for percentage/rate visualization */}
+      {/* COUNT - matters closed before deadline */}
       <KPICard
         label="On-Time Rate"
         value={complianceRate}
         icon="check"
-        chartType="donut"
+        chartType="radial"
         chartColor="emerald"
-        format="percentage"
+        format="number"
       />
 
       {/* DOT INDICATOR - visual count representation for small numbers */}
@@ -388,8 +388,8 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
 interface SecondaryKPICardsProps {
   stats: {
     overdueMatters?: number;
-    avgCycleTime?: number;
-    totalRevenue?: number;
+    avgDaysToFile?: number;
+    caseValue?: number;
     unassignedMatters?: number;
     revenueTrend?: number | null;
   };
@@ -397,8 +397,8 @@ interface SecondaryKPICardsProps {
 
 export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
   const overdue = stats?.overdueMatters ?? 0;
-  const avgCycle = Math.round(stats?.avgCycleTime ?? 0);
-  const revenue = stats?.totalRevenue ?? 0;
+  const avgDaysToFile = Math.round(stats?.avgDaysToFile ?? 0);
+  const caseValue = stats?.caseValue ?? 0;
   const unassigned = stats?.unassignedMatters ?? 0;
   const revenueTrend = stats?.revenueTrend ?? 0;
 
@@ -419,25 +419,25 @@ export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
         chartColor="orange"
       />
 
-      {/* SPARKLINE - shows cycle time (no trend comparison available) */}
+      {/* SPARKLINE - shows average days from creation to filing */}
       <KPICard
         label="Avg Days to File"
-        value={avgCycle}
+        value={avgDaysToFile}
         icon="clock"
         chartType="sparkline"
-        chartData={[24, 22, 23, 20, 19, 18, avgCycle > 0 ? avgCycle : 18]}
+        chartData={[24, 22, 23, 20, 19, 18, avgDaysToFile > 0 ? avgDaysToFile : 18]}
         chartColor="primary"
       />
 
-      {/* AREA - filled area shows case value (flat fees) with real trend */}
+      {/* AREA - filled area shows total flat fees for Active status group */}
       <KPICard
         label="Case Value"
-        value={revenue}
+        value={caseValue}
         change={formatTrend(revenueTrend)}
         changeType={revenueTrend >= 0 ? "positive" : "negative"}
         icon="dollar"
         chartType="area"
-        chartData={[45000, 52000, 48000, 55000, 60000, 58000, revenue || 62000]}
+        chartData={[45000, 52000, 48000, 55000, 60000, 58000, caseValue || 62000]}
         chartColor="emerald"
         format="currency"
       />
