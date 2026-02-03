@@ -70,12 +70,8 @@ import {
   getDashboardStats,
   getAssigneeStats,
   getRecentMatters,
-  getMatterStatusDistribution,
-  getMatterTypeDistribution,
   getMatterDistribution,
   getMonthlyTrends,
-  getStatusDistribution,
-  getMatterStatusesByType,
 } from "./dashboard";
 import { generateReport } from "./reports";
 import { sendMatterNotification } from "./sendMatterNotification";
@@ -169,12 +165,8 @@ export const router = {
     getStats: getDashboardStats,
     getAssigneeStats: getAssigneeStats,
     getRecentMatters: getRecentMatters,
-    getStatusDistribution: getMatterStatusDistribution,
-    getTypeDistribution: getMatterTypeDistribution,
     getDistribution: getMatterDistribution,
     getMonthlyTrends: getMonthlyTrends,
-    getStatusByCategory: getStatusDistribution,
-    getMatterStatusesByType: getMatterStatusesByType,
   },
   reports: {
     generate: generateReport,

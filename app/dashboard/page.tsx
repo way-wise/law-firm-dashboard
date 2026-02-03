@@ -3,13 +3,18 @@ import { client } from "@/lib/orpc/client";
 import { EnhancedDashboard } from "./_components/enhanced-dashboard";
 import { DashboardHeader } from "./_components/dashboard-header";
 import { subDays } from "date-fns";
+import { unstable_noStore as noStore } from "next/cache";
 
 const DashboardOverviewPage = async ({ searchParams }: { searchParams: Promise<{ dateFrom?: string; dateTo?: string }> }) => {
+  noStore(); // Disable caching - always fetch fresh data
+  
   const params = await searchParams;
   
   // Get date range from URL or default to last 30 days
   const dateFrom = params.dateFrom || subDays(new Date(), 30).toISOString().split('T')[0];
   const dateTo = params.dateTo || new Date().toISOString().split('T')[0];
+  
+  console.log("[DASHBOARD PAGE] Fetching with date range:", { dateFrom, dateTo });
   
   // Fetch all dashboard data from database via oRPC with proper error handling
   // Fetch dashboard data with date range

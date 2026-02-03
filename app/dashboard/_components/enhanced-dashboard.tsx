@@ -14,7 +14,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { LuSearch } from "react-icons/lu";
 import { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceToNow } from "date-fns";
-import { Eye, AlertTriangle, Clock } from "lucide-react";
+import { Eye } from "lucide-react";
 import { useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { useDebounceCallback } from "usehooks-ts";
@@ -53,6 +53,7 @@ interface RecentMatter {
   billingStatus: string | null;
   deadline: Date | null;
   updatedAt: Date;
+  docketwiseUpdatedAt: Date | null;
   daysUntilDeadline?: number | null;
 }
 
@@ -145,18 +146,6 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
     router.push(`?${params.toString()}`);
   };
 
-  const getRiskBadge = (daysUntil: number | null | undefined) => {
-    if (daysUntil === null || daysUntil === undefined) return null;
-    
-    if (daysUntil < 0) {
-      return <Badge variant="destructive" className="gap-1"><AlertTriangle className="size-3" /> Overdue</Badge>;
-    }
-    if (daysUntil <= 7) {
-      return <Badge variant="outline" className="gap-1 text-amber-600"><Clock className="size-3" /> {daysUntil}d</Badge>;
-    }
-    return <Badge variant="secondary">{daysUntil}d left</Badge>;
-  };
-
   const columns: ColumnDef<RecentMatter>[] = [
     {
       header: "Client",
@@ -187,36 +176,20 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
     {
       header: "Status",
       accessorKey: "status",
-      cell: ({ row }) => {
-        const status = (row.original.status || "").toLowerCase();
-        let variant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-        
-        if (status.includes("approved")) {
-          variant = "default";
-        } else if (status.includes("rfe") || status.includes("denied")) {
-          variant = "destructive";
-        } else if (status.includes("filed")) {
-          variant = "outline";
-        }
-        
-        return (
-          <Badge variant={variant}>
-            {row.original.status || "No Status"}
-          </Badge>
-        );
-      },
-    },
-    {
-      header: "Deadline Risk",
-      accessorKey: "daysUntilDeadline",
-      cell: ({ row }) => getRiskBadge(row.original.daysUntilDeadline),
+      cell: ({ row }) => (
+        <Badge variant="secondary">
+          {row.original.status || "No Status"}
+        </Badge>
+      ),
     },
     {
       header: "Updated",
-      accessorKey: "updatedAt",
+      accessorKey: "docketwiseUpdatedAt",
       cell: ({ row }) => (
         <p className="text-sm text-muted-foreground">
-          {formatDistanceToNow(new Date(row.original.updatedAt), { addSuffix: true })}
+          {row.original.docketwiseUpdatedAt 
+            ? formatDistanceToNow(new Date(row.original.docketwiseUpdatedAt), { addSuffix: true })
+            : "-"}
         </p>
       ),
     },
@@ -251,6 +224,7 @@ function RecentMattersTable({ matters }: { matters: RecentMatter[] }) {
                 <LuSearch />
               </InputGroupAddon>
               <InputGroupInput
+                type="search"
                 placeholder="Search matters..."
                 value={searchQuery}
                 onChange={(e) => handleSearchChange(e.target.value)}
@@ -305,8 +279,8 @@ export function EnhancedDashboard({
   // Transform team members for throughput chart
   const teamThroughput = teamMembers.slice(0, 5).map(member => ({
     name: member.name.split(' ')[0], // First name only
-    inbound: member.activeMatters,
-    outbound: member.completedCount,
+    assigned: member.activeMatters,
+    completed: member.completedCount,
   }));
 
   // Use teamMembers from props for team performance cards

@@ -314,6 +314,7 @@ interface ExecutiveKPICardsProps {
     newMattersThisMonth: number;
     criticalMatters: number;
     rfeFrequency: number;
+    unassignedMatters?: number;
     newMattersGrowth?: string;
     deadlineComplianceRate?: number;
     avgCycleTime?: number;
@@ -328,7 +329,7 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
   const activeCount = stats?.activeMattersCount ?? 0;
   const newMatters = stats?.newMattersThisMonth ?? 0;
   const rfeFrequency = stats?.rfeFrequency ?? 0;
-  const complianceRate = stats?.deadlineComplianceRate ?? 0;
+  const unassigned = stats?.unassignedMatters ?? 0;
   const mattersTrend = stats?.mattersTrend ?? 0;
   
   // Format trend for display
@@ -341,9 +342,9 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {/* AREA SPARKLINE - filled area shows growth trend beautifully */}
       <KPICard
-        label="New Matters (MTD)"
+        label="New Matters"
         value={newMatters}
-        change={formatTrend(mattersTrend)}
+        change={stats?.newMattersGrowth || formatTrend(mattersTrend)}
         changeType={mattersTrend >= 0 ? "positive" : "negative"}
         icon="trending"
         chartType="area"
@@ -361,19 +362,18 @@ export function ExecutiveKPICards({ stats }: ExecutiveKPICardsProps) {
         chartColor="primary"
       />
 
-      {/* COUNT - matters closed before deadline */}
+      {/* Unassigned matters */}
       <KPICard
-        label="On-Time Rate"
-        value={complianceRate}
-        icon="check"
-        chartType="radial"
-        chartColor="emerald"
-        format="number"
+        label="Unassigned"
+        value={unassigned}
+        icon="users"
+        chartType="dots"
+        chartColor="primary"
       />
 
       {/* DOT INDICATOR - visual count representation for small numbers */}
       <KPICard
-        label="RFE Frequency"
+        label="AVG Monthly RFE"
         value={rfeFrequency}
         icon="alert"
         chartType="dots"
@@ -390,7 +390,7 @@ interface SecondaryKPICardsProps {
     overdueMatters?: number;
     avgDaysToFile?: number;
     caseValue?: number;
-    unassignedMatters?: number;
+    teamMembers?: number;
     revenueTrend?: number | null;
   };
 }
@@ -399,7 +399,7 @@ export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
   const overdue = stats?.overdueMatters ?? 0;
   const avgDaysToFile = Math.round(stats?.avgDaysToFile ?? 0);
   const caseValue = stats?.caseValue ?? 0;
-  const unassigned = stats?.unassignedMatters ?? 0;
+  const teamMembers = stats?.teamMembers ?? 0;
   const revenueTrend = stats?.revenueTrend ?? 0;
 
   // Format trend for display
@@ -442,10 +442,10 @@ export function SecondaryKPICards({ stats }: SecondaryKPICardsProps) {
         format="currency"
       />
 
-      {/* DOT INDICATOR - visual count for small numbers */}
+      {/* Team Members count */}
       <KPICard
-        label="Unassigned"
-        value={unassigned}
+        label="Team Members"
+        value={teamMembers}
         icon="users"
         chartType="dots"
         chartColor="primary"

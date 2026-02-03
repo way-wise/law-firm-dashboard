@@ -50,7 +50,7 @@ export function TeamPerformanceCards({ members, title = "In-House Team", activeS
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-medium">{member.name}</p>
-                <p className="text-sm text-muted-foreground">{member.activeMatters} assigned</p>
+                <p className="text-sm text-muted-foreground">{member.activeMatters} Matters assigned</p>
               </div>
               <div className="p-2 rounded-lg bg-primary/10 text-primary">
                 <User className="size-4" />

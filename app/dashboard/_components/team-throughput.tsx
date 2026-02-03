@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 
 interface TeamMemberThroughput {
   name: string;
-  inbound: number;
-  outbound: number;
+  assigned: number;
+  completed: number;
 }
 
 interface TeamThroughputProps {
@@ -14,7 +14,7 @@ interface TeamThroughputProps {
 
 export function TeamThroughput({ data }: TeamThroughputProps) {
   // Get max for scaling
-  const maxTotal = Math.max(...data.map(d => d.inbound + d.outbound), 1);
+  const maxTotal = Math.max(...data.map(d => d.assigned + d.completed), 1);
 
   if (data.length === 0) {
     return (
@@ -34,11 +34,11 @@ export function TeamThroughput({ data }: TeamThroughputProps) {
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-sm bg-primary" />
-              <span className="text-muted-foreground">Inbound</span>
+              <span className="text-muted-foreground">Assigned</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="size-2.5 rounded-sm bg-emerald-500" />
-              <span className="text-muted-foreground">Outbound</span>
+              <span className="text-muted-foreground">Completed</span>
             </div>
           </div>
         </div>
@@ -46,9 +46,9 @@ export function TeamThroughput({ data }: TeamThroughputProps) {
         {/* Team Members */}
         <div className="flex-1 flex flex-col justify-between gap-3">
           {data.map((member, idx) => {
-            const total = member.inbound + member.outbound;
-            const inboundWidth = maxTotal > 0 ? (member.inbound / maxTotal) * 100 : 0;
-            const outboundWidth = maxTotal > 0 ? (member.outbound / maxTotal) * 100 : 0;
+            const total = member.assigned + member.completed;
+            const assignedWidth = maxTotal > 0 ? (member.assigned / maxTotal) * 100 : 0;
+            const completedWidth = maxTotal > 0 ? (member.completed / maxTotal) * 100 : 0;
 
             return (
               <div key={idx} className="space-y-1">
@@ -59,23 +59,23 @@ export function TeamThroughput({ data }: TeamThroughputProps) {
                 
                 {/* Stacked Horizontal Bar */}
                 <div className="flex items-center h-6 bg-muted/30 rounded overflow-hidden">
-                  {/* Inbound */}
-                  {member.inbound > 0 && (
+                  {/* Assigned */}
+                  {member.assigned > 0 && (
                     <div
                       className="bg-primary h-full flex items-center justify-center text-primary-foreground text-xs font-medium transition-all"
-                      style={{ width: `${inboundWidth}%`, minWidth: '32px' }}
+                      style={{ width: `${assignedWidth}%`, minWidth: '32px' }}
                     >
-                      {member.inbound}
+                      {member.assigned}
                     </div>
                   )}
                   
-                  {/* Outbound */}
-                  {member.outbound > 0 && (
+                  {/* Completed */}
+                  {member.completed > 0 && (
                     <div
                       className="bg-emerald-500 h-full flex items-center justify-center text-white text-xs font-medium transition-all"
-                      style={{ width: `${outboundWidth}%`, minWidth: '32px' }}
+                      style={{ width: `${completedWidth}%`, minWidth: '32px' }}
                     >
-                      {member.outbound}
+                      {member.completed}
                     </div>
                   )}
                 </div>
