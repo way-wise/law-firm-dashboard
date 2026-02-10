@@ -148,14 +148,14 @@ export async function syncMatters(userId: string) {
 
     
     // Fetch all existing matters once for comparison
-    const existingMattersMap = new Map<number, { id: string; isEdited: boolean }>();
+    const existingMattersMap = new Map<number, { id: string; isEdited: boolean; status: string | null }>();
     const existingMatters = await prisma.matters.findMany({
       where: { userId },
-      select: { docketwiseId: true, id: true, isEdited: true },
+      select: { docketwiseId: true, id: true, isEdited: true, status: true },
     });
     
     for (const m of existingMatters) {
-      existingMattersMap.set(m.docketwiseId, { id: m.id, isEdited: m.isEdited });
+      existingMattersMap.set(m.docketwiseId, { id: m.id, isEdited: m.isEdited, status: m.status });
     }
 
     console.log(`[MATTERS-SYNC] Found ${existingMattersMap.size} existing matters in DB`);
@@ -270,6 +270,14 @@ export async function syncMatters(userId: string) {
         
         // Sequential updates for remote database (no transaction to avoid timeout)
         for (const item of chunk) {
+          // Record status change in timeline history before updating
+          const existing = existingMatters.find(m => m.id === item.id);
+          if (existing && item.data.status && existing.status !== item.data.status) {
+            await prisma.matterStatusHistory.create({
+              data: { matterId: item.id, status: item.data.status, source: 'sync' },
+            }).catch(err => console.error(`[MATTERS-SYNC] Failed to record status history:`, err));
+          }
+
           await prisma.matters.update({
             where: { id: item.id },
             data: item.data,

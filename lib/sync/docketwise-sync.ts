@@ -908,6 +908,13 @@ export async function syncMatters(userId: string) {
                   continue;
                 }
 
+                // Record workflow stage (status) change in timeline history
+                if (existingMatter && finalStatus && existingMatter.status !== finalStatus) {
+                  prisma.matterStatusHistory.create({
+                    data: { matterId: existingMatter.id, status: finalStatus, source: 'sync' },
+                  }).catch(err => console.error(`[SYNC] Failed to record status history:`, err));
+                }
+
                 await tx.matters.upsert({
                   where: { docketwiseId: docketwiseMatter.id },
                   update: {

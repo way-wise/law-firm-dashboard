@@ -171,6 +171,7 @@ model matters {
   updatedAt DateTime @updatedAt
 
   deadlineNotifications deadlineNotifications[]
+  statusHistory         matterStatusHistory[]
 
   @@index([docketwiseId])
   @@index([userId])
@@ -537,4 +538,18 @@ model dashboardStats {
 
   @@index([userId])
   @@index([lastSyncedAt])
+}
+
+model matterStatusHistory {
+  id        String   @id @default(ulid())
+  matterId  String
+  matter    matters  @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  status    String // The status name (e.g., "Case Evaluation", "Filed", "RFE")
+  statusId  Int? // Docketwise status ID (nullable for manual entries)
+  source    String   @default("sync") // "sync" | "manual" | "backfill"
+  changedAt DateTime @default(now()) // When the change was detected
+  createdAt DateTime @default(now())
+
+  @@index([matterId])
+  @@index([matterId, changedAt])
 }

@@ -429,6 +429,13 @@ export async function syncMatterDetails(
           },
         });
 
+        // Record status change in timeline history
+        if (statusChanged && statusName) {
+          await prisma.matterStatusHistory.create({
+            data: { matterId: matter.id, status: statusName, statusId, source: 'sync' },
+          }).catch(err => console.error(`[MATTER-DETAILS-SYNC] Failed to record status history:`, err));
+        }
+
         // Send email ONLY if matter existed before AND status changed
         if (statusChanged) {
           try {

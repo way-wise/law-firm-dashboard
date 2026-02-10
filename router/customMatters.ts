@@ -3,6 +3,7 @@ import prisma, { Prisma } from "@/lib/prisma";
 import {
   matterFilterSchema,
   matterSchema,
+  matterTimelineSchema,
   paginatedMattersSchema,
   updateCustomMatterFieldsSchema,
 } from "@/schema/customMatterSchema";
@@ -508,6 +509,13 @@ export const updateCustomMatter = authorized
     });
 
 
+    // Record status change in timeline history
+    if (existingMatter.status !== updatedMatter.status && updatedMatter.status) {
+      await prisma.matterStatusHistory.create({
+        data: { matterId: id, status: updatedMatter.status, source: 'manual' },
+      }).catch(err => console.error('[MATTER UPDATE] Failed to record status history:', err));
+    }
+
     // Check for field changes and send notifications
     checkMatterChangesAndNotify({
       matterId: updatedMatter.id,
@@ -681,4 +689,50 @@ export const deleteCustomMatter = authorized
 
 
     return { success: true };
+  });
+
+// Get Matter Timeline (status change history)
+export const getMatterTimeline = authorized
+  .route({
+    method: "GET",
+    path: "/custom-matters/{matterId}/timeline",
+    summary: "Get status change timeline for a matter",
+    tags: ["Custom Matters"],
+  })
+  .input(z.object({ matterId: z.string() }))
+  .output(matterTimelineSchema)
+  .handler(async ({ input, context }) => {
+    // Verify matter belongs to user
+    const matter = await prisma.matters.findUnique({
+      where: { id: input.matterId, userId: context.user.id },
+      select: { id: true },
+    });
+
+    if (!matter) {
+      throw new ORPCError("NOT_FOUND", {
+        message: "Matter not found",
+      });
+    }
+
+    const history = await prisma.matterStatusHistory.findMany({
+      where: { matterId: input.matterId },
+      orderBy: { changedAt: "asc" },
+    });
+
+    // Calculate duration between each status change
+    const now = new Date();
+    return history.map((entry, index) => {
+      const nextEntry = history[index + 1];
+      const endTime = nextEntry ? nextEntry.changedAt : now;
+      const durationMs = nextEntry ? endTime.getTime() - entry.changedAt.getTime() : null;
+
+      return {
+        id: entry.id,
+        status: entry.status,
+        statusId: entry.statusId,
+        source: entry.source,
+        changedAt: entry.changedAt,
+        durationMs,
+      };
+    });
   });

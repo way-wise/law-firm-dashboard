@@ -127,9 +127,21 @@ export const paginatedMattersSchema = z.object({
   }).nullable(),
 });
 
+export const matterTimelineEntrySchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  statusId: z.number().nullable(),
+  source: z.string(),
+  changedAt: z.coerce.date(),
+  durationMs: z.number().nullable(), // null for current/last stage (still ongoing)
+});
+
+export const matterTimelineSchema = z.array(matterTimelineEntrySchema);
+
 export type BillingStatusType = z.infer<typeof billingStatusEnum>;
 export type CustomMatterFieldsType = z.infer<typeof customMatterFieldsSchema>;
 export type MatterType = z.infer<typeof matterSchema>;
 export type UpdateCustomMatterFieldsType = z.infer<typeof updateCustomMatterFieldsSchema>;
 export type MatterFilterType = z.infer<typeof matterFilterSchema>;
 export type PaginatedMattersType = z.infer<typeof paginatedMattersSchema>;
+export type MatterTimelineEntryType = z.infer<typeof matterTimelineEntrySchema>;

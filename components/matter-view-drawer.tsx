@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { Calendar, FileText, User, X, Loader2 } from "lucide-react";
+import { Calendar, CheckCircle2, Circle, FileText, Loader2, Play, User, X } from "lucide-react";
 import { client } from "@/lib/orpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { formatDate, getInitials } from "@/lib/utils";
@@ -24,12 +24,31 @@ function formatDateSafe(date: Date | string | null | undefined): string {
   return formatDate(d) || "-";
 }
 
+// Format milliseconds into human-readable duration (e.g., "13d 5h", "2h 30m")
+function formatDuration(ms: number | null): string | null {
+  if (ms === null || ms <= 0) return null;
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 export function MatterViewDrawer({ docketwiseId, open, onOpenChange }: MatterViewDrawerProps) {
   // Fetch matter details on-demand from Docketwise API
   const { data: matter, isLoading, error } = useQuery({
     queryKey: ["matter-detail", docketwiseId],
     queryFn: () => docketwiseId ? client.customMatters.getDetailByDocketwiseId({ docketwiseId }) : null,
     enabled: open && !!docketwiseId,
+  });
+
+  // Fetch timeline data when matter is loaded
+  const { data: timeline } = useQuery({
+    queryKey: ["matter-timeline", matter?.id],
+    queryFn: () => matter?.id ? client.customMatters.getTimeline({ matterId: matter.id }) : null,
+    enabled: open && !!matter?.id,
   });
 
   return (
@@ -292,24 +311,74 @@ export function MatterViewDrawer({ docketwiseId, open, onOpenChange }: MatterVie
                 </>
               )}
 
-              {/* Timeline */}
+              {/* Workflow Journey */}
               <Separator />
               <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Timeline</h4>
-                <div className="space-y-3">
-                  {matter.docketwiseCreatedAt && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Started At</span>
-                      <span className="text-sm">{formatDate(matter.docketwiseCreatedAt)}</span>
-                    </div>
-                  )}
-                  {matter.docketwiseUpdatedAt && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Last Updated</span>
-                      <span className="text-sm">{formatDate(matter.docketwiseUpdatedAt)}</span>
-                    </div>
-                  )}
-                </div>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Workflow Journey
+                </h4>
+
+                {timeline && timeline.length > 0 ? (
+                  <div className="relative pl-6">
+                    {timeline.map((entry, index) => {
+                      const isLast = index === timeline.length - 1;
+                      const duration = formatDuration(entry.durationMs);
+                      const durationFromNow = isLast
+                        ? formatDuration(new Date().getTime() - new Date(entry.changedAt).getTime())
+                        : null;
+
+                      return (
+                        <div key={entry.id} className="relative pb-6 last:pb-0">
+                          {/* Vertical connector line */}
+                          {!isLast && (
+                            <div className="absolute left-[-16px] top-6 bottom-0 w-0.5 bg-border" />
+                          )}
+
+                          {/* Status circle */}
+                          <div className="absolute left-[-22px] top-0.5">
+                            {isLast ? (
+                              <div className="flex size-[13px] items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                <Play className="size-2 fill-current" />
+                              </div>
+                            ) : (
+                              <CheckCircle2 className="size-[13px] text-emerald-500 fill-emerald-500" />
+                            )}
+                          </div>
+
+                          {/* Content */}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-none">{entry.status}</p>
+                            {isLast && (
+                              <span className="text-xs font-medium text-primary mt-1 block">Current Stage</span>
+                            )}
+                            <div className="flex items-center gap-2 mt-1">
+                              {(isLast ? durationFromNow : duration) && (
+                                <span className="text-xs text-muted-foreground">
+                                  {isLast ? durationFromNow : duration}
+                                </span>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {formatDateSafe(entry.changedAt)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    {matter.status ? (
+                      <div className="flex items-center gap-2">
+                        <Circle className="size-3 text-muted-foreground" />
+                        <span>{matter.status}</span>
+                        <span className="text-xs">(no history recorded yet)</span>
+                      </div>
+                    ) : (
+                      <span>No status history available</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </>
